@@ -1,0 +1,80 @@
+services:
+  bdd:
+    image: mysql:8.4
+    container_name: sensai-bdd
+    restart: unless-stopped
+    ports:
+      - "${MYSQL_PORT:-3306}:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-sensai_root_secret}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-sensai}
+      MYSQL_USER: ${MYSQL_USER:-sensai_user}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-sensai_password}
+    volumes:
+      - bdd_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-sensai_root_secret}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - sensai-network
+
+  ia:
+    image: ollama/ollama:latest
+    container_name: sensai-ia
+    restart: unless-stopped
+    ports:
+      - "${OLLAMA_PORT:-11434}:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - sensai-network
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: sensai-backend
+    restart: unless-stopped
+    ports:
+      - "${BACKEND_PORT:-8080}:8080"
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-mysql+pymysql://sensai_user:sensai_password@bdd:3306/sensai}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ia:11434}
+      PORT: ${BACKEND_PORT:-8080}
+    volumes:
+      - ./backend:/app
+    depends_on:
+      bdd:
+        condition: service_healthy
+      ia:
+        condition: service_started
+    networks:
+      - sensai-network
+
+  front:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: sensai-front
+    restart: unless-stopped
+    ports:
+      - "${FRONT_PORT:-3000}:8080"
+    environment:
+      OLLAMA_BASE_URL: http://ia:11434
+      WEBUI_SECRET_KEY: ${WEBUI_SECRET_KEY:-sensai_openwebui_secret_token}
+    volumes:
+      - openwebui_data:/app/backend/data
+    depends_on:
+      - ia
+    networks:
+      - sensai-network
+
+networks:
+  sensai-network:
+    driver: bridge
+
+volumes:
+  bdd_data:
+  ollama_data:
+  openwebui_data:
