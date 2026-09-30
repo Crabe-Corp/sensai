@@ -4,6 +4,7 @@ from typing import Any, Dict
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 import httpx
+from ollama_proxy import router as ollama_router
 
 app = FastAPI(
     title="SENSAI API",
@@ -20,6 +21,7 @@ app.add_middleware(
 )
 
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://ia:11434")
+app.include_router(ollama_router)
 
 
 @app.get("/")

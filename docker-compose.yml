@@ -52,17 +52,25 @@ services:
       - sensai-network
 
   front:
-    image: ghcr.io/open-webui/open-webui:main
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
     container_name: sensai-front
     ports:
       - "${FRONT_PORT:-3000}:8080"
     environment:
-      OLLAMA_BASE_URL: http://ia:11434
+      OLLAMA_BASE_URL: http://backend:8080
+      OLLAMA_API_URL: http://ia:11434
       WEBUI_SECRET_KEY: ${WEBUI_SECRET_KEY:-sensai_openwebui_secret_token}
+      DEFAULT_MODELS: ${DEFAULT_MODELS:-qwen3:0.6b}
+      WEBUI_NAME: ${WEBUI_NAME:-"SensAI - 7 Grands Royaumes"}
+      DEFAULT_USER_ROLE: ${DEFAULT_USER_ROLE:-admin}
+      ENABLE_SIGNUP: ${ENABLE_SIGNUP:-true}
     volumes:
-      - openwebui_data:/app/backend/data
+      - ./openwebui_data:/app/backend/data
     depends_on:
       - ia
+      - backend
     networks:
       - sensai-network
 
@@ -73,4 +81,4 @@ networks:
 volumes:
   bdd_data:
   ollama_data:
-  openwebui_data:
+
