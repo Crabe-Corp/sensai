@@ -4,6 +4,7 @@ import os
 import sys
 from pathlib import Path
 from typing import Any
+from src.core.db.database import init_database, get_kingdom_stats, update_kingdom_gold, get_active_diplomacy
 
 if __package__ is None or __package__ == "":
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
@@ -102,6 +103,7 @@ def print_help() -> None:
 def run_session(client: OllamaClient, model: str, host: str) -> None:
     history: list[ChatMessage] = []
     print_banner(model, host)
+    init_database()
 
     while True:
         try:
@@ -184,6 +186,12 @@ def run_session(client: OllamaClient, model: str, host: str) -> None:
 def main(argv: list[str] | None = None) -> int:
     args = parse_arguments(argv)
     host, model = resolve_configuration(args)
+
+    try:
+        init_database()
+    except Exception as e:
+        print(f"[Erreur dans l'initisalisation de la BDD] {e}")
+        return 1
 
     with OllamaClient(base_url=host) as client:
         run_session(client, model=model, host=host)
