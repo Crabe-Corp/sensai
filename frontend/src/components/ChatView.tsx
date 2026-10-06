@@ -23,6 +23,7 @@ import {
   Wrench,
   PanelRightOpen,
   PanelRightClose,
+  Plug,
 } from 'lucide-react'
 import type { Conversation, Message } from '../types'
 
@@ -48,7 +49,15 @@ const TOOL_DEFINITIONS = [
     source: 'Format JSON',
     description: 'Permet de générer des réponses au format JSON structuré.',
     icon: <Sparkles className="w-3.5 h-3.5 text-indigo-400" />,
-  }
+  },
+  {
+    id: 'mcp_runner',
+    name: 'Intégrations MCP',
+    shortName: 'MCP',
+    source: 'shadcn / Composio',
+    description: 'Connecteurs et outils externes Model Context Protocol.',
+    icon: <Plug className="w-3.5 h-3.5 text-sky-400" />,
+  },
 ]
 
 function isJsonString(str: string): boolean {
@@ -382,10 +391,11 @@ export function ChatView({
                           activeTools.includes(tool.id) ||
                           (tool.id === 'structured_output' && activeTools.includes('Structured Output'))
                         return (
-                          <div
+                          <button
+                            type="button"
                             key={tool.id}
                             onClick={() => onToggleTool(tool.id)}
-                            className={`p-2.5 rounded-lg border text-xs flex items-center justify-between gap-2.5 cursor-pointer transition-colors ${
+                            className={`w-full p-2.5 rounded-lg border text-xs flex items-center justify-between gap-2.5 cursor-pointer transition-colors text-left ${
                               isActive
                                 ? 'bg-neutral-800/90 border-indigo-500/50 text-white'
                                 : 'bg-neutral-950/60 border-neutral-800 text-neutral-400 hover:text-neutral-200 hover:border-neutral-700'
@@ -406,10 +416,10 @@ export function ChatView({
                             </div>
                             <Switch
                               checked={isActive}
-                              onCheckedChange={() => onToggleTool(tool.id)}
-                              className="shrink-0 cursor-pointer"
+                              tabIndex={-1}
+                              className="shrink-0 pointer-events-none"
                             />
-                          </div>
+                          </button>
                         )
                       })}
                     </div>

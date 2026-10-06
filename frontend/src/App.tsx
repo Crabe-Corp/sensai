@@ -201,11 +201,12 @@ export function App() {
       const exists =
         prev.includes(idToToggle) ||
         (idToToggle === 'structured_output' && prev.includes('Structured Output'))
-      if (exists) {
-        return prev.filter((t) => t !== idToToggle && t !== 'Structured Output')
-      } else {
-        return [...prev, idToToggle]
-      }
+      const updated = exists
+        ? prev.filter((t) => t !== idToToggle && t !== 'Structured Output')
+        : [...prev, idToToggle]
+
+      setActiveConversation((curr) => (curr ? { ...curr, tools_enabled: updated } : null))
+      return updated
     })
   }
 

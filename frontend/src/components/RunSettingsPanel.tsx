@@ -129,7 +129,11 @@ export function RunSettingsPanel({
           {toolsOpen && (
             <div className="space-y-2.5 pt-1">
               {/* Tool 1 : Structured Output */}
-              <div className="p-3 rounded-xl border border-neutral-800 bg-neutral-950/40 flex items-start justify-between gap-3">
+              <button
+                type="button"
+                onClick={() => onToggleTool('structured_output')}
+                className="w-full text-left p-3 rounded-xl border border-neutral-800 bg-neutral-950/40 hover:bg-neutral-900/60 transition-colors flex items-start justify-between gap-3 cursor-pointer"
+              >
                 <div className="space-y-1 min-w-0">
                   <div className="text-xs font-medium text-neutral-200 flex items-center gap-1.5">
                     <Sparkles className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
@@ -141,13 +145,17 @@ export function RunSettingsPanel({
                 </div>
                 <Switch
                   checked={activeTools.includes('structured_output') || activeTools.includes('Structured Output')}
-                  onCheckedChange={() => onToggleTool('structured_output')}
-                  className="shrink-0 cursor-pointer"
+                  tabIndex={-1}
+                  className="shrink-0 pointer-events-none"
                 />
-              </div>
+              </button>
 
               {/* Tool 2 : MCP */}
-              <div className="p-3 rounded-xl border border-neutral-800 bg-neutral-950/40 flex items-start justify-between gap-3">
+              <button
+                type="button"
+                onClick={() => onToggleTool('mcp_runner')}
+                className="w-full text-left p-3 rounded-xl border border-neutral-800 bg-neutral-950/40 hover:bg-neutral-900/60 transition-colors flex items-start justify-between gap-3 cursor-pointer"
+              >
                 <div className="space-y-1 min-w-0">
                   <div className="text-xs font-medium text-neutral-200 flex items-center gap-1.5">
                     <Plug className="w-3.5 h-3.5 text-sky-400 shrink-0" />
@@ -159,10 +167,10 @@ export function RunSettingsPanel({
                 </div>
                 <Switch
                   checked={activeTools.includes('mcp_runner')}
-                  onCheckedChange={() => onToggleTool('mcp_runner')}
-                  className="shrink-0 cursor-pointer"
+                  tabIndex={-1}
+                  className="shrink-0 pointer-events-none"
                 />
-              </div>
+              </button>
             </div>
           )}
         </div>
