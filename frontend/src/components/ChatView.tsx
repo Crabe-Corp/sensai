@@ -13,9 +13,6 @@ import {
   Sparkles,
   Users,
   Coins,
-  Crown,
-  Dice5,
-  Calculator,
   UserPlus,
   Loader2,
   Bot,
@@ -45,30 +42,36 @@ interface ChatViewProps {
 
 const TOOL_DEFINITIONS = [
   {
-    id: 'kingdom_stats',
-    name: 'Statistiques Royaumes',
-    shortName: 'Royaumes',
-    source: 'SensAI Lore DB',
-    description: 'Consulte l’or, l’armée et la diplomatie des factions.',
-    icon: <Crown className="w-3.5 h-3.5 text-amber-400" />,
-  },
-  {
-    id: 'dice_roller',
-    name: 'Lancer de dés JDR',
-    shortName: 'Dés JDR',
-    source: 'Module Aléatoire 1d20/2d6',
-    description: 'Tire des dés aléatoires pour tester des actions.',
-    icon: <Dice5 className="w-3.5 h-3.5 text-indigo-400" />,
-  },
-  {
-    id: 'calculator',
-    name: 'Calculateur d’armées',
-    shortName: 'Calculateur',
-    source: 'Moteur Arithmétique',
-    description: 'Calcule taxes, pertes de guerre et tributs.',
-    icon: <Calculator className="w-3.5 h-3.5 text-emerald-400" />,
-  },
+    id: 'structured_output',
+    name: 'Structured Output',
+    shortName: 'Structured Output',
+    source: 'Format JSON',
+    description: 'Permet de générer des réponses au format JSON structuré.',
+    icon: <Sparkles className="w-3.5 h-3.5 text-indigo-400" />,
+  }
 ]
+
+function isJsonString(str: string): boolean {
+  if (!str) return false
+  const t = str.trim()
+  if (!((t.startsWith('{') && t.endsWith('}')) || (t.startsWith('[') && t.endsWith(']')))) {
+    return false
+  }
+  try {
+    JSON.parse(t)
+    return true
+  } catch {
+    return false
+  }
+}
+
+function formatJson(str: string): string {
+  try {
+    return JSON.stringify(JSON.parse(str.trim()), null, 2)
+  } catch {
+    return str
+  }
+}
 
 export function ChatView({
   conversation,
@@ -210,31 +213,31 @@ export function ChatView({
               <div className="space-y-1">
                 <h3 className="text-lg font-bold text-white">Prêt à commencer la conversation</h3>
                 <p className="text-xs text-neutral-400">
-                  Posez une question, demandez des statistiques sur un royaume ou simulez un lancer de dés.
+                  Posez une question !
                 </p>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full pt-2">
                 <button
-                  onClick={() => onSendMessage('Quelles sont les statistiques du royaume de Valoria ?')}
+                  onClick={() => onSendMessage('Donne-moi 3 idées de projets avec leur nom et difficulté au format structuré.')}
                   className="p-3 text-left rounded-xl border border-neutral-800 bg-neutral-900/60 hover:bg-neutral-900 hover:border-neutral-700 text-xs text-neutral-300 transition-colors cursor-pointer"
                 >
                   <div className="font-semibold text-white mb-0.5 flex items-center gap-1.5">
-                    <Crown className="w-3.5 h-3.5 text-amber-400" />
-                    Royaume de Valoria
+                    <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+                    Sortie Structurée
                   </div>
-                  Consulter trésorerie et armée
+                  Générer des données au format JSON
                 </button>
 
                 <button
-                  onClick={() => onSendMessage("Lance un dé 1d20 pour tester mon initiative d'attaque.")}
+                  onClick={() => onSendMessage("Explique comment fonctionne le mode Structured Output.")}
                   className="p-3 text-left rounded-xl border border-neutral-800 bg-neutral-900/60 hover:bg-neutral-900 hover:border-neutral-700 text-xs text-neutral-300 transition-colors cursor-pointer"
                 >
                   <div className="font-semibold text-white mb-0.5 flex items-center gap-1.5">
-                    <Dice5 className="w-3.5 h-3.5 text-indigo-400" />
-                    Lancer de dés
+                    <Wrench className="w-3.5 h-3.5 text-amber-400" />
+                    Assistance SensAI
                   </div>
-                  Simuler un jet 1d20 JDR
+                  Poser une question technique
                 </button>
               </div>
             </div>
@@ -266,7 +269,13 @@ export function ChatView({
                           : 'bg-neutral-900 border border-neutral-800 text-neutral-100 rounded-bl-xs'
                       }`}
                     >
-                      {msg.content}
+                      {!isUser && isJsonString(msg.content) ? (
+                        <pre className="font-mono text-xs overflow-x-auto text-indigo-300 p-1">
+                          {formatJson(msg.content)}
+                        </pre>
+                      ) : (
+                        msg.content
+                      )}
                     </div>
 
                     {/* Badge de coût en tokens pour chaque réponse de l'IA */}
@@ -369,7 +378,9 @@ export function ChatView({
 
                     <div className="space-y-2">
                       {TOOL_DEFINITIONS.map((tool) => {
-                        const isActive = activeTools.includes(tool.id)
+                        const isActive =
+                          activeTools.includes(tool.id) ||
+                          (tool.id === 'structured_output' && activeTools.includes('Structured Output'))
                         return (
                           <div
                             key={tool.id}
@@ -407,7 +418,9 @@ export function ChatView({
 
                 {/* Badges d'outils actifs affichés directement à côté (Google AI Studio style!) */}
                 {activeTools.map((toolId) => {
-                  const tool = TOOL_DEFINITIONS.find((t) => t.id === toolId)
+                  const tool = TOOL_DEFINITIONS.find(
+                    (t) => t.id === toolId || (t.id === 'structured_output' && toolId === 'Structured Output')
+                  )
                   if (!tool) return null
                   return (
                     <div

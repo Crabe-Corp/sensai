@@ -75,6 +75,7 @@ def list_conversations(user: User = Depends(get_current_user), db: Session = Dep
     for c in sorted_convs:
         total_tokens = sum(m.total_tokens for m in c.messages)
         tools = json.loads(c.tools_enabled) if c.tools_enabled else []
+        tools = [t for t in tools if t in ["structured_output", "Structured Output", "mcp_runner"]]
         result.append({
             "id": c.id,
             "title": c.title,
@@ -97,7 +98,8 @@ def create_conversation(
     db: Session = Depends(get_db)
 ):
     conv_id = str(uuid.uuid4())
-    tools_json = json.dumps(req.tools_enabled or [])
+    tools_cleaned = [t for t in (req.tools_enabled or []) if t in ["structured_output", "Structured Output", "mcp_runner"]]
+    tools_json = json.dumps(tools_cleaned)
     mode = "work" if req.mode == "work" else "solo"
 
     conv = Conversation(
@@ -126,7 +128,7 @@ def create_conversation(
         "title": conv.title,
         "mode": conv.mode,
         "model_name": conv.model_name,
-        "tools_enabled": req.tools_enabled or [],
+        "tools_enabled": tools_cleaned,
         "total_tokens": 0,
         "is_owner": True,
         "created_at": conv.created_at.isoformat()
@@ -148,6 +150,7 @@ def get_conversation(
 
     total_tokens = sum(m.total_tokens for m in conv.messages)
     tools = json.loads(conv.tools_enabled) if conv.tools_enabled else []
+    tools = [t for t in tools if t in ["structured_output", "Structured Output", "mcp_runner"]]
 
     members_list = []
     if conv.mode == "work":
@@ -259,9 +262,10 @@ async def chat_stream(
         raise HTTPException(status_code=403, detail="Accès non autorisé")
 
     model_to_use = req.model or conv.model_name or "qwen3:0.6b"
-    tools_to_use = req.tools_enabled if req.tools_enabled is not None else (
+    raw_tools = req.tools_enabled if req.tools_enabled is not None else (
         json.loads(conv.tools_enabled) if conv.tools_enabled else []
     )
+    tools_to_use = [t for t in raw_tools if t in ["structured_output", "Structured Output", "mcp_runner"]]
 
     # Enregistrer le message de l'utilisateur
     user_tokens = estimate_tokens(req.content)
@@ -303,32 +307,12 @@ async def chat_stream(
     # Préparation de l'historique pour Ollama
     history = []
     system_prompt = req.system_instruction.strip() if req.system_instruction and req.system_instruction.strip() else (
-        "Tu es SensAI, un assistant virtuel intelligent, clair et direct. "
-        "Tu assistes les utilisateurs dans leurs stratégies, royaumes et requêtes."
+        "Tu es SensAI, un assistant virtuel intelligent, clair et direct."
     )
 
-    # Détection et exécution d'outils fait main si activés
-    tool_outputs = []
-    if tools_to_use:
-        lower_content = req.content.lower()
-        if "kingdom_stats" in tools_to_use:
-            # Détection de mot-clé royaume
-            for r_name in ["valoria", "draconis", "aethelgard", "solaria", "umbra", "royaume"]:
-                if r_name in lower_content:
-                    output = run_tool("kingdom_stats", {"name": r_name})
-                    tool_outputs.append(output)
-                    break
-        if "dice_roller" in tools_to_use:
-            if "dé" in lower_content or "roll" in lower_content or "d20" in lower_content or "d6" in lower_content:
-                output = run_tool("dice_roller", {"notation": "1d20"})
-                tool_outputs.append(output)
-        if "calculator" in tools_to_use:
-            if "calcul" in lower_content or "+" in lower_content or "*" in lower_content:
-                output = run_tool("calculator", {"expression": "100 * 12"})
-                tool_outputs.append(output)
-
-    if tool_outputs:
-        system_prompt += "\nInformations récupérées via les outils intégrés du système:\n" + "\n".join(tool_outputs)
+    is_structured = bool(tools_to_use and ("structured_output" in tools_to_use or "Structured Output" in tools_to_use))
+    if is_structured:
+        system_prompt += "\nRéponds au format JSON."
 
     history.append({"role": "system", "content": system_prompt})
 
@@ -342,22 +326,20 @@ async def chat_stream(
         prompt_tokens_eval = user_tokens
         completion_tokens_eval = 0
 
-        # Si un outil a fourni un résultat préalable, on le stream en premier pour l'utilisateur
-        if tool_outputs:
-            tool_intro = f"*[Outil exécuté : {tool_outputs[0]}]*\n\n"
-            accumulated_text += tool_intro
-            yield json.dumps({"type": "chunk", "content": tool_intro}) + "\n"
+        ollama_payload = {
+            "model": model_to_use,
+            "messages": history,
+            "stream": True,
+        }
+        if is_structured:
+            ollama_payload["format"] = "json"
 
         async with httpx.AsyncClient(timeout=120.0) as client:
             try:
                 async with client.stream(
                     "POST",
                     f"{OLLAMA_BASE_URL}/api/chat",
-                    json={
-                        "model": model_to_use,
-                        "messages": history,
-                        "stream": True,
-                    }
+                    json=ollama_payload
                 ) as response:
                     async for raw_line in response.aiter_lines():
                         if not raw_line:

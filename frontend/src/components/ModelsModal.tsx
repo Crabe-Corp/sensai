@@ -7,9 +7,9 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
-import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
-import { Cpu, Wrench, Crown, Dice5, Calculator, Check, Sparkles } from 'lucide-react'
+import { Switch } from '@/components/ui/switch'
+import { Cpu, Wrench, Check, Sparkles } from 'lucide-react'
 import { api } from '../lib/api'
 import type { ToolInfo } from '../types'
 
@@ -84,12 +84,9 @@ export function ModelsModal({
 
   const getToolIcon = (iconName: string) => {
     switch (iconName) {
-      case 'Crown':
-        return <Crown className="w-4 h-4 text-amber-400" />
-      case 'Dice5':
-        return <Dice5 className="w-4 h-4 text-indigo-400" />
-      case 'Calculator':
-        return <Calculator className="w-4 h-4 text-emerald-400" />
+      case 'Code':
+      case 'Sparkles':
+        return <Sparkles className="w-4 h-4 text-indigo-400" />
       default:
         return <Wrench className="w-4 h-4 text-neutral-400" />
     }
@@ -104,7 +101,7 @@ export function ModelsModal({
             <span>Configuration du Modèle &amp; Tools</span>
           </DialogTitle>
           <DialogDescription className="text-neutral-400 text-xs">
-            Choisissez votre modèle d'IA et configurez les outils faits main intégrés dans le dépôt.
+            Choisissez votre modèle d'IA et configurez les outils intégrés.
           </DialogDescription>
         </DialogHeader>
 
@@ -143,10 +140,10 @@ export function ModelsModal({
         <div className="space-y-3 pt-2">
           <div className="text-xs font-semibold text-neutral-200 flex items-center gap-1.5">
             <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-            <span>Tools intégrés faits main (Repo)</span>
+            <span>Tools intégrés (Repo)</span>
           </div>
           <p className="text-[11px] text-neutral-400">
-            Ces outils permettent à l'IA d'accéder aux données des Royaumes, d'effectuer des lancers de dés et des calculs tactiques directement dans le chat.
+            Ces outils permettent d'activer des modes spécifiques comme le Structured Output (JSON).
           </p>
 
           <div className="space-y-2 max-h-56 overflow-y-auto pr-1">

@@ -6,9 +6,6 @@ import {
   X,
   Cpu,
   Sparkles,
-  Crown,
-  Dice5,
-  Calculator,
   Plug,
   Coins,
   ChevronDown,
@@ -105,7 +102,7 @@ export function RunSettingsPanel({
           <Textarea
             value={systemInstruction}
             onChange={(e) => onSystemInstructionChange(e.target.value)}
-            placeholder="Instructions de ton et de style pour le modèle (ex: Tu es le chroniqueur officiel des 7 Royaumes...)"
+            placeholder="Instructions de ton et de style pour le modèle (ex: Tu réponds de façon claire, synthétique et précise...)"
             rows={3}
             className="text-xs bg-neutral-950 border-neutral-800 text-neutral-200 resize-none rounded-xl placeholder:text-neutral-500 focus:border-indigo-500"
           />
@@ -131,61 +128,25 @@ export function RunSettingsPanel({
 
           {toolsOpen && (
             <div className="space-y-2.5 pt-1">
-              {/* Tool 1 : Statistiques Royaumes */}
+              {/* Tool 1 : Structured Output */}
               <div className="p-3 rounded-xl border border-neutral-800 bg-neutral-950/40 flex items-start justify-between gap-3">
                 <div className="space-y-1 min-w-0">
                   <div className="text-xs font-medium text-neutral-200 flex items-center gap-1.5">
-                    <Crown className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                    <span>Statistiques Royaumes</span>
+                    <Sparkles className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                    <span>Structured Output</span>
                   </div>
                   <div className="text-[10px] text-neutral-500">
-                    Source: <span className="text-neutral-400">SensAI 7 Royaumes DB</span>
+                    Source: <span className="text-neutral-400">Sortie JSON structurée</span>
                   </div>
                 </div>
                 <Switch
-                  checked={activeTools.includes('kingdom_stats')}
-                  onCheckedChange={() => onToggleTool('kingdom_stats')}
-                  className="shrink-0"
+                  checked={activeTools.includes('structured_output') || activeTools.includes('Structured Output')}
+                  onCheckedChange={() => onToggleTool('structured_output')}
+                  className="shrink-0 cursor-pointer"
                 />
               </div>
 
-              {/* Tool 2 : Lancer de dés */}
-              <div className="p-3 rounded-xl border border-neutral-800 bg-neutral-950/40 flex items-start justify-between gap-3">
-                <div className="space-y-1 min-w-0">
-                  <div className="text-xs font-medium text-neutral-200 flex items-center gap-1.5">
-                    <Dice5 className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
-                    <span>Lancer de dés JDR</span>
-                  </div>
-                  <div className="text-[10px] text-neutral-500">
-                    Source: <span className="text-neutral-400">Module Aléatoire 1d20/2d6</span>
-                  </div>
-                </div>
-                <Switch
-                  checked={activeTools.includes('dice_roller')}
-                  onCheckedChange={() => onToggleTool('dice_roller')}
-                  className="shrink-0"
-                />
-              </div>
-
-              {/* Tool 3 : Calculateur */}
-              <div className="p-3 rounded-xl border border-neutral-800 bg-neutral-950/40 flex items-start justify-between gap-3">
-                <div className="space-y-1 min-w-0">
-                  <div className="text-xs font-medium text-neutral-200 flex items-center gap-1.5">
-                    <Calculator className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                    <span>Calculateur d'armées</span>
-                  </div>
-                  <div className="text-[10px] text-neutral-500">
-                    Source: <span className="text-neutral-400">Moteur Arithmétique</span>
-                  </div>
-                </div>
-                <Switch
-                  checked={activeTools.includes('calculator')}
-                  onCheckedChange={() => onToggleTool('calculator')}
-                  className="shrink-0"
-                />
-              </div>
-
-              {/* Tool 4 : MCP */}
+              {/* Tool 2 : MCP */}
               <div className="p-3 rounded-xl border border-neutral-800 bg-neutral-950/40 flex items-start justify-between gap-3">
                 <div className="space-y-1 min-w-0">
                   <div className="text-xs font-medium text-neutral-200 flex items-center gap-1.5">
@@ -199,7 +160,7 @@ export function RunSettingsPanel({
                 <Switch
                   checked={activeTools.includes('mcp_runner')}
                   onCheckedChange={() => onToggleTool('mcp_runner')}
-                  className="shrink-0"
+                  className="shrink-0 cursor-pointer"
                 />
               </div>
             </div>

@@ -75,7 +75,6 @@ export function Sidebar({
         <div className="p-4 border-b border-neutral-800 space-y-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 font-bold text-lg text-white">
-              <span className="w-2.5 h-2.5 rounded-full bg-indigo-500 animate-pulse"></span>
               <span>SensAI</span>
             </div>
             <button

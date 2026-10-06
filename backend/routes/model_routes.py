@@ -55,9 +55,10 @@ def get_user_model_config(user: User = Depends(get_current_user), db: Session = 
         return {
             "model_name": "qwen3:0.6b",
             "temperature": 0.7,
-            "active_tools": ["kingdom_stats", "dice_roller"]
+            "active_tools": ["structured_output"]
         }
     tools = json.loads(pref.active_tools) if pref.active_tools else []
+    tools = [t for t in tools if t in ["structured_output", "Structured Output", "mcp_runner"]]
     return {
         "model_name": pref.model_name,
         "temperature": pref.temperature,
@@ -72,7 +73,8 @@ def update_user_model_config(
     db: Session = Depends(get_db)
 ):
     pref = db.query(ModelPreference).filter(ModelPreference.user_id == user.id).first()
-    tools_json = json.dumps(cfg.active_tools or [])
+    cleaned_tools = [t for t in (cfg.active_tools or []) if t in ["structured_output", "Structured Output", "mcp_runner"]]
+    tools_json = json.dumps(cleaned_tools)
     if not pref:
         pref = ModelPreference(
             user_id=user.id,
@@ -92,6 +94,6 @@ def update_user_model_config(
         "success": True,
         "model_name": pref.model_name,
         "temperature": pref.temperature,
-        "active_tools": cfg.active_tools or []
+        "active_tools": cleaned_tools
     }
 

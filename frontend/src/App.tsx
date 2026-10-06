@@ -30,7 +30,7 @@ export function App() {
   const [streamingText, setStreamingText] = useState('')
   const [currentModel, setCurrentModel] = useState('qwen3:0.6b')
   const [modelsList, setModelsList] = useState<string[]>(['qwen3:0.6b'])
-  const [activeTools, setActiveTools] = useState<string[]>(['kingdom_stats', 'dice_roller'])
+  const [activeTools, setActiveTools] = useState<string[]>(['structured_output'])
   const [systemInstruction, setSystemInstruction] = useState('')
 
   // WebSocket pour la collaboration temps réel (Mode Work)
@@ -60,13 +60,16 @@ export function App() {
     try {
       const [convs, cfg, modelsData] = await Promise.all([
         api.listConversations(),
-        api.getModelConfig().catch(() => ({ model_name: 'qwen3:0.6b', temperature: 0.7, active_tools: ['kingdom_stats'] })),
+        api.getModelConfig().catch(() => ({ model_name: 'qwen3:0.6b', temperature: 0.7, active_tools: ['structured_output'] })),
         api.getModels().catch(() => ({ models: ['qwen3:0.6b'], default: 'qwen3:0.6b' })),
       ])
       setConversations(convs)
       setModelsList(modelsData.models || ['qwen3:0.6b'])
       setCurrentModel(cfg.model_name || 'qwen3:0.6b')
-      setActiveTools(cfg.active_tools || ['kingdom_stats', 'dice_roller'])
+      const cleanTools = (cfg.active_tools || []).filter(
+        (t: string) => t === 'structured_output' || t === 'Structured Output' || t === 'mcp_runner'
+      )
+      setActiveTools(cleanTools.length > 0 ? cleanTools : ['structured_output'])
 
       // Vérifier si une URL spécifique contient un ID de conversation (?c=...)
       const urlParams = new URLSearchParams(window.location.search)
@@ -143,7 +146,10 @@ export function App() {
       const fullConv = await api.getConversation(id)
       setActiveConversation(fullConv)
       setMessages(fullConv.messages || [])
-      setActiveTools(fullConv.tools_enabled || [])
+      const cleanConvTools = (fullConv.tools_enabled || []).filter(
+        (t: string) => t === 'structured_output' || t === 'Structured Output' || t === 'mcp_runner'
+      )
+      setActiveTools(cleanConvTools)
       setCurrentModel(fullConv.model_name || 'qwen3:0.6b')
       window.history.replaceState(null, '', `?c=${id}`)
     } catch {
@@ -190,9 +196,17 @@ export function App() {
 
   // Toggle d'outil en temps réel
   const handleToggleTool = (toolId: string) => {
-    setActiveTools((prev) =>
-      prev.includes(toolId) ? prev.filter((t) => t !== toolId) : [...prev, toolId]
-    )
+    const idToToggle = toolId === 'Structured Output' ? 'structured_output' : toolId
+    setActiveTools((prev) => {
+      const exists =
+        prev.includes(idToToggle) ||
+        (idToToggle === 'structured_output' && prev.includes('Structured Output'))
+      if (exists) {
+        return prev.filter((t) => t !== idToToggle && t !== 'Structured Output')
+      } else {
+        return [...prev, idToToggle]
+      }
+    })
   }
 
   // Envoi d'un message avec streaming progressif, instruction système et tokens
