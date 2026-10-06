@@ -119,3 +119,9 @@ class HistoricalFigure(BaseModel):
     @property
     def notable_facts(self) -> list[str]:
         return self.faits_marquants
+
+class StructuredResponse(BaseModel):
+    response: str = Field(
+        ...,
+        description="Réponse textuelle de l'assistant",
+    )

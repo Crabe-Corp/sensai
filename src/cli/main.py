@@ -18,7 +18,7 @@ from src.core.ollama_client import (
     OllamaModelNotFoundError,
     OllamaStructuredOutputError,
 )
-from src.core.schemas import HistoricalFigure, KingdomInfo
+from src.core.schemas import HistoricalFigure, KingdomInfo, StructuredResponse
 
 DEFAULT_CONFIG_PATH = Path("config.json")
 DEFAULT_HOST = "http://localhost:11434"
@@ -95,18 +95,20 @@ def print_banner(model: str, host: str) -> None:
 
 def print_help() -> None:
     print("\nCommandes disponibles :")
-    print("  /help          : Affiche ce message d'aide")
-    print("  /clear         : Réinitialise l'historique de la session")
-    print("  /history       : Affiche le nombre de messages échangés")
-    print("  /models        : Liste les modèles installés sur le serveur Ollama")
-    print("  /model [nom]   : Affiche ou change le modèle actif sans redémarrer")
-    print("  /kingdom [nom] : Génère une fiche de royaume au format JSON strict")
-    print("  /figure [nom]  : Génère une fiche de personnage historique")
-    print("  /exit | /quit  : Quitte l'application\n")
+    print("  /help                     : Affiche ce message d'aide")
+    print("  /clear                    : Réinitialise l'historique de la session")
+    print("  /history                  : Affiche le nombre de messages échangés")
+    print("  /models                   : Liste les modèles installés sur le serveur Ollama")
+    print("  /model [nom]              : Affiche ou change le modèle actif sans redémarrer")
+    print("  /kingdom [nom]            : Génère une fiche de royaume au format JSON strict")
+    print("  /figure [nom]             : Génère une fiche de personnage historique")
+    print("  /structured-output [msg]  : Active/désactive le mode JSON ou soumet une requête au format {'response': ...}")
+    print("  /exit | /quit             : Quitte l'application\n")
 
 
 def run_session(client: OllamaClient, model: str, host: str) -> None:
     history: list[ChatMessage] = []
+    structured_mode: bool = False
     print_banner(model, host)
     init_database()
 
@@ -156,7 +158,7 @@ def run_session(client: OllamaClient, model: str, host: str) -> None:
                 print("[Astuce] Pour changer : /model <nom_du_modèle> (ex: /model llama3)")
             continue
 
-        if user_input == "/kingdom" or user_input.startswith("/kingdom "):
+        if user_input in ("/kingdom", "/kingdoms") or user_input.startswith(("/kingdom ", "/kingdoms ")):
             parts = user_input.split(maxsplit=1)
             kingdom_name = parts[1].strip() if len(parts) > 1 and parts[1].strip() else None
             if kingdom_name is None:
@@ -185,7 +187,7 @@ def run_session(client: OllamaClient, model: str, host: str) -> None:
                 print(f"[Erreur] {exc}")
             continue
 
-        if user_input == "/figure" or user_input.startswith("/figure "):
+        if user_input in ("/figure", "/figures") or user_input.startswith(("/figure ", "/figures ")):
             parts = user_input.split(maxsplit=1)
             figure_name = parts[1].strip() if len(parts) > 1 and parts[1].strip() else None
             if figure_name is None:
@@ -214,8 +216,72 @@ def run_session(client: OllamaClient, model: str, host: str) -> None:
                 print(f"[Erreur] {exc}")
             continue
 
+        if user_input in ("/structured-output", "/structured_output") or user_input.startswith(
+            ("/structured-output ", "/structured_output ")
+        ):
+            parts = user_input.split(maxsplit=1)
+            arg = parts[1].strip() if len(parts) > 1 and parts[1].strip() else None
+
+            if arg is None:
+                structured_mode = not structured_mode
+                status = "activé" if structured_mode else "désactivé"
+                print(f"[Info] Mode sortie structurée {status}. (Format: {{\"response\": ...}})")
+                continue
+
+            if arg.lower() in ("on", "true", "1", "enable", "activer"):
+                structured_mode = True
+                print("[Info] Mode sortie structurée activé. (Format: {\"response\": ...})")
+                continue
+
+            if arg.lower() in ("off", "false", "0", "disable", "desactiver", "désactiver"):
+                structured_mode = False
+                print("[Info] Mode sortie structurée désactivé.")
+                continue
+
+            query = arg
+            try:
+                result = client.chat_structured(
+                    model=model,
+                    messages=[
+                        ChatMessage(role="user", content=query),
+                    ],
+                    response_format=StructuredResponse,
+                )
+                print(json.dumps(result.model_dump(), ensure_ascii=False))
+                history.append(ChatMessage(role="user", content=query))
+                history.append(ChatMessage(role="assistant", content=result.response))
+            except OllamaStructuredOutputError as exc:
+                print(f"[Erreur Sortie Structurée] {exc}")
+            except OllamaError as exc:
+                print(f"[Erreur] {exc}")
+            continue
+
         user_msg = ChatMessage(role="user", content=user_input)
         history.append(user_msg)
+
+        if structured_mode:
+            sys.stdout.write("\nAssistant > ")
+            sys.stdout.flush()
+            try:
+                result = client.chat_structured(
+                    model=model,
+                    messages=list(history),
+                    response_format=StructuredResponse,
+                )
+                print(json.dumps(result.model_dump(), ensure_ascii=False))
+                history.append(ChatMessage(role="assistant", content=result.response))
+            except OllamaConnectionError as exc:
+                print(f"\n[Erreur de connexion] {exc}")
+            except OllamaModelNotFoundError as exc:
+                print(f"\n[Modèle introuvable] {exc}")
+                print(f"[Astuce] Exécutez 'ollama pull {model}' pour installer ce modèle.")
+            except OllamaStructuredOutputError as exc:
+                print(f"\n[Erreur Sortie Structurée] {exc}")
+            except OllamaAPIError as exc:
+                print(f"\n[Erreur API Ollama] {exc}")
+            except OllamaError as exc:
+                print(f"\n[Erreur] {exc}")
+            continue
 
         sys.stdout.write("\nAssistant > ")
         sys.stdout.flush()

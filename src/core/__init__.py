@@ -7,7 +7,7 @@ from src.core.ollama_client import (
     OllamaModelNotFoundError,
     OllamaStructuredOutputError,
 )
-from src.core.schemas import HistoricalFigure, KingdomInfo
+from src.core.schemas import HistoricalFigure, KingdomInfo, StructuredResponse
 
 __all__ = [
     "ChatMessage",
@@ -19,4 +19,5 @@ __all__ = [
     "OllamaError",
     "OllamaModelNotFoundError",
     "OllamaStructuredOutputError",
+    "StructuredResponse",
 ]

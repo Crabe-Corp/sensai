@@ -14,7 +14,7 @@ from src.core.ollama_client import (
     OllamaModelNotFoundError,
     OllamaStructuredOutputError,
 )
-from src.core.schemas import HistoricalFigure, KingdomInfo
+from src.core.schemas import HistoricalFigure, KingdomInfo, StructuredResponse
 
 
 def test_kingdom_info_validation():
@@ -330,3 +330,63 @@ def test_cli_kingdom_structured_error_handling(capsys):
     mock_client.chat_structured.assert_called_once()
     captured = capsys.readouterr()
     assert "[Erreur Sortie Structurée] Format non respecté" in captured.out
+
+
+def test_structured_response_validation():
+    data = {"response": "Les Royaumes combattants ont pris fin en 221 av. J.-C."}
+    parsed = StructuredResponse.model_validate(data)
+    assert parsed.response == "Les Royaumes combattants ont pris fin en 221 av. J.-C."
+
+    with pytest.raises(ValidationError):
+        StructuredResponse.model_validate({})
+
+
+def test_cli_structured_output_direct_query(capsys):
+    mock_client = MagicMock()
+    mock_client.chat_structured.return_value = StructuredResponse(
+        response="Qin Shi Huang a unifié la Chine en 221 av. J.-C."
+    )
+
+    with patch(
+        "builtins.input",
+        side_effect=["/structured-output Quand Qin a-t-il unifié la Chine ?", "/exit"],
+    ):
+        exit_code = run_session(mock_client, model="qwen2.5:1.5b", host="http://localhost:11434")
+        assert exit_code is None
+
+    mock_client.chat_structured.assert_called_once()
+    call_kwargs = mock_client.chat_structured.call_args[1]
+    assert call_kwargs["response_format"] == StructuredResponse
+    captured = capsys.readouterr()
+    assert '"response": "Qin Shi Huang a unifié la Chine en 221 av. J.-C."' in captured.out
+
+
+def test_cli_structured_output_toggle_mode(capsys):
+    mock_client = MagicMock()
+    mock_client.chat_structured.return_value = StructuredResponse(
+        response="Réponse en mode structuré."
+    )
+    mock_client.chat_stream.return_value = iter(["Réponse", " en streaming."])
+
+    with patch(
+        "builtins.input",
+        side_effect=[
+            "/structured-output",  # Active le mode
+            "Premier message",
+            "/structured-output",  # Désactive le mode
+            "Deuxième message",
+            "/exit",
+        ],
+    ):
+        exit_code = run_session(mock_client, model="qwen2.5:1.5b", host="http://localhost:11434")
+        assert exit_code is None
+
+    mock_client.chat_structured.assert_called_once()
+    assert mock_client.chat_structured.call_args[1]["response_format"] == StructuredResponse
+    mock_client.chat_stream.assert_called_once()
+
+    captured = capsys.readouterr()
+    assert "Mode sortie structurée activé" in captured.out
+    assert '"response": "Réponse en mode structuré."' in captured.out
+    assert "Mode sortie structurée désactivé" in captured.out
+    assert "Réponse en streaming." in captured.out
