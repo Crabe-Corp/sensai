@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { AuthPage } from './components/AuthPage'
 import { Sidebar } from './components/Sidebar'
 import { ChatView } from './components/ChatView'
+import { RunSettingsPanel } from './components/RunSettingsPanel'
 import { SettingsModal } from './components/SettingsModal'
 import { ModelsModal } from './components/ModelsModal'
 import { WorkInviteModal } from './components/WorkInviteModal'
@@ -17,17 +18,20 @@ export function App() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [modelsOpen, setModelsOpen] = useState(false)
   const [inviteModalOpen, setInviteModalOpen] = useState(false)
+  const [runSettingsOpen, setRunSettingsOpen] = useState(false)
 
   // Données de discussion
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [activeConversation, setActiveConversation] = useState<Conversation | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
 
-  // Streaming & Tools
+  // Streaming, Modèles & Tools (Google AI Studio style)
   const [isStreaming, setIsStreaming] = useState(false)
   const [streamingText, setStreamingText] = useState('')
   const [currentModel, setCurrentModel] = useState('qwen3:0.6b')
+  const [modelsList, setModelsList] = useState<string[]>(['qwen3:0.6b'])
   const [activeTools, setActiveTools] = useState<string[]>(['kingdom_stats', 'dice_roller'])
+  const [systemInstruction, setSystemInstruction] = useState('')
 
   // WebSocket pour la collaboration temps réel (Mode Work)
   const wsRef = useRef<WebSocket | null>(null)
@@ -54,11 +58,13 @@ export function App() {
   // Chargement des conversations et configuration initiale
   const loadInitialData = async () => {
     try {
-      const [convs, cfg] = await Promise.all([
+      const [convs, cfg, modelsData] = await Promise.all([
         api.listConversations(),
         api.getModelConfig().catch(() => ({ model_name: 'qwen3:0.6b', temperature: 0.7, active_tools: ['kingdom_stats'] })),
+        api.getModels().catch(() => ({ models: ['qwen3:0.6b'], default: 'qwen3:0.6b' })),
       ])
       setConversations(convs)
+      setModelsList(modelsData.models || ['qwen3:0.6b'])
       setCurrentModel(cfg.model_name || 'qwen3:0.6b')
       setActiveTools(cfg.active_tools || ['kingdom_stats', 'dice_roller'])
 
@@ -90,7 +96,6 @@ export function App() {
       return
     }
 
-    // Protocole ws / wss selon le contexte
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const host = window.location.host
     const wsUrl = `${protocol}//${host}/api/ws/conversations/${activeConversation.id}`
@@ -103,7 +108,6 @@ export function App() {
         const data = JSON.parse(event.data)
         if (data.type === 'new_message' && data.message) {
           setMessages((prev) => {
-            // Éviter d'ajouter les doublons
             if (prev.some((m) => m.id === data.message.id)) {
               return prev
             }
@@ -141,7 +145,6 @@ export function App() {
       setMessages(fullConv.messages || [])
       setActiveTools(fullConv.tools_enabled || [])
       setCurrentModel(fullConv.model_name || 'qwen3:0.6b')
-      // Mettre à jour l'URL sans recharger la page
       window.history.replaceState(null, '', `?c=${id}`)
     } catch {
       // ignore
@@ -185,21 +188,21 @@ export function App() {
     }
   }
 
-  // Toggle d'outil en temps réel dans le chat
+  // Toggle d'outil en temps réel
   const handleToggleTool = (toolId: string) => {
     setActiveTools((prev) =>
       prev.includes(toolId) ? prev.filter((t) => t !== toolId) : [...prev, toolId]
     )
   }
 
-  // Envoi d'un message avec streaming progressif et mesure des tokens
+  // Envoi d'un message avec streaming progressif, instruction système et tokens
   const handleSendMessage = async (text: string) => {
     if (!activeConversation) return
 
     setIsStreaming(true)
     setStreamingText('')
 
-    // Ajout optimiste du message utilisateur dans l'interface
+    // Ajout optimiste du message utilisateur
     const optimisticUserMsg: Message = {
       id: `temp-${Date.now()}`,
       role: 'user',
@@ -220,18 +223,16 @@ export function App() {
         content: text,
         model: currentModel,
         tools_enabled: activeTools,
+        system_instruction: systemInstruction,
       },
-      // Callback pour chaque chunk progressif
       (chunk) => {
         accumulatedChunks += chunk
         setStreamingText(accumulatedChunks)
       },
-      // Callback de fin avec compte exact des tokens
       (doneData) => {
         setIsStreaming(false)
         setStreamingText('')
 
-        // Remplacer ou ajouter le message final de l'IA
         const finalAssistantMsg: Message = {
           id: doneData.message_id,
           role: 'assistant',
@@ -245,7 +246,6 @@ export function App() {
 
         setMessages((prev) => [...prev, finalAssistantMsg])
 
-        // Mise à jour des compteurs totaux de tokens de la conversation
         setActiveConversation((prev) =>
           prev ? { ...prev, total_tokens: doneData.conversation_total_tokens } : null
         )
@@ -265,7 +265,6 @@ export function App() {
           )
         )
       },
-      // Gestion d'erreur
       (err) => {
         setIsStreaming(false)
         setStreamingText('')
@@ -291,9 +290,9 @@ export function App() {
     setActiveConversation(null)
     setMessages([])
     setSidebarOpen(false)
+    setRunSettingsOpen(false)
   }
 
-  // Écran de chargement initial
   if (loadingAuth) {
     return (
       <div className="min-h-screen bg-neutral-950 flex items-center justify-center text-neutral-400 text-sm">
@@ -302,7 +301,6 @@ export function App() {
     )
   }
 
-  // Si non connecté, afficher la page d'inscription / connexion
   if (!user) {
     return (
       <AuthPage
@@ -332,18 +330,36 @@ export function App() {
         onLogout={handleLogout}
       />
 
-      {/* Zone centrale de discussion */}
-      <ChatView
-        conversation={activeConversation}
-        messages={messages}
-        isStreaming={isStreaming}
-        streamingText={streamingText}
-        activeTools={activeTools}
-        onToggleTool={handleToggleTool}
-        onSendMessage={handleSendMessage}
-        onToggleSidebar={() => setSidebarOpen((prev) => !prev)}
-        onOpenInviteModal={() => setInviteModalOpen(true)}
-      />
+      {/* Zone centrale de discussion + Panneau latéral Run settings (Google AI Studio style) */}
+      <div className="flex-1 flex h-full overflow-hidden">
+        <ChatView
+          conversation={activeConversation}
+          messages={messages}
+          isStreaming={isStreaming}
+          streamingText={streamingText}
+          activeTools={activeTools}
+          onToggleTool={handleToggleTool}
+          onSendMessage={handleSendMessage}
+          onToggleSidebar={() => setSidebarOpen((prev) => !prev)}
+          onOpenInviteModal={() => setInviteModalOpen(true)}
+          onToggleRunSettings={() => setRunSettingsOpen((prev) => !prev)}
+          isRunSettingsOpen={runSettingsOpen}
+        />
+
+        {/* Panneau latéral Run Settings façon Google AI Studio */}
+        <RunSettingsPanel
+          isOpen={runSettingsOpen}
+          onClose={() => setRunSettingsOpen(false)}
+          model={currentModel}
+          modelsList={modelsList}
+          onModelChange={(m) => setCurrentModel(m)}
+          activeTools={activeTools}
+          onToggleTool={handleToggleTool}
+          systemInstruction={systemInstruction}
+          onSystemInstructionChange={setSystemInstruction}
+          totalTokens={activeConversation?.total_tokens || 0}
+        />
+      </div>
 
       {/* Modal Paramètres & MCP */}
       <SettingsModal

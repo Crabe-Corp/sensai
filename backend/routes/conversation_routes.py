@@ -34,6 +34,7 @@ class ChatMessageRequest(BaseModel):
     content: str
     model: Optional[str] = None
     tools_enabled: Optional[List[str]] = None
+    system_instruction: Optional[str] = None
 
 
 def estimate_tokens(text: str) -> int:
@@ -301,7 +302,7 @@ async def chat_stream(
 
     # Préparation de l'historique pour Ollama
     history = []
-    system_prompt = (
+    system_prompt = req.system_instruction.strip() if req.system_instruction and req.system_instruction.strip() else (
         "Tu es SensAI, un assistant virtuel intelligent, clair et direct. "
         "Tu assistes les utilisateurs dans leurs stratégies, royaumes et requêtes."
     )

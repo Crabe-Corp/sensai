@@ -136,7 +136,7 @@ export const api = {
   // Progressive streaming chat
   async streamChat(
     conversationId: string,
-    params: { content: string; model?: string; tools_enabled?: string[] },
+    params: { content: string; model?: string; tools_enabled?: string[]; system_instruction?: string },
     onChunk: (chunk: string) => void,
     onDone: (data: { message_id: string; prompt_tokens: number; completion_tokens: number; total_tokens: number; conversation_total_tokens: number }) => void,
     onError: (err: Error) => void
