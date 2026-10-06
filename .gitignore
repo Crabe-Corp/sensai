@@ -14,6 +14,12 @@ env/
 .env.*
 !.env.example
 
+# Frontend
+node_modules/
+dist/
+dist-ssr/
+*.local
+
 # Testing & coverage
 .pytest_cache/
 .coverage
@@ -44,14 +50,6 @@ logs/
 Thumbs.db
 desktop.ini
 
-# Open WebUI (ignorer le cache lourd, les uploads et les fichiers temporaires SQLite)
-openwebui_data/cache/
-openwebui_data/uploads/
-openwebui_data/vector_db/
-*.db-shm
-*.db-wal
-
 # Exports de sessions générés
 exports/*.md
 !exports/.gitkeep
-webui.db

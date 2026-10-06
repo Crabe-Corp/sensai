@@ -1,22 +1,21 @@
 services:
   bdd:
-    image: mysql:8.4
+    image: postgres:16-alpine
     container_name: sensai-bdd
     ports:
-      - "${MYSQL_PORT:-3306}:3306"
+      - "${POSTGRES_PORT:-5432}:5432"
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-sensai_root_secret}
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-sensai}
-      MYSQL_USER: ${MYSQL_USER:-sensai_user}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-sensai_password}
+      POSTGRES_USER: ${POSTGRES_USER:-sensai_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sensai_password}
+      POSTGRES_DB: ${POSTGRES_DB:-sensai}
     volumes:
-      - bdd_data:/var/lib/mysql
+      - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: [ "CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-sensai_root_secret}" ]
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-sensai_user} -d ${POSTGRES_DB:-sensai}" ]
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 15s
+      start_period: 10s
     networks:
       - sensai-network
 
@@ -38,7 +37,7 @@ services:
     ports:
       - "${BACKEND_PORT:-8080}:8080"
     environment:
-      DATABASE_URL: ${DATABASE_URL:-mysql+pymysql://sensai_user:sensai_password@bdd:3306/sensai}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://${POSTGRES_USER:-sensai_user}:${POSTGRES_PASSWORD:-sensai_password}@bdd:5432/${POSTGRES_DB:-sensai}}
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ia:11434}
       PORT: ${BACKEND_PORT:-8080}
     volumes:
@@ -57,19 +56,8 @@ services:
       dockerfile: Dockerfile
     container_name: sensai-front
     ports:
-      - "${FRONT_PORT:-3000}:8080"
-    environment:
-      OLLAMA_BASE_URL: http://backend:8080
-      OLLAMA_API_URL: http://ia:11434
-      WEBUI_SECRET_KEY: ${WEBUI_SECRET_KEY:-sensai_openwebui_secret_token}
-      DEFAULT_MODELS: ${DEFAULT_MODELS:-qwen3:0.6b}
-      WEBUI_NAME: ${WEBUI_NAME:-"SensAI - 7 Grands Royaumes"}
-      DEFAULT_USER_ROLE: ${DEFAULT_USER_ROLE:-admin}
-      ENABLE_SIGNUP: ${ENABLE_SIGNUP:-true}
-    volumes:
-      - ./openwebui_data:/app/backend/data
+      - "${FRONT_PORT:-3000}:80"
     depends_on:
-      - ia
       - backend
     networks:
       - sensai-network
@@ -79,6 +67,5 @@ networks:
     driver: bridge
 
 volumes:
-  bdd_data:
+  postgres_data:
   ollama_data:
-
