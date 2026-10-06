@@ -155,3 +155,26 @@ def test_run_session_change_model_command():
     args, kwargs = mock_client.chat_stream.call_args
     assert kwargs["model"] == "mistral"
 
+
+def test_parse_arguments_tools_flag():
+    args = parse_arguments(["--tools"])
+    assert args.tools is True
+
+
+def test_run_session_tools_commands(capsys):
+    mock_client = MagicMock()
+    with patch("builtins.input", side_effect=["/tools", "/tools on", "/tools off", "/exit"]):
+        run_session(mock_client, model="qwen2.5:1.5b", host="http://localhost:11434")
+
+    captured = capsys.readouterr()
+    assert "Outils enregistrés" in captured.out
+    assert "get_kingdom_info" in captured.out
+    assert "Outils MCP activés" in captured.out
+    assert "Outils MCP désactivés" in captured.out
+
+
+def test_interfaces_cli_main_direct_import():
+    from src.interfaces.cli.main import main as iface_main, run_session as iface_run_session
+    assert callable(iface_main)
+    assert callable(iface_run_session)
+

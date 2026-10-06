@@ -5,12 +5,24 @@ from typing import Any, Literal, TypeVar
 import httpx
 from pydantic import BaseModel, Field, ValidationError
 
+from src.features.structured_output import (
+    StructuredOutputError,
+    chat_structured_flow,
+)
+
 T = TypeVar("T", bound=BaseModel)
 
 
 class ChatMessage(BaseModel):
-    role: Literal["system", "user", "assistant"]
-    content: str = Field(min_length=1)
+    role: Literal["system", "user", "assistant", "tool"]
+    content: str = ""
+    tool_calls: list[dict[str, Any]] | None = None
+
+    def model_dump_for_api(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {"role": self.role, "content": self.content}
+        if self.tool_calls is not None:
+            payload["tool_calls"] = self.tool_calls
+        return payload
 
 
 class OllamaError(Exception):
@@ -29,8 +41,13 @@ class OllamaAPIError(OllamaError):
     pass
 
 
-class OllamaStructuredOutputError(OllamaError):
-    def __init__(self, message: str, raw_response: str | None = None, validation_error: Exception | None = None) -> None:
+class OllamaStructuredOutputError(OllamaError, StructuredOutputError):
+    def __init__(
+        self,
+        message: str,
+        raw_response: str | None = None,
+        validation_error: Exception | None = None,
+    ) -> None:
         super().__init__(message)
         self.raw_response = raw_response
         self.validation_error = validation_error
@@ -60,9 +77,28 @@ class OllamaClient:
         except httpx.HTTPError as exc:
             raise OllamaAPIError(f"Erreur de récupération des modèles: {exc}") from exc
 
-    def chat_stream(self, model: str, messages: list[ChatMessage | dict[str, str]]) -> Iterator[str]:
-        formatted_messages = [m.model_dump() if isinstance(m, ChatMessage) else m for m in messages]
-        payload = {"model": model, "messages": formatted_messages, "stream": True}
+    def _format_messages(self, messages: list[ChatMessage | dict[str, Any]]) -> list[dict[str, Any]]:
+        formatted: list[dict[str, Any]] = []
+        for m in messages:
+            if isinstance(m, ChatMessage):
+                formatted.append(m.model_dump_for_api())
+            elif isinstance(m, dict):
+                formatted.append(m)
+        return formatted
+
+    def chat_stream_raw(
+        self,
+        model: str,
+        messages: list[ChatMessage | dict[str, Any]],
+        tools: list[dict[str, Any]] | None = None,
+        format: str | dict[str, Any] | None = None,
+    ) -> Iterator[dict[str, Any]]:
+        formatted_messages = self._format_messages(messages)
+        payload: dict[str, Any] = {"model": model, "messages": formatted_messages, "stream": True}
+        if tools:
+            payload["tools"] = tools
+        if format is not None:
+            payload["format"] = format
 
         try:
             with self._client.stream("POST", f"{self.base_url}/api/chat", json=payload) as response:
@@ -84,10 +120,7 @@ class OllamaClient:
                         if "not found" in err_msg.lower():
                             raise OllamaModelNotFoundError(f"Modèle '{model}' introuvable: {err_msg}")
                         raise OllamaAPIError(err_msg)
-
-                    chunk = data.get("message", {}).get("content", "")
-                    if chunk:
-                        yield chunk
+                    yield data
         except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
             raise OllamaConnectionError(
                 f"Serveur Ollama inaccessible sur {self.base_url}. Vérifiez qu'Ollama est bien démarré."
@@ -96,11 +129,30 @@ class OllamaClient:
             if not isinstance(exc, (OllamaError,)):
                 raise OllamaAPIError(f"Erreur de communication avec Ollama: {exc}") from exc
 
-    def chat(self, model: str, messages: list[ChatMessage | dict[str, str]], format: str | dict[str, Any] | None = None) -> dict[str, Any]:
-        formatted_messages = [m.model_dump() if isinstance(m, ChatMessage) else m for m in messages]
+    def chat_stream(
+        self,
+        model: str,
+        messages: list[ChatMessage | dict[str, Any]],
+        tools: list[dict[str, Any]] | None = None,
+    ) -> Iterator[str]:
+        for data in self.chat_stream_raw(model=model, messages=messages, tools=tools):
+            chunk = data.get("message", {}).get("content", "")
+            if chunk:
+                yield chunk
+
+    def chat(
+        self,
+        model: str,
+        messages: list[ChatMessage | dict[str, Any]],
+        format: str | dict[str, Any] | None = None,
+        tools: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        formatted_messages = self._format_messages(messages)
         payload: dict[str, Any] = {"model": model, "messages": formatted_messages, "stream": False}
         if format is not None:
             payload["format"] = format
+        if tools is not None:
+            payload["tools"] = tools
 
         try:
             response = self._client.post(f"{self.base_url}/api/chat", json=payload)
@@ -127,31 +179,27 @@ class OllamaClient:
             if not isinstance(exc, (OllamaError,)):
                 raise OllamaAPIError(f"Erreur de communication avec Ollama: {exc}") from exc
 
-    def chat_structured(self, model: str, messages: list[ChatMessage | dict[str, str]], response_format: type[T], max_retries: int = 1) -> T:
-        schema = response_format.model_json_schema()
-        current_messages: list[ChatMessage | dict[str, str]] = list(messages)
-        last_raw_content: str | None = None
-        last_error: Exception | None = None
-
-        for attempt in range(max_retries + 1):
-            response_data = self.chat(model=model, messages=current_messages, format=schema)
-            raw_content = response_data.get("message", {}).get("content", "")
-            last_raw_content = raw_content
-
-            try:
-                return response_format.model_validate_json(raw_content)
-            except (ValidationError, ValueError, json.JSONDecodeError) as exc:
-                last_error = exc
-                if attempt < max_retries:
-                    current_messages.append({"role": "assistant", "content": raw_content})
-                    current_messages.append(
-                        {"role": "user", "content": (f"La réponse précédente est invalide et ne respecte pas le schéma JSON attendu. " f"Erreur de validation : {exc}. " f"Veuillez corriger et renvoyer exclusivement l'objet JSON conforme au schéma."),}
-                    )
-        raise OllamaStructuredOutputError(
-            f"Échec de validation de la réponse structurée ({response_format.__name__}) après {max_retries + 1} tentative(s).",
-            raw_response=last_raw_content,
-            validation_error=last_error,
-        )
+    def chat_structured(
+        self,
+        model: str,
+        messages: list[ChatMessage | dict[str, Any]],
+        response_format: type[T],
+        max_retries: int = 1,
+    ) -> T:
+        try:
+            return chat_structured_flow(
+                client_chat_fn=self.chat,
+                model=model,
+                messages=messages,
+                response_format=response_format,
+                max_retries=max_retries,
+            )
+        except StructuredOutputError as exc:
+            raise OllamaStructuredOutputError(
+                str(exc),
+                raw_response=exc.raw_response,
+                validation_error=exc.validation_error,
+            ) from exc
 
     def close(self) -> None:
         self._client.close()
