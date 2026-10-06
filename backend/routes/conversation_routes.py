@@ -312,7 +312,11 @@ async def chat_stream(
 
     is_structured = bool(tools_to_use and ("structured_output" in tools_to_use or "Structured Output" in tools_to_use))
     if is_structured:
-        system_prompt += "\nRéponds au format JSON."
+        system_prompt += (
+            "\nFormat JSON impératif : Réponds sous la forme d'un objet JSON structuré avec des clés courtes et explicites "
+            "(ex: {\"response\": \"...\"} ou {\"message\": \"...\", \"data\": [...]}). "
+            "Ne mets jamais de phrase entière en guise de clé."
+        )
 
     history.append({"role": "system", "content": system_prompt})
 
