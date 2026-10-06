@@ -1,7 +1,12 @@
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
 import {
   Plus,
   MessageSquare,
@@ -13,9 +18,15 @@ import {
   LogOut,
   Search,
   Coins,
-  X
+  X,
+  Download,
+  FileText,
+  FileCode,
+  FileType,
 } from 'lucide-react'
-import type { Conversation, User as UserType } from '../types'
+import type { Conversation, Message, User as UserType } from '../types'
+import { api } from '../lib/api'
+import { exportConversation } from '../lib/exportConversation'
 
 interface SidebarProps {
   isOpen: boolean
@@ -23,6 +34,8 @@ interface SidebarProps {
   user: UserType
   conversations: Conversation[]
   activeId: string | null
+  activeConversation?: Conversation | null
+  messages?: Message[]
   onSelectConversation: (id: string) => void
   onNewConversation: (mode?: 'solo' | 'work') => void
   onDeleteConversation: (id: string, e: React.MouseEvent) => void
@@ -32,12 +45,32 @@ interface SidebarProps {
   onLogout: () => void
 }
 
+function triggerBlobDownload(blob: Blob, title: string, format: string) {
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  const safeTitle = (title || 'conversation')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9_-]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'conversation'
+  const dateStr = new Date().toISOString().slice(0, 10)
+  link.download = `${safeTitle}-${dateStr}.${format}`
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  URL.revokeObjectURL(url)
+}
+
 export function Sidebar({
   isOpen,
   onClose,
   user,
   conversations,
   activeId,
+  activeConversation,
+  messages = [],
   onSelectConversation,
   onNewConversation,
   onDeleteConversation,
@@ -48,6 +81,24 @@ export function Sidebar({
 }: SidebarProps) {
   const [filterMode, setFilterMode] = useState<'all' | 'solo' | 'work'>('all')
   const [search, setSearch] = useState('')
+  const [exportOpenId, setExportOpenId] = useState<string | null>(null)
+
+  const handleExport = useCallback(
+    async (conv: Conversation, format: 'md' | 'json' | 'txt') => {
+      try {
+        const targetConv = activeConversation && conv.id === activeConversation.id ? activeConversation : conv
+        if (conv.id === activeId && messages && messages.length > 0) {
+          exportConversation(targetConv, messages, format)
+        } else {
+          const blob = await api.exportConversation(conv.id, format)
+          triggerBlobDownload(blob, conv.title, format)
+        }
+      } catch (err) {
+        console.error('Erreur export conversation:', err)
+      }
+    },
+    [activeConversation, activeId, messages]
+  )
 
   const filteredConversations = conversations.filter((c) => {
     if (filterMode !== 'all' && c.mode !== filterMode) return false
@@ -168,7 +219,7 @@ export function Sidebar({
                       : 'border-transparent text-neutral-300 hover:bg-neutral-800/50 hover:text-white'
                   }`}
                 >
-                  <div className="flex items-center gap-2 min-w-0 pr-6">
+                  <div className="flex items-center gap-2 min-w-0 pr-2">
                     {conv.mode === 'work' ? (
                       <Users className="w-3.5 h-3.5 text-amber-400 shrink-0" />
                     ) : (
@@ -177,11 +228,80 @@ export function Sidebar({
                     <span className="truncate font-medium">{conv.title}</span>
                   </div>
 
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <span className="text-[10px] text-neutral-500 flex items-center gap-0.5">
+                  <div className="flex items-center gap-1 shrink-0">
+                    <span className="text-[10px] text-neutral-500 flex items-center gap-0.5 mr-0.5">
                       <Coins className="w-2.5 h-2.5 text-amber-500/80" />
                       {conv.total_tokens || 0}
                     </span>
+
+                    {/* Bouton Exporter la conversation */}
+                    <Popover
+                      open={exportOpenId === conv.id}
+                      onOpenChange={(isOpen) => setExportOpenId(isOpen ? conv.id : null)}
+                    >
+                      <PopoverTrigger
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setExportOpenId((prev) => (prev === conv.id ? null : conv.id))
+                        }}
+                        title="Exporter la conversation (.md, .json, .txt)"
+                        className={`p-1 hover:text-indigo-400 text-neutral-500 cursor-pointer rounded transition-all ${
+                          exportOpenId === conv.id
+                            ? 'opacity-100 text-indigo-400 bg-neutral-800'
+                            : 'opacity-0 group-hover:opacity-100'
+                        }`}
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                      </PopoverTrigger>
+                      <PopoverContent
+                        align="end"
+                        side="bottom"
+                        sideOffset={6}
+                        className="w-44 p-1.5 bg-neutral-900 border border-neutral-800 text-neutral-100 shadow-2xl rounded-xl space-y-1 z-50 text-xs"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <div className="px-2 py-1 text-[10px] font-semibold text-neutral-400 uppercase tracking-wider border-b border-neutral-800/80">
+                          Exporter en...
+                        </div>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleExport(conv, 'md')
+                            setExportOpenId(null)
+                          }}
+                          className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-neutral-300 hover:text-white hover:bg-neutral-800 transition-colors cursor-pointer text-left"
+                        >
+                          <FileText className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                          <span>Markdown (.md)</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleExport(conv, 'json')
+                            setExportOpenId(null)
+                          }}
+                          className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-neutral-300 hover:text-white hover:bg-neutral-800 transition-colors cursor-pointer text-left"
+                        >
+                          <FileCode className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                          <span>JSON (.json)</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleExport(conv, 'txt')
+                            setExportOpenId(null)
+                          }}
+                          className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-neutral-300 hover:text-white hover:bg-neutral-800 transition-colors cursor-pointer text-left"
+                        >
+                          <FileType className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                          <span>Texte (.txt)</span>
+                        </button>
+                      </PopoverContent>
+                    </Popover>
 
                     {/* Bouton suppression visible au survol */}
                     <button

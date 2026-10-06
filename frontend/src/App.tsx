@@ -367,6 +367,8 @@ export function App() {
         user={user}
         conversations={conversations}
         activeId={activeConversation?.id || null}
+        activeConversation={activeConversation}
+        messages={messages}
         onSelectConversation={selectConversation}
         onNewConversation={(mode) => handleNewConversation(mode)}
         onDeleteConversation={handleDeleteConversation}

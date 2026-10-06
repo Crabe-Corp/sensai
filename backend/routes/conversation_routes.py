@@ -4,7 +4,7 @@ import re
 import uuid
 from datetime import datetime
 from typing import List, Optional
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile, status
 from fastapi.responses import StreamingResponse
 import httpx
 from pydantic import BaseModel
@@ -207,6 +207,119 @@ def delete_conversation(
     db.delete(conv)
     db.commit()
     return {"success": True, "message": "Conversation supprimée"}
+
+
+@router.get("/{conversation_id}/export")
+def export_conversation_endpoint(
+    conversation_id: str,
+    format: str = "md",
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    conv = db.query(Conversation).filter(Conversation.id == conversation_id).first()
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversation introuvable")
+
+    if not check_user_access(conv, user, db):
+        raise HTTPException(status_code=403, detail="Accès non autorisé à cette conversation")
+
+    safe_title = "".join(c if c.isalnum() or c in ("-", "_") else "_" for c in conv.title).strip("_") or "conversation"
+    today = datetime.utcnow().strftime("%Y-%m-%d")
+
+    if format == "json":
+        data = {
+            "id": conv.id,
+            "title": conv.title,
+            "mode": conv.mode,
+            "model_name": conv.model_name,
+            "tools_enabled": json.loads(conv.tools_enabled) if conv.tools_enabled else [],
+            "total_tokens": sum(m.total_tokens for m in conv.messages),
+            "created_at": conv.created_at.isoformat() if conv.created_at else None,
+            "exported_at": datetime.utcnow().isoformat(),
+            "messages": [
+                {
+                    "id": m.id,
+                    "role": m.role,
+                    "sender_name": m.sender_name,
+                    "content": m.content,
+                    "prompt_tokens": m.prompt_tokens,
+                    "completion_tokens": m.completion_tokens,
+                    "total_tokens": m.total_tokens,
+                    "created_at": m.created_at.isoformat() if m.created_at else None,
+                }
+                for m in conv.messages
+            ]
+        }
+        content = json.dumps(data, indent=2, ensure_ascii=False)
+        filename = f"{safe_title}-{today}.json"
+        return Response(
+            content=content,
+            media_type="application/json; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+        )
+
+    elif format == "txt":
+        lines = [
+            "=" * 80,
+            "SENSAI - EXPORT DE CONVERSATION",
+            "=" * 80,
+            f"Titre       : {conv.title}",
+            f"Date        : {conv.created_at.strftime('%Y-%m-%d %H:%M:%S') if conv.created_at else ''}",
+            f"Mode        : {conv.mode}",
+            f"Modèle      : {conv.model_name}",
+            f"Total Tokens: {sum(m.total_tokens for m in conv.messages)}",
+            f"Messages    : {len(conv.messages)}",
+            "=" * 80,
+            ""
+        ]
+        for m in conv.messages:
+            sender = m.sender_name or ("Vous" if m.role == "user" else "SensAI")
+            date_str = m.created_at.strftime("%H:%M:%S") if m.created_at else ""
+            lines.append(f"[{sender}] ({date_str}):" if date_str else f"[{sender}]:")
+            lines.append(m.content)
+            lines.append("-" * 80)
+            lines.append("")
+        content = "\n".join(lines)
+        filename = f"{safe_title}-{today}.txt"
+        return Response(
+            content=content,
+            media_type="text/plain; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+        )
+
+    else:
+        lines = [
+            f"# {conv.title}",
+            "",
+            f"- **Date :** {conv.created_at.strftime('%Y-%m-%d %H:%M:%S') if conv.created_at else ''}",
+            f"- **Modèle :** {conv.model_name}",
+            f"- **Mode :** {'Collaboratif (Work)' if conv.mode == 'work' else 'Solo'}",
+            f"- **Total Tokens :** {sum(m.total_tokens for m in conv.messages)}",
+            f"- **Messages :** {len(conv.messages)}",
+            "",
+            "---",
+            ""
+        ]
+        for m in conv.messages:
+            sender = m.sender_name or ("Vous" if m.role == "user" else "SensAI")
+            date_str = m.created_at.strftime("%H:%M:%S") if m.created_at else ""
+            header = f"### {sender} ({date_str})" if date_str else f"### {sender}"
+            lines.append(header)
+            lines.append("")
+            lines.append(m.content)
+            lines.append("")
+            if m.total_tokens > 0:
+                lines.append(f"*Tokens : {m.total_tokens} (Prompt: {m.prompt_tokens}, Réponse: {m.completion_tokens})*")
+                lines.append("")
+            lines.append("---")
+            lines.append("")
+        content = "\n".join(lines)
+        filename = f"{safe_title}-{today}.md"
+        return Response(
+            content=content,
+            media_type="text/markdown; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+        )
 
 
 MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024  # 25 Mo

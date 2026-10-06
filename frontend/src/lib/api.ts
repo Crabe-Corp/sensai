@@ -101,6 +101,21 @@ export const api = {
     })
   },
 
+  async exportConversation(id: string, format: 'md' | 'json' | 'txt' = 'md'): Promise<Blob> {
+    const token = authStorage.getToken()
+    const headers = new Headers()
+    if (token) {
+      headers.set('Authorization', `Bearer ${token}`)
+    }
+    const response = await fetch(`/api/conversations/${id}/export?format=${format}`, {
+      headers,
+    })
+    if (!response.ok) {
+      throw new Error("Erreur lors de l'export de la conversation")
+    }
+    return response.blob()
+  },
+
   async uploadFile(conversationId: string, file: File): Promise<{ success: boolean; filename: string; size: number; content_type: string; is_text: boolean; preview?: string }> {
     const token = authStorage.getToken()
     const headers = new Headers()
