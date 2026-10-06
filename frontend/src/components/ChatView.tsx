@@ -23,9 +23,12 @@ import {
   Wrench,
   PanelRightOpen,
   PanelRightClose,
+  Paperclip,
+  AlertCircle,
   Plug,
 } from 'lucide-react'
-import type { Conversation, Message } from '../types'
+import type { Conversation, Message, AttachedFile } from '../types'
+import { parseUserMessage } from '../lib/messageParser'
 
 interface ChatViewProps {
   conversation: Conversation | null
@@ -34,7 +37,7 @@ interface ChatViewProps {
   streamingText: string
   activeTools: string[]
   onToggleTool: (toolId: string) => void
-  onSendMessage: (text: string) => void
+  onSendMessage: (text: string, files?: AttachedFile[]) => void
   onToggleSidebar: () => void
   onOpenInviteModal: () => void
   onToggleRunSettings: () => void
@@ -59,6 +62,15 @@ const TOOL_DEFINITIONS = [
     icon: <Plug className="w-3.5 h-3.5 text-sky-400" />,
   },
 ]
+
+const MAX_FILE_SIZE = 25 * 1024 * 1024 // 25 Mo
+const MAX_FILES_COUNT = 5 // 5 fichiers max
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} o`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} Ko`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} Mo`
+}
 
 function isJsonString(str: string): boolean {
   if (!str) return false
@@ -96,6 +108,10 @@ export function ChatView({
   isRunSettingsOpen,
 }: ChatViewProps) {
   const [inputText, setInputText] = useState('')
+  const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([])
+  const [fileError, setFileError] = useState<string | null>(null)
+  const [isDragging, setIsDragging] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   // Scroll automatique fluide vers le bas lors de l'arrivée progressive des tokens
@@ -103,10 +119,70 @@ export function ChatView({
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, streamingText, isStreaming])
 
+  const handleAddFiles = async (filesList: FileList | File[]) => {
+    setFileError(null)
+
+    const incoming = Array.from(filesList)
+    if (incoming.length === 0) return
+
+    if (attachedFiles.length >= MAX_FILES_COUNT) {
+      setFileError(`Vous avez déjà atteint la limite maximale de ${MAX_FILES_COUNT} fichiers.`)
+      return
+    }
+
+    const availableSlots = MAX_FILES_COUNT - attachedFiles.length
+    if (incoming.length > availableSlots) {
+      setFileError(
+        `Limite de ${MAX_FILES_COUNT} fichiers dépassée. Seuls les ${availableSlots} premier(s) fichier(s) ont été ajoutés.`
+      )
+    }
+
+    const filesToProcess = incoming.slice(0, availableSlots)
+    const newFiles: AttachedFile[] = []
+
+    for (const file of filesToProcess) {
+      if (file.size > MAX_FILE_SIZE) {
+        setFileError(
+          `Le fichier « ${file.name} » (${formatFileSize(file.size)}) dépasse la taille maximale autorisée de 25 Mo.`
+        )
+        continue
+      }
+
+      let textContent: string | undefined = undefined
+      const isText =
+        file.type.startsWith('text/') ||
+        file.type === 'application/json' ||
+        /\.(md|txt|json|csv|py|js|ts|tsx|jsx|html|css|yaml|yml|sh|sql|log)$/i.test(file.name)
+
+      if (isText) {
+        try {
+          textContent = await file.text()
+        } catch {
+          // ignore
+        }
+      }
+
+      newFiles.push({
+        id: `${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+        file,
+        name: file.name,
+        size: file.size,
+        type: file.type || 'application/octet-stream',
+        content: textContent,
+      })
+    }
+
+    if (newFiles.length > 0) {
+      setAttachedFiles((prev) => [...prev, ...newFiles])
+    }
+  }
+
   const handleSend = () => {
-    if (!inputText.trim() || isStreaming) return
-    onSendMessage(inputText)
+    if ((!inputText.trim() && attachedFiles.length === 0) || isStreaming) return
+    onSendMessage(inputText, attachedFiles)
     setInputText('')
+    setAttachedFiles([])
+    setFileError(null)
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -253,6 +329,10 @@ export function ChatView({
           ) : (
             messages.map((msg) => {
               const isUser = msg.role === 'user'
+              const { cleanContent: displayContent, attachments: displayAttachments } = isUser
+                ? parseUserMessage(msg.content, msg.attachments)
+                : { cleanContent: msg.content, attachments: msg.attachments || [] }
+
               return (
                 <div
                   key={msg.id}
@@ -278,13 +358,39 @@ export function ChatView({
                           : 'bg-neutral-900 border border-neutral-800 text-neutral-100 rounded-bl-xs'
                       }`}
                     >
-                      {!isUser && isJsonString(msg.content) ? (
-                        <pre className="font-mono text-xs overflow-x-auto text-indigo-300 p-1">
-                          {formatJson(msg.content)}
-                        </pre>
-                      ) : (
-                        msg.content
+                      {/* Badges des fichiers joints */}
+                      {displayAttachments && displayAttachments.length > 0 && (
+                        <div className={`flex flex-wrap gap-1.5 ${displayContent ? 'mb-2.5' : ''}`}>
+                          {displayAttachments.map((att, idx) => (
+                            <div
+                              key={idx}
+                              className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium border ${
+                                isUser
+                                  ? 'bg-indigo-700/80 border-indigo-500/60 text-white'
+                                  : 'bg-neutral-800 border-neutral-700 text-neutral-200'
+                              }`}
+                            >
+                              <Paperclip className="w-3 h-3 text-indigo-300 shrink-0" />
+                              <span className="truncate max-w-44 font-mono">{att.name}</span>
+                              {(att.sizeStr || (att.size !== undefined && att.size > 0)) && (
+                                <span className="text-[10px] opacity-75 font-mono">
+                                  ({att.sizeStr || (att.size ? formatFileSize(att.size) : '')})
+                                </span>
+                              )}
+                            </div>
+                          ))}
+                        </div>
                       )}
+
+                      {displayContent ? (
+                        !isUser && isJsonString(displayContent) ? (
+                          <pre className="font-mono text-xs overflow-x-auto text-indigo-300 p-1">
+                            {formatJson(displayContent)}
+                          </pre>
+                        ) : (
+                          displayContent
+                        )
+                      ) : null}
                     </div>
 
                     {/* Badge de coût en tokens pour chaque réponse de l'IA */}
@@ -342,14 +448,86 @@ export function ChatView({
       {/* Zone inférieure : Prompt Box Inspirée de Google AI Studio */}
       <footer className="p-4 sm:p-6 pt-0 bg-transparent shrink-0">
         <div className="max-w-4xl w-full mx-auto">
-          <div className="relative rounded-2xl border border-neutral-800 bg-neutral-900/90 shadow-2xl backdrop-blur-md transition-all focus-within:border-neutral-700 focus-within:ring-1 focus-within:ring-indigo-500/20">
+          <div
+            onDragOver={(e) => {
+              e.preventDefault()
+              setIsDragging(true)
+            }}
+            onDragLeave={() => setIsDragging(false)}
+            onDrop={(e) => {
+              e.preventDefault()
+              setIsDragging(false)
+              if (e.dataTransfer.files) handleAddFiles(e.dataTransfer.files)
+            }}
+            className={`relative rounded-2xl border bg-neutral-900/90 shadow-2xl backdrop-blur-md transition-all focus-within:border-neutral-700 focus-within:ring-1 focus-within:ring-indigo-500/20 ${
+              isDragging ? 'border-indigo-500 ring-2 ring-indigo-500/40 bg-indigo-950/20' : 'border-neutral-800'
+            }`}
+          >
+            {/* Overlay visuel lors du glisser-déposer */}
+            {isDragging && (
+              <div className="absolute inset-0 z-30 bg-neutral-900/95 backdrop-blur-xs rounded-2xl border-2 border-dashed border-indigo-500 flex flex-col items-center justify-center pointer-events-none text-indigo-300 text-xs gap-1.5">
+                <Paperclip className="w-6 h-6 animate-bounce text-indigo-400" />
+                <span className="font-semibold text-white">Déposez vos fichiers ici</span>
+                <span className="text-[11px] text-neutral-400">Taille maximale : 25 Mo par fichier (5 fichiers max)</span>
+              </div>
+            )}
+
+            {/* Bannière d'erreur si un fichier dépasse 25 Mo */}
+            {fileError && (
+              <div className="mx-3.5 mt-3 p-2.5 rounded-lg bg-red-950/80 border border-red-800 text-red-200 text-xs flex items-center justify-between gap-2 animate-fade-in">
+                <div className="flex items-center gap-2 min-w-0">
+                  <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+                  <span className="truncate">{fileError}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setFileError(null)}
+                  className="p-1 hover:text-white cursor-pointer rounded-xs"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+
+            {/* Chips des fichiers joints en attente d'envoi */}
+            {attachedFiles.length > 0 && (
+              <div className="flex flex-wrap gap-2 px-3.5 pt-3 pb-1">
+                {attachedFiles.map((af) => (
+                  <div
+                    key={af.id}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-neutral-800/90 border border-neutral-700/80 text-xs text-neutral-200 shadow-xs animate-fade-in"
+                  >
+                    <Paperclip className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                    <span className="font-medium truncate max-w-44" title={af.name}>
+                      {af.name}
+                    </span>
+                    <span className="text-[10px] text-neutral-400 font-mono">
+                      ({formatFileSize(af.size)})
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setAttachedFiles((prev) => prev.filter((f) => f.id !== af.id))}
+                      className="p-0.5 rounded-sm hover:bg-neutral-700 text-neutral-400 hover:text-white transition-colors cursor-pointer ml-1"
+                      title="Retirer ce fichier"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
             {/* Zone de texte du prompt */}
             <div className="p-3.5 pb-2">
               <Textarea
                 value={inputText}
                 onChange={(e) => setInputText(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="Tapez un prompt pour discuter avec SensAI ou invoquer un outil..."
+                placeholder={
+                  attachedFiles.length > 0
+                    ? "Posez une question sur le(s) fichier(s) joint(s) ou ajoutez vos instructions..."
+                    : "Tapez un prompt pour discuter avec SensAI ou invoquer un outil..."
+                }
                 rows={1}
                 disabled={isStreaming}
                 className="border-0 focus-visible:ring-0 resize-none min-h-[50px] max-h-36 bg-transparent text-sm text-neutral-100 placeholder:text-neutral-500 p-0 focus:outline-none"
@@ -358,8 +536,41 @@ export function ChatView({
 
             {/* Barre d'outils interne façon Google AI Studio */}
             <div className="flex items-center justify-between px-3 py-2 border-t border-neutral-800/70 bg-neutral-950/40 rounded-b-2xl gap-2">
-              {/* À gauche : Bouton "Tools" avec Popover + Pills d'outils actifs */}
+              {/* À gauche : Bouton "Tools" + Bouton "Joindre" + Pills d'outils actifs */}
               <div className="flex items-center gap-2 overflow-x-auto min-w-0 pr-2">
+                {/* Input fichier caché (max 25 Mo) */}
+                <input
+                  type="file"
+                  multiple
+                  ref={fileInputRef}
+                  onChange={(e) => {
+                    if (e.target.files) handleAddFiles(e.target.files)
+                    e.target.value = ''
+                  }}
+                  className="hidden"
+                />
+
+                {/* Bouton Joindre un fichier */}
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={attachedFiles.length >= MAX_FILES_COUNT}
+                  title={
+                    attachedFiles.length >= MAX_FILES_COUNT
+                      ? `Limite de ${MAX_FILES_COUNT} fichiers atteinte`
+                      : `Ajouter des fichiers (max 25 Mo par fichier, ${MAX_FILES_COUNT} max)`
+                  }
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-neutral-300 hover:text-white bg-neutral-800/90 hover:bg-neutral-800 border border-neutral-700/70 transition-colors cursor-pointer shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <Paperclip className="w-3.5 h-3.5 text-indigo-400" />
+                  <span>Joindre</span>
+                  {attachedFiles.length > 0 && (
+                    <span className="w-auto px-1.5 h-4 rounded-full bg-indigo-600 text-[10px] font-bold text-white flex items-center justify-center font-mono">
+                      {attachedFiles.length}/{MAX_FILES_COUNT}
+                    </span>
+                  )}
+                </button>
+
                 {/* Popover Bouton Tools (style Google AI Studio) */}
                 <Popover>
                   <PopoverTrigger
@@ -461,7 +672,7 @@ export function ChatView({
               <div className="flex items-center gap-2 shrink-0">
                 <Button
                   onClick={handleSend}
-                  disabled={!inputText.trim() || isStreaming}
+                  disabled={(!inputText.trim() && attachedFiles.length === 0) || isStreaming}
                   size="sm"
                   className="h-8 px-3.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg gap-1.5 font-medium text-xs cursor-pointer disabled:opacity-50 transition-all shadow-md"
                 >

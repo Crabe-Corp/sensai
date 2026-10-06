@@ -24,6 +24,12 @@ export interface Conversation {
   members?: ConversationMember[]
 }
 
+export interface MessageAttachment {
+  name: string
+  size?: number
+  sizeStr?: string
+}
+
 export interface Message {
   id: string
   role: 'user' | 'assistant' | 'system' | 'tool'
@@ -33,6 +39,16 @@ export interface Message {
   completion_tokens: number
   total_tokens: number
   created_at?: string
+  attachments?: MessageAttachment[]
+}
+
+export interface AttachedFile {
+  id: string
+  file: File
+  name: string
+  size: number
+  type: string
+  content?: string
 }
 
 export interface ToolInfo {

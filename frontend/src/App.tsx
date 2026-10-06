@@ -7,7 +7,7 @@ import { SettingsModal } from './components/SettingsModal'
 import { ModelsModal } from './components/ModelsModal'
 import { WorkInviteModal } from './components/WorkInviteModal'
 import { api, authStorage } from './lib/api'
-import type { Conversation, Message, User } from './types'
+import type { Conversation, Message, User, AttachedFile } from './types'
 
 export function App() {
   const [user, setUser] = useState<User | null>(null)
@@ -211,11 +211,40 @@ export function App() {
   }
 
   // Envoi d'un message avec streaming progressif, instruction système et tokens
-  const handleSendMessage = async (text: string) => {
+  const handleSendMessage = async (text: string, files: AttachedFile[] = []) => {
     if (!activeConversation) return
 
     setIsStreaming(true)
     setStreamingText('')
+
+    // Téléverser les fichiers en tâche de fond sur le serveur
+    for (const f of files) {
+      api.uploadFile(activeConversation.id, f.file).catch(() => {})
+    }
+
+    // Préparer le contenu avec les fichiers joints pour l'IA
+    let payloadContent = text
+    if (files.length > 0) {
+      const formatBytes = (bytes: number) => {
+        if (bytes < 1024) return `${bytes} o`
+        if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} Ko`
+        return `${(bytes / (1024 * 1024)).toFixed(1)} Mo`
+      }
+
+      const filesContext = files
+        .map((f) => {
+          if (f.content) {
+            return `[Fichier joint : ${f.name} (${formatBytes(f.size)})]\n--- Début du contenu de ${f.name} ---\n${f.content}\n--- Fin du contenu de ${f.name} ---`
+          } else {
+            return `[Fichier joint : ${f.name} (${formatBytes(f.size)})]`
+          }
+        })
+        .join('\n\n')
+
+      payloadContent = text.trim()
+        ? `${filesContext}\n\n${text}`
+        : filesContext
+    }
 
     // Ajout optimiste du message utilisateur
     const optimisticUserMsg: Message = {
@@ -227,6 +256,7 @@ export function App() {
       completion_tokens: 0,
       total_tokens: 0,
       created_at: new Date().toISOString(),
+      attachments: files.map((f) => ({ name: f.name, size: f.size })),
     }
     setMessages((prev) => [...prev, optimisticUserMsg])
 
@@ -235,7 +265,7 @@ export function App() {
     await api.streamChat(
       activeConversation.id,
       {
-        content: text,
+        content: payloadContent,
         model: currentModel,
         tools_enabled: activeTools,
         system_instruction: systemInstruction,
@@ -273,7 +303,8 @@ export function App() {
                   total_tokens: doneData.conversation_total_tokens,
                   title:
                     c.title === 'Nouvelle conversation'
-                      ? text.slice(0, 35) + (text.length > 35 ? '...' : '')
+                      ? (text.trim() || files[0]?.name || 'Discussion').slice(0, 35) +
+                        ((text.trim() || files[0]?.name || '').length > 35 ? '...' : '')
                       : c.title,
                 }
               : c

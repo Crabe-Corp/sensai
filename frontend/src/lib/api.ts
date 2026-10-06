@@ -101,6 +101,35 @@ export const api = {
     })
   },
 
+  async uploadFile(conversationId: string, file: File): Promise<{ success: boolean; filename: string; size: number; content_type: string; is_text: boolean; preview?: string }> {
+    const token = authStorage.getToken()
+    const headers = new Headers()
+    if (token) {
+      headers.set('Authorization', `Bearer ${token}`)
+    }
+    const formData = new FormData()
+    formData.append('file', file)
+
+    const response = await fetch(`/api/conversations/${conversationId}/upload`, {
+      method: 'POST',
+      headers,
+      body: formData,
+    })
+
+    if (!response.ok) {
+      let detail = 'Erreur lors du téléversement'
+      try {
+        const err = await response.json()
+        detail = err.detail || detail
+      } catch {
+        // ignore
+      }
+      throw new Error(detail)
+    }
+
+    return response.json()
+  },
+
   // Models & Tools
   async getModels(): Promise<{ models: string[]; default: string }> {
     return apiFetch<{ models: string[]; default: string }>('/api/models')

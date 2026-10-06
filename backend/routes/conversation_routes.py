@@ -1,9 +1,10 @@
 import json
 import os
+import re
 import uuid
 from datetime import datetime
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from fastapi.responses import StreamingResponse
 import httpx
 from pydantic import BaseModel
@@ -208,6 +209,55 @@ def delete_conversation(
     return {"success": True, "message": "Conversation supprimée"}
 
 
+MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024  # 25 Mo
+
+
+@router.post("/{conversation_id}/upload")
+async def upload_file_to_conversation(
+    conversation_id: str,
+    file: UploadFile = File(...),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    conv = db.query(Conversation).filter(Conversation.id == conversation_id).first()
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversation introuvable")
+
+    if not check_user_access(conv, user, db):
+        raise HTTPException(status_code=403, detail="Accès non autorisé à cette conversation")
+
+    content = await file.read()
+    if len(content) > MAX_FILE_SIZE_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail="Le fichier dépasse la taille maximale autorisée de 25 Mo."
+        )
+
+    upload_dir = os.path.join(os.getcwd(), "uploads", conversation_id)
+    os.makedirs(upload_dir, exist_ok=True)
+
+    safe_filename = "".join(c for c in (file.filename or "fichier") if c.isalnum() or c in (".", "-", "_")).strip() or "fichier"
+    file_path = os.path.join(upload_dir, safe_filename)
+
+    with open(file_path, "wb") as f:
+        f.write(content)
+
+    text_content = None
+    try:
+        text_content = content.decode("utf-8")
+    except UnicodeDecodeError:
+        pass
+
+    return {
+        "success": True,
+        "filename": safe_filename,
+        "size": len(content),
+        "content_type": file.content_type,
+        "is_text": text_content is not None,
+        "preview": text_content[:500] if text_content else None,
+    }
+
+
 @router.post("/{conversation_id}/members")
 def add_member_to_work_conv(
     conversation_id: str,
@@ -285,7 +335,19 @@ async def chat_stream(
     conv.updated_at = datetime.utcnow()
     # Si premier message, nommer la conversation
     if conv.title == "Nouvelle conversation":
-        conv.title = req.content[:35] + ("..." if len(req.content) > 35 else "")
+        clean_prompt = re.sub(
+            r'\[Fichier joint\s*:\s*[^\]\(\)]+?(?: \([^)]+\))?\](?:\s*--- Début du contenu de [^\n\r]+ ---\s*[\s\S]*?\s*--- Fin du contenu de [^\n\r]+ ---)?',
+            '',
+            req.content
+        ).strip()
+        if clean_prompt:
+            conv.title = clean_prompt[:35] + ("..." if len(clean_prompt) > 35 else "")
+        else:
+            file_match = re.search(r'\[Fichier joint\s*:\s*([^\]\(\)]+?)', req.content)
+            if file_match:
+                conv.title = file_match.group(1).strip()[:35]
+            else:
+                conv.title = req.content[:35] + ("..." if len(req.content) > 35 else "")
 
     db.commit()
 
