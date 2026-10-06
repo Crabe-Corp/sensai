@@ -1,104 +1,378 @@
-import { useState } from 'react'
-import { Button } from '@/components/ui/button'
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import { Sparkles, Database, Layers, CheckCircle2, Heart } from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
+import { AuthPage } from './components/AuthPage'
+import { Sidebar } from './components/Sidebar'
+import { ChatView } from './components/ChatView'
+import { SettingsModal } from './components/SettingsModal'
+import { ModelsModal } from './components/ModelsModal'
+import { WorkInviteModal } from './components/WorkInviteModal'
+import { api, authStorage } from './lib/api'
+import type { Conversation, Message, User } from './types'
 
 export function App() {
-  const [likes, setLikes] = useState(0)
+  const [user, setUser] = useState<User | null>(null)
+  const [loadingAuth, setLoadingAuth] = useState(true)
+
+  // Navigation & Modales
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [modelsOpen, setModelsOpen] = useState(false)
+  const [inviteModalOpen, setInviteModalOpen] = useState(false)
+
+  // Données de discussion
+  const [conversations, setConversations] = useState<Conversation[]>([])
+  const [activeConversation, setActiveConversation] = useState<Conversation | null>(null)
+  const [messages, setMessages] = useState<Message[]>([])
+
+  // Streaming & Tools
+  const [isStreaming, setIsStreaming] = useState(false)
+  const [streamingText, setStreamingText] = useState('')
+  const [currentModel, setCurrentModel] = useState('qwen3:0.6b')
+  const [activeTools, setActiveTools] = useState<string[]>(['kingdom_stats', 'dice_roller'])
+
+  // WebSocket pour la collaboration temps réel (Mode Work)
+  const wsRef = useRef<WebSocket | null>(null)
+
+  // Initialisation de la session au chargement
+  useEffect(() => {
+    const initAuth = async () => {
+      const token = authStorage.getToken()
+      if (token) {
+        try {
+          const me = await api.getMe()
+          setUser(me)
+          await loadInitialData()
+        } catch {
+          authStorage.clearToken()
+          setUser(null)
+        }
+      }
+      setLoadingAuth(false)
+    }
+    initAuth()
+  }, [])
+
+  // Chargement des conversations et configuration initiale
+  const loadInitialData = async () => {
+    try {
+      const [convs, cfg] = await Promise.all([
+        api.listConversations(),
+        api.getModelConfig().catch(() => ({ model_name: 'qwen3:0.6b', temperature: 0.7, active_tools: ['kingdom_stats'] })),
+      ])
+      setConversations(convs)
+      setCurrentModel(cfg.model_name || 'qwen3:0.6b')
+      setActiveTools(cfg.active_tools || ['kingdom_stats', 'dice_roller'])
+
+      // Vérifier si une URL spécifique contient un ID de conversation (?c=...)
+      const urlParams = new URLSearchParams(window.location.search)
+      const targetId = urlParams.get('c')
+      if (targetId) {
+        const found = convs.find((c) => c.id === targetId)
+        if (found) {
+          await selectConversation(targetId)
+          return
+        }
+      }
+
+      // Règle demandée : à chaque connexion, on ouvre une nouvelle conversation
+      await handleNewConversation('solo', cfg.model_name, cfg.active_tools)
+    } catch {
+      // ignore
+    }
+  }
+
+  // Connexion WebSocket pour le mode "Work" (collaboration temps réel)
+  useEffect(() => {
+    if (!activeConversation || activeConversation.mode !== 'work') {
+      if (wsRef.current) {
+        wsRef.current.close()
+        wsRef.current = null
+      }
+      return
+    }
+
+    // Protocole ws / wss selon le contexte
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    const host = window.location.host
+    const wsUrl = `${protocol}//${host}/api/ws/conversations/${activeConversation.id}`
+
+    const ws = new WebSocket(wsUrl)
+    wsRef.current = ws
+
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data)
+        if (data.type === 'new_message' && data.message) {
+          setMessages((prev) => {
+            // Éviter d'ajouter les doublons
+            if (prev.some((m) => m.id === data.message.id)) {
+              return prev
+            }
+            return [...prev, data.message]
+          })
+
+          if (data.message.conversation_total_tokens !== undefined) {
+            setActiveConversation((prev) =>
+              prev ? { ...prev, total_tokens: data.message.conversation_total_tokens } : null
+            )
+            setConversations((prev) =>
+              prev.map((c) =>
+                c.id === activeConversation.id
+                  ? { ...c, total_tokens: data.message.conversation_total_tokens }
+                  : c
+              )
+            )
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    return () => {
+      ws.close()
+    }
+  }, [activeConversation?.id, activeConversation?.mode])
+
+  // Sélection d'une conversation
+  const selectConversation = async (id: string) => {
+    try {
+      const fullConv = await api.getConversation(id)
+      setActiveConversation(fullConv)
+      setMessages(fullConv.messages || [])
+      setActiveTools(fullConv.tools_enabled || [])
+      setCurrentModel(fullConv.model_name || 'qwen3:0.6b')
+      // Mettre à jour l'URL sans recharger la page
+      window.history.replaceState(null, '', `?c=${id}`)
+    } catch {
+      // ignore
+    }
+  }
+
+  // Création d'une nouvelle conversation
+  const handleNewConversation = async (
+    mode: 'solo' | 'work' = 'solo',
+    model = currentModel,
+    tools = activeTools
+  ) => {
+    try {
+      const newConv = await api.createConversation({
+        title: mode === 'work' ? 'Session Collaborative' : 'Nouvelle conversation',
+        mode,
+        model_name: model,
+        tools_enabled: tools,
+      })
+      setConversations((prev) => [newConv, ...prev])
+      setActiveConversation(newConv)
+      setMessages([])
+      window.history.replaceState(null, '', `?c=${newConv.id}`)
+    } catch {
+      // ignore
+    }
+  }
+
+  // Suppression d'une conversation
+  const handleDeleteConversation = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (!confirm('Supprimer cette conversation ?')) return
+    try {
+      await api.deleteConversation(id)
+      setConversations((prev) => prev.filter((c) => c.id !== id))
+      if (activeConversation?.id === id) {
+        handleNewConversation('solo')
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  // Toggle d'outil en temps réel dans le chat
+  const handleToggleTool = (toolId: string) => {
+    setActiveTools((prev) =>
+      prev.includes(toolId) ? prev.filter((t) => t !== toolId) : [...prev, toolId]
+    )
+  }
+
+  // Envoi d'un message avec streaming progressif et mesure des tokens
+  const handleSendMessage = async (text: string) => {
+    if (!activeConversation) return
+
+    setIsStreaming(true)
+    setStreamingText('')
+
+    // Ajout optimiste du message utilisateur dans l'interface
+    const optimisticUserMsg: Message = {
+      id: `temp-${Date.now()}`,
+      role: 'user',
+      sender_name: user?.username || 'Vous',
+      content: text,
+      prompt_tokens: 0,
+      completion_tokens: 0,
+      total_tokens: 0,
+      created_at: new Date().toISOString(),
+    }
+    setMessages((prev) => [...prev, optimisticUserMsg])
+
+    let accumulatedChunks = ''
+
+    await api.streamChat(
+      activeConversation.id,
+      {
+        content: text,
+        model: currentModel,
+        tools_enabled: activeTools,
+      },
+      // Callback pour chaque chunk progressif
+      (chunk) => {
+        accumulatedChunks += chunk
+        setStreamingText(accumulatedChunks)
+      },
+      // Callback de fin avec compte exact des tokens
+      (doneData) => {
+        setIsStreaming(false)
+        setStreamingText('')
+
+        // Remplacer ou ajouter le message final de l'IA
+        const finalAssistantMsg: Message = {
+          id: doneData.message_id,
+          role: 'assistant',
+          sender_name: 'SensAI',
+          content: accumulatedChunks,
+          prompt_tokens: doneData.prompt_tokens,
+          completion_tokens: doneData.completion_tokens,
+          total_tokens: doneData.total_tokens,
+          created_at: new Date().toISOString(),
+        }
+
+        setMessages((prev) => [...prev, finalAssistantMsg])
+
+        // Mise à jour des compteurs totaux de tokens de la conversation
+        setActiveConversation((prev) =>
+          prev ? { ...prev, total_tokens: doneData.conversation_total_tokens } : null
+        )
+
+        setConversations((prev) =>
+          prev.map((c) =>
+            c.id === activeConversation.id
+              ? {
+                  ...c,
+                  total_tokens: doneData.conversation_total_tokens,
+                  title:
+                    c.title === 'Nouvelle conversation'
+                      ? text.slice(0, 35) + (text.length > 35 ? '...' : '')
+                      : c.title,
+                }
+              : c
+          )
+        )
+      },
+      // Gestion d'erreur
+      (err) => {
+        setIsStreaming(false)
+        setStreamingText('')
+        const errorMsg: Message = {
+          id: `err-${Date.now()}`,
+          role: 'assistant',
+          sender_name: 'SensAI',
+          content: `Erreur lors de la réponse : ${err.message}`,
+          prompt_tokens: 0,
+          completion_tokens: 0,
+          total_tokens: 0,
+          created_at: new Date().toISOString(),
+        }
+        setMessages((prev) => [...prev, errorMsg])
+      }
+    )
+  }
+
+  // Déconnexion
+  const handleLogout = () => {
+    authStorage.clearToken()
+    setUser(null)
+    setActiveConversation(null)
+    setMessages([])
+    setSidebarOpen(false)
+  }
+
+  // Écran de chargement initial
+  if (loadingAuth) {
+    return (
+      <div className="min-h-screen bg-neutral-950 flex items-center justify-center text-neutral-400 text-sm">
+        Chargement de SensAI...
+      </div>
+    )
+  }
+
+  // Si non connecté, afficher la page d'inscription / connexion
+  if (!user) {
+    return (
+      <AuthPage
+        onSuccess={(loggedUser) => {
+          setUser(loggedUser)
+          loadInitialData()
+        }}
+      />
+    )
+  }
 
   return (
-    <main className="min-h-screen bg-neutral-950 text-neutral-100 flex flex-col items-center justify-center p-6 antialiased selection:bg-neutral-800 selection:text-white">
-      <div className="w-full max-w-2xl space-y-8">
-        <header className="text-center space-y-3">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-neutral-800 bg-neutral-900/60 text-xs text-neutral-400">
-            <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-            <span>Frontend SensAI v2</span>
-          </div>
-          <h1 className="text-4xl sm:text-5xl font-extrabold tracking-tight bg-gradient-to-br from-white via-neutral-200 to-neutral-400 bg-clip-text text-transparent">
-            Hello World !
-          </h1>
-          <p className="text-neutral-400 text-base sm:text-lg max-w-md mx-auto">
-            Bienvenue sur la nouvelle interface moderne de SensAI propulsée par React &amp; shadcn/ui.
-          </p>
-        </header>
+    <div className="flex h-screen w-screen overflow-hidden bg-neutral-950 font-sans">
+      {/* Menu Hamburger latéral / Tiroir */}
+      <Sidebar
+        isOpen={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+        user={user}
+        conversations={conversations}
+        activeId={activeConversation?.id || null}
+        onSelectConversation={selectConversation}
+        onNewConversation={(mode) => handleNewConversation(mode)}
+        onDeleteConversation={handleDeleteConversation}
+        onOpenSettings={() => setSettingsOpen(true)}
+        onOpenModels={() => setModelsOpen(true)}
+        onOpenMcp={() => setSettingsOpen(true)}
+        onLogout={handleLogout}
+      />
 
-        <Card className="bg-neutral-900/80 border-neutral-800 shadow-2xl backdrop-blur-sm text-neutral-100">
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-xl font-semibold flex items-center gap-2">
-                <Layers className="w-5 h-5 text-indigo-400" />
-                Stack Technique
-              </CardTitle>
-              <Badge variant="secondary" className="bg-emerald-950/60 text-emerald-400 border border-emerald-800/60">
-                Opérationnel
-              </Badge>
-            </div>
-            <CardDescription className="text-neutral-400">
-              L'ancienne interface WebUI a été retirée au profit de cette architecture légère et personnalisable.
-            </CardDescription>
-          </CardHeader>
+      {/* Zone centrale de discussion */}
+      <ChatView
+        conversation={activeConversation}
+        messages={messages}
+        isStreaming={isStreaming}
+        streamingText={streamingText}
+        activeTools={activeTools}
+        onToggleTool={handleToggleTool}
+        onSendMessage={handleSendMessage}
+        onToggleSidebar={() => setSidebarOpen((prev) => !prev)}
+        onOpenInviteModal={() => setInviteModalOpen(true)}
+      />
 
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
-              <div className="flex items-start gap-3 p-3 rounded-lg border border-neutral-800 bg-neutral-950/40">
-                <CheckCircle2 className="w-4 h-4 text-emerald-400 mt-0.5 shrink-0" />
-                <div>
-                  <div className="font-medium text-neutral-200">React + Vite</div>
-                  <div className="text-xs text-neutral-400">TypeScript &amp; Fast Refresh</div>
-                </div>
-              </div>
+      {/* Modal Paramètres & MCP */}
+      <SettingsModal
+        isOpen={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        user={user}
+        onUserUpdated={(updated) => setUser(updated)}
+      />
 
-              <div className="flex items-start gap-3 p-3 rounded-lg border border-neutral-800 bg-neutral-950/40">
-                <CheckCircle2 className="w-4 h-4 text-emerald-400 mt-0.5 shrink-0" />
-                <div>
-                  <div className="font-medium text-neutral-200">ui.shadcn.com</div>
-                  <div className="text-xs text-neutral-400">Composants accessibles &amp; Tailwind v4</div>
-                </div>
-              </div>
+      {/* Modal Modèles & Tools faits main */}
+      <ModelsModal
+        isOpen={modelsOpen}
+        onClose={() => setModelsOpen(false)}
+        currentModel={currentModel}
+        activeTools={activeTools}
+        onModelChanged={(model) => setCurrentModel(model)}
+        onToolsChanged={(tools) => setActiveTools(tools)}
+      />
 
-              <div className="flex items-start gap-3 p-3 rounded-lg border border-neutral-800 bg-neutral-950/40">
-                <Database className="w-4 h-4 text-sky-400 mt-0.5 shrink-0" />
-                <div>
-                  <div className="font-medium text-neutral-200">PostgreSQL</div>
-                  <div className="text-xs text-neutral-400">Conteneur dédié via Docker Compose</div>
-                </div>
-              </div>
-
-              <div className="flex items-start gap-3 p-3 rounded-lg border border-neutral-800 bg-neutral-950/40">
-                <CheckCircle2 className="w-4 h-4 text-emerald-400 mt-0.5 shrink-0" />
-                <div>
-                  <div className="font-medium text-neutral-200">API Backend</div>
-                  <div className="text-xs text-neutral-400">FastAPI &amp; Ollama IA</div>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-
-          <CardFooter className="flex items-center justify-between border-t border-neutral-800/80 pt-4">
-            <div className="text-xs text-neutral-500">
-              SensAI • 2026
-            </div>
-            <Button
-              variant="default"
-              size="sm"
-              onClick={() => setLikes((prev) => prev + 1)}
-              className="gap-2 cursor-pointer"
-            >
-              <Heart className={`w-4 h-4 ${likes > 0 ? 'fill-red-500 text-red-500' : ''}`} />
-              <span>{likes === 0 ? 'Tester le composant' : `Clics : ${likes}`}</span>
-            </Button>
-          </CardFooter>
-        </Card>
-      </div>
-    </main>
+      {/* Modal d'invitation pour le mode Work */}
+      <WorkInviteModal
+        isOpen={inviteModalOpen}
+        onClose={() => setInviteModalOpen(false)}
+        conversationId={activeConversation?.id || null}
+        onMemberAdded={() => {
+          if (activeConversation) selectConversation(activeConversation.id)
+        }}
+      />
+    </div>
   )
 }
 
