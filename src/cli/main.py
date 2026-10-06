@@ -14,8 +14,11 @@ from src.core.ollama_client import (
     OllamaAPIError,
     OllamaClient,
     OllamaConnectionError,
+    OllamaError,
     OllamaModelNotFoundError,
+    OllamaStructuredOutputError,
 )
+from src.core.schemas import HistoricalFigure, KingdomInfo
 
 DEFAULT_CONFIG_PATH = Path("config.json")
 DEFAULT_HOST = "http://localhost:11434"
@@ -97,6 +100,8 @@ def print_help() -> None:
     print("  /history       : Affiche le nombre de messages échangés")
     print("  /models        : Liste les modèles installés sur le serveur Ollama")
     print("  /model [nom]   : Affiche ou change le modèle actif sans redémarrer")
+    print("  /kingdom [nom] : Génère une fiche de royaume au format JSON strict")
+    print("  /figure [nom]  : Génère une fiche de personnage historique")
     print("  /exit | /quit  : Quitte l'application\n")
 
 
@@ -149,6 +154,64 @@ def run_session(client: OllamaClient, model: str, host: str) -> None:
             else:
                 print(f"[Info] Modèle actuellement sélectionné : {model}")
                 print("[Astuce] Pour changer : /model <nom_du_modèle> (ex: /model llama3)")
+            continue
+
+        if user_input == "/kingdom" or user_input.startswith("/kingdom "):
+            parts = user_input.split(maxsplit=1)
+            kingdom_name = parts[1].strip() if len(parts) > 1 and parts[1].strip() else None
+            if kingdom_name is None:
+                print("[Info] Veuillez spécifier un nom de royaume. Usage : /kingdom [nom] (ex: /kingdom Qin)")
+                continue
+            print(f"[Info] Génération pour le royaume '{kingdom_name}'...")
+            try:
+                result = client.chat_structured(
+                    model=model,
+                    messages=[
+                        ChatMessage(
+                            role="system",
+                            content="Tu es un historien spécialiste de la période des Royaumes combattants en Chine antique.",
+                        ),
+                        ChatMessage(
+                            role="user",
+                            content=f"Génère les informations historiques sur le royaume de {kingdom_name}.",
+                        ),
+                    ],
+                    response_format=KingdomInfo,
+                )
+                print(json.dumps(result.model_dump(), indent=2, ensure_ascii=False))
+            except OllamaStructuredOutputError as exc:
+                print(f"[Erreur Sortie Structurée] {exc}")
+            except OllamaError as exc:
+                print(f"[Erreur] {exc}")
+            continue
+
+        if user_input == "/figure" or user_input.startswith("/figure "):
+            parts = user_input.split(maxsplit=1)
+            figure_name = parts[1].strip() if len(parts) > 1 and parts[1].strip() else None
+            if figure_name is None:
+                print("[Info] Veuillez spécifier un nom de personnage. Usage : /figure [nom] (ex: /figure Qin Shi Huang)")
+                continue
+            print(f"[Info] Génération pour le personnage '{figure_name}'...")
+            try:
+                result = client.chat_structured(
+                    model=model,
+                    messages=[
+                        ChatMessage(
+                            role="system",
+                            content="Tu es un historien spécialiste de la période des Royaumes combattants et de l'unification par Qin.",
+                        ),
+                        ChatMessage(
+                            role="user",
+                            content=f"Génère les informations historiques sur le personnage historique {figure_name}.",
+                        ),
+                    ],
+                    response_format=HistoricalFigure,
+                )
+                print(json.dumps(result.model_dump(), indent=2, ensure_ascii=False))
+            except OllamaStructuredOutputError as exc:
+                print(f"[Erreur Sortie Structurée] {exc}")
+            except OllamaError as exc:
+                print(f"[Erreur] {exc}")
             continue
 
         user_msg = ChatMessage(role="user", content=user_input)

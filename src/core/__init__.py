@@ -1,5 +1,3 @@
-"""Composants centraux de communication et de gestion du moteur IA."""
-
 from src.core.ollama_client import (
     ChatMessage,
     OllamaAPIError,
@@ -7,13 +5,18 @@ from src.core.ollama_client import (
     OllamaConnectionError,
     OllamaError,
     OllamaModelNotFoundError,
+    OllamaStructuredOutputError,
 )
+from src.core.schemas import HistoricalFigure, KingdomInfo
 
 __all__ = [
     "ChatMessage",
+    "HistoricalFigure",
+    "KingdomInfo",
     "OllamaAPIError",
     "OllamaClient",
     "OllamaConnectionError",
     "OllamaError",
     "OllamaModelNotFoundError",
+    "OllamaStructuredOutputError",
 ]
