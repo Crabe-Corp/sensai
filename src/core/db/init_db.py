@@ -4,12 +4,10 @@ from pathlib import Path
 DB_PATH = Path("kingdoms.db")
 
 def init_database() -> None:
-    # Création du fichier et connexion
     DB_PATH.touch(exist_ok=True)
     with sqlite3.connect(DB_PATH) as conn:
         cursor = conn.cursor()
 
-        # Table des royaumes
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS kingdoms (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -20,7 +18,6 @@ def init_database() -> None:
             )
         """)
 
-        # Table de la diplomatie entre les différents royaumes
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS diplomacy (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -33,7 +30,6 @@ def init_database() -> None:
             )
         """)
 
-        # Table des unités militaires historiques des différents royaumes
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS military_units (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -44,15 +40,10 @@ def init_database() -> None:
                 FOREIGN KEY (kingdom_id) REFERENCES kingdoms (id)
             )
         """)
-
-        # SEEDING DES DONNÉES HISTORIQUES
-        
-        # Nettoyage pour éviter les doublons
         cursor.execute("DELETE FROM military_units")
         cursor.execute("DELETE FROM diplomacy")
         cursor.execute("DELETE FROM kingdoms")
 
-        # Injection des 7 royaumes avec leurs forces relatives réelles
         kingdoms_data = [
             ("Qin", 8500, 95000, "Active"),
             ("Chu", 7000, 85000, "Active"),

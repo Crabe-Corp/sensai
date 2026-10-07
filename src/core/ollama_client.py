@@ -1,10 +1,8 @@
 import json
 from collections.abc import Iterator
 from typing import Any, Literal, TypeVar
-
 import httpx
 from pydantic import BaseModel, Field, ValidationError
-
 from src.features.structured_output import (
     StructuredOutputError,
     chat_structured_flow,
