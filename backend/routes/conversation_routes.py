@@ -708,67 +708,16 @@ async def chat_stream(
         if use_mcp:
             ollama_payload["tools"] = get_ollama_tools()
 
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            try:
-                tool_calls_to_process = []
-                async with client.stream(
-                    "POST",
-                    f"{OLLAMA_BASE_URL}/api/chat",
-                    json=ollama_payload
-                ) as response:
-                    async for raw_line in response.aiter_lines():
-                        if not raw_line:
-                            continue
-                        try:
-                            data = json.loads(raw_line)
-                            msg_chunk = data.get("message", {}).get("content", "")
-                            if msg_chunk:
-                                accumulated_text += msg_chunk
-                                yield json.dumps({"type": "chunk", "content": msg_chunk}) + "\n"
-
-                            tc_list = data.get("message", {}).get("tool_calls")
-                            if tc_list:
-                                tool_calls_to_process.extend(tc_list)
-
-                            if data.get("done"):
-                                prompt_tokens_eval = data.get("prompt_eval_count") or user_tokens
-                                completion_tokens_eval = data.get("eval_count") or estimate_tokens(accumulated_text)
-                        except Exception:
-                            continue
-                if tool_calls_to_process:
-                    history.append({
-                        "role": "assistant",
-                        "content": accumulated_text,
-                        "tool_calls": tool_calls_to_process,
-                    })
-
-                    for tc in tool_calls_to_process:
-                        fn = tc.get("function", {})
-                        t_name = fn.get("name", "")
-                        t_args = fn.get("arguments", {})
-                        if isinstance(t_args, str):
-                            try:
-                                t_args = json.loads(t_args)
-                            except Exception:
-                                t_args = {}
-
-                        tool_output = run_tool(t_name, t_args)
-                        info_text = f"\n\n*[Outil exécuté : {t_name}]*\n```json\n{tool_output}\n```\n\n"
-                        accumulated_text += info_text
-                        yield json.dumps({"type": "chunk", "content": info_text}) + "\n"
-
-                        history.append({"role": "tool", "content": tool_output})
-                    second_payload = {
-                        "model": model_to_use,
-                        "messages": history,
-                        "stream": True,
-                    }
+        try:
+            async with httpx.AsyncClient(timeout=120.0) as client:
+                try:
+                    tool_calls_to_process = []
                     async with client.stream(
                         "POST",
                         f"{OLLAMA_BASE_URL}/api/chat",
-                        json=second_payload,
-                    ) as final_resp:
-                        async for raw_line in final_resp.aiter_lines():
+                        json=ollama_payload
+                    ) as response:
+                        async for raw_line in response.aiter_lines():
                             if not raw_line:
                                 continue
                             try:
@@ -778,11 +727,63 @@ async def chat_stream(
                                     accumulated_text += msg_chunk
                                     yield json.dumps({"type": "chunk", "content": msg_chunk}) + "\n"
 
+                                tc_list = data.get("message", {}).get("tool_calls")
+                                if tc_list:
+                                    tool_calls_to_process.extend(tc_list)
+
                                 if data.get("done"):
                                     prompt_tokens_eval = data.get("prompt_eval_count") or user_tokens
                                     completion_tokens_eval = data.get("eval_count") or estimate_tokens(accumulated_text)
                             except Exception:
                                 continue
+                    if tool_calls_to_process:
+                        history.append({
+                            "role": "assistant",
+                            "content": accumulated_text,
+                            "tool_calls": tool_calls_to_process,
+                        })
+
+                        for tc in tool_calls_to_process:
+                            fn = tc.get("function", {})
+                            t_name = fn.get("name", "")
+                            t_args = fn.get("arguments", {})
+                            if isinstance(t_args, str):
+                                try:
+                                    t_args = json.loads(t_args)
+                                except Exception:
+                                    t_args = {}
+
+                            tool_output = run_tool(t_name, t_args)
+                            info_text = f"\n\n*[Outil exécuté : {t_name}]*\n```json\n{tool_output}\n```\n\n"
+                            accumulated_text += info_text
+                            yield json.dumps({"type": "chunk", "content": info_text}) + "\n"
+
+                            history.append({"role": "tool", "content": tool_output})
+                        second_payload = {
+                            "model": model_to_use,
+                            "messages": history,
+                            "stream": True,
+                        }
+                        async with client.stream(
+                            "POST",
+                            f"{OLLAMA_BASE_URL}/api/chat",
+                            json=second_payload,
+                        ) as final_resp:
+                            async for raw_line in final_resp.aiter_lines():
+                                if not raw_line:
+                                    continue
+                                try:
+                                    data = json.loads(raw_line)
+                                    msg_chunk = data.get("message", {}).get("content", "")
+                                    if msg_chunk:
+                                        accumulated_text += msg_chunk
+                                        yield json.dumps({"type": "chunk", "content": msg_chunk}) + "\n"
+
+                                    if data.get("done"):
+                                        prompt_tokens_eval = data.get("prompt_eval_count") or user_tokens
+                                        completion_tokens_eval = data.get("eval_count") or estimate_tokens(accumulated_text)
+                                except Exception:
+                                    continue
                 except asyncio.CancelledError:
                     raise
                 except Exception as e:
