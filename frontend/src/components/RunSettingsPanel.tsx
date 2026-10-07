@@ -39,11 +39,16 @@ export function RunSettingsPanel({
 }: RunSettingsPanelProps) {
   const [toolsOpen, setToolsOpen] = useState(true)
 
-  if (!isOpen) return null
-
   return (
-    <aside className="w-80 sm:w-88 border-l border-neutral-800 bg-neutral-900/95 backdrop-blur-md h-full flex flex-col justify-between z-20 shrink-0 text-neutral-100 overflow-y-auto">
-      {/* Header façon Google AI Studio */}
+    <aside
+      className={`h-full border-l border-neutral-800 bg-neutral-900/95 backdrop-blur-md z-20 shrink-0 text-neutral-100 overflow-hidden transition-all duration-300 ease-in-out ${
+        isOpen
+          ? 'w-80 sm:w-88 opacity-100 translate-x-0'
+          : 'w-0 opacity-0 translate-x-full border-l-0 pointer-events-none'
+      }`}
+    >
+      <div className="w-80 sm:w-88 min-w-[20rem] sm:min-w-[22rem] h-full flex flex-col justify-between overflow-y-auto">
+        {/* Header façon Google AI Studio */}
       <div className="p-4 border-b border-neutral-800 flex items-center justify-between sticky top-0 bg-neutral-900/95 z-10">
         <div className="flex items-center gap-2">
           <span className="text-xs font-semibold tracking-wide text-neutral-300">
@@ -129,7 +134,11 @@ export function RunSettingsPanel({
           {toolsOpen && (
             <div className="space-y-2.5 pt-1">
               {/* Tool 1 : Structured Output */}
-              <div className="p-3 rounded-xl border border-neutral-800 bg-neutral-950/40 flex items-start justify-between gap-3">
+              <button
+                type="button"
+                onClick={() => onToggleTool('structured_output')}
+                className="w-full text-left p-3 rounded-xl border border-neutral-800 bg-neutral-950/40 hover:bg-neutral-900/60 transition-colors flex items-start justify-between gap-3 cursor-pointer"
+              >
                 <div className="space-y-1 min-w-0">
                   <div className="text-xs font-medium text-neutral-200 flex items-center gap-1.5">
                     <Sparkles className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
@@ -141,13 +150,17 @@ export function RunSettingsPanel({
                 </div>
                 <Switch
                   checked={activeTools.includes('structured_output') || activeTools.includes('Structured Output')}
-                  onCheckedChange={() => onToggleTool('structured_output')}
-                  className="shrink-0 cursor-pointer"
+                  tabIndex={-1}
+                  className="shrink-0 pointer-events-none"
                 />
-              </div>
+              </button>
 
               {/* Tool 2 : MCP */}
-              <div className="p-3 rounded-xl border border-neutral-800 bg-neutral-950/40 flex items-start justify-between gap-3">
+              <button
+                type="button"
+                onClick={() => onToggleTool('mcp_runner')}
+                className="w-full text-left p-3 rounded-xl border border-neutral-800 bg-neutral-950/40 hover:bg-neutral-900/60 transition-colors flex items-start justify-between gap-3 cursor-pointer"
+              >
                 <div className="space-y-1 min-w-0">
                   <div className="text-xs font-medium text-neutral-200 flex items-center gap-1.5">
                     <Plug className="w-3.5 h-3.5 text-sky-400 shrink-0" />
@@ -159,10 +172,10 @@ export function RunSettingsPanel({
                 </div>
                 <Switch
                   checked={activeTools.includes('mcp_runner')}
-                  onCheckedChange={() => onToggleTool('mcp_runner')}
-                  className="shrink-0 cursor-pointer"
+                  tabIndex={-1}
+                  className="shrink-0 pointer-events-none"
                 />
-              </div>
+              </button>
             </div>
           )}
         </div>
@@ -177,6 +190,7 @@ export function RunSettingsPanel({
           </span>
           <span className="font-bold text-amber-300 font-mono">{totalTokens}</span>
         </div>
+      </div>
       </div>
     </aside>
   )

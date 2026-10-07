@@ -150,12 +150,14 @@ export function ModelsModal({
             {toolsList.map((tool) => {
               const isChecked = selectedTools.includes(tool.id)
               return (
-                <div
+                <button
+                  type="button"
                   key={tool.id}
-                  className={`p-3 rounded-xl border flex items-center justify-between gap-3 transition-colors ${
+                  onClick={() => handleToggleTool(tool.id)}
+                  className={`w-full text-left p-3 rounded-xl border flex items-center justify-between gap-3 transition-colors cursor-pointer ${
                     isChecked
                       ? 'bg-neutral-950 border-neutral-700'
-                      : 'bg-neutral-950/50 border-neutral-800/80 opacity-75'
+                      : 'bg-neutral-950/50 border-neutral-800/80 opacity-75 hover:opacity-100 hover:border-neutral-700'
                   }`}
                 >
                   <div className="flex items-start gap-2.5 min-w-0">
@@ -177,10 +179,10 @@ export function ModelsModal({
 
                   <Switch
                     checked={isChecked}
-                    onCheckedChange={() => handleToggleTool(tool.id)}
-                    className="cursor-pointer shrink-0"
+                    tabIndex={-1}
+                    className="shrink-0 pointer-events-none"
                   />
-                </div>
+                </button>
               )
             })}
           </div>
