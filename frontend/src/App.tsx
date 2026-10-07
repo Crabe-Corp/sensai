@@ -6,8 +6,9 @@ import { RunSettingsPanel } from './components/RunSettingsPanel'
 import { SettingsModal } from './components/SettingsModal'
 import { ModelsModal } from './components/ModelsModal'
 import { WorkInviteModal } from './components/WorkInviteModal'
+import { DeleteConversationModal } from './components/DeleteConversationModal'
 import { api, authStorage } from './lib/api'
-import type { Conversation, Message, User } from './types'
+import type { Conversation, Message, User, AttachedFile } from './types'
 
 export function App() {
   const [user, setUser] = useState<User | null>(null)
@@ -19,6 +20,8 @@ export function App() {
   const [modelsOpen, setModelsOpen] = useState(false)
   const [inviteModalOpen, setInviteModalOpen] = useState(false)
   const [runSettingsOpen, setRunSettingsOpen] = useState(false)
+  const [conversationToDelete, setConversationToDelete] = useState<{ id: string; title: string } | null>(null)
+  const [isDeletingConversation, setIsDeletingConversation] = useState(false)
 
   // Données de discussion
   const [conversations, setConversations] = useState<Conversation[]>([])
@@ -35,6 +38,7 @@ export function App() {
 
   // WebSocket pour la collaboration temps réel (Mode Work)
   const wsRef = useRef<WebSocket | null>(null)
+  const abortControllerRef = useRef<AbortController | null>(null)
 
   // Initialisation de la session au chargement
   useEffect(() => {
@@ -179,18 +183,32 @@ export function App() {
     }
   }
 
-  // Suppression d'une conversation
-  const handleDeleteConversation = async (id: string, e: React.MouseEvent) => {
+  // Préparation de la suppression d'une conversation (ouvre la modale personnalisée)
+  const handleDeleteConversation = (id: string, e: React.MouseEvent) => {
     e.stopPropagation()
-    if (!confirm('Supprimer cette conversation ?')) return
+    const target = conversations.find((c) => c.id === id)
+    setConversationToDelete({
+      id,
+      title: target?.title || 'cette conversation',
+    })
+  }
+
+  // Confirmation de la suppression depuis la modale
+  const handleConfirmDeleteConversation = async () => {
+    if (!conversationToDelete) return
+    setIsDeletingConversation(true)
     try {
+      const id = conversationToDelete.id
       await api.deleteConversation(id)
       setConversations((prev) => prev.filter((c) => c.id !== id))
       if (activeConversation?.id === id) {
         handleNewConversation('solo')
       }
+      setConversationToDelete(null)
     } catch {
       // ignore
+    } finally {
+      setIsDeletingConversation(false)
     }
   }
 
@@ -201,20 +219,52 @@ export function App() {
       const exists =
         prev.includes(idToToggle) ||
         (idToToggle === 'structured_output' && prev.includes('Structured Output'))
-      if (exists) {
-        return prev.filter((t) => t !== idToToggle && t !== 'Structured Output')
-      } else {
-        return [...prev, idToToggle]
-      }
+      const updated = exists
+        ? prev.filter((t) => t !== idToToggle && t !== 'Structured Output')
+        : [...prev, idToToggle]
+
+      setActiveConversation((curr) => (curr ? { ...curr, tools_enabled: updated } : null))
+      return updated
     })
   }
 
-  // Envoi d'un message avec streaming progressif, instruction système et tokens
-  const handleSendMessage = async (text: string) => {
-    if (!activeConversation) return
-
+  // Envoi d'un message avec streaming progressif, support de l'interruption et mise à jour de l'état
+  const sendPromptForConversation = async (
+    targetConv: Conversation,
+    text: string,
+    files: AttachedFile[] = []
+  ) => {
     setIsStreaming(true)
     setStreamingText('')
+
+    // Téléverser les fichiers en tâche de fond sur le serveur
+    for (const f of files) {
+      api.uploadFile(targetConv.id, f.file).catch(() => {})
+    }
+
+    // Préparer le contenu avec les fichiers joints pour l'IA
+    let payloadContent = text
+    if (files.length > 0) {
+      const formatBytes = (bytes: number) => {
+        if (bytes < 1024) return `${bytes} o`
+        if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} Ko`
+        return `${(bytes / (1024 * 1024)).toFixed(1)} Mo`
+      }
+
+      const filesContext = files
+        .map((f) => {
+          if (f.content) {
+            return `[Fichier joint : ${f.name} (${formatBytes(f.size)})]\n--- Début du contenu de ${f.name} ---\n${f.content}\n--- Fin du contenu de ${f.name} ---`
+          } else {
+            return `[Fichier joint : ${f.name} (${formatBytes(f.size)})]`
+          }
+        })
+        .join('\n\n')
+
+      payloadContent = text.trim()
+        ? `${filesContext}\n\n${text}`
+        : filesContext
+    }
 
     // Ajout optimiste du message utilisateur
     const optimisticUserMsg: Message = {
@@ -226,15 +276,18 @@ export function App() {
       completion_tokens: 0,
       total_tokens: 0,
       created_at: new Date().toISOString(),
+      attachments: files.map((f) => ({ name: f.name, size: f.size })),
     }
     setMessages((prev) => [...prev, optimisticUserMsg])
 
     let accumulatedChunks = ''
+    const controller = new AbortController()
+    abortControllerRef.current = controller
 
     await api.streamChat(
-      activeConversation.id,
+      targetConv.id,
       {
-        content: text,
+        content: payloadContent,
         model: currentModel,
         tools_enabled: activeTools,
         system_instruction: systemInstruction,
@@ -246,6 +299,17 @@ export function App() {
       (doneData) => {
         setIsStreaming(false)
         setStreamingText('')
+        abortControllerRef.current = null
+
+        if (doneData.user_message_id) {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === optimisticUserMsg.id
+                ? { ...m, id: doneData.user_message_id! }
+                : m
+            )
+          )
+        }
 
         const finalAssistantMsg: Message = {
           id: doneData.message_id,
@@ -261,18 +325,21 @@ export function App() {
         setMessages((prev) => [...prev, finalAssistantMsg])
 
         setActiveConversation((prev) =>
-          prev ? { ...prev, total_tokens: doneData.conversation_total_tokens } : null
+          prev && prev.id === targetConv.id
+            ? { ...prev, total_tokens: doneData.conversation_total_tokens }
+            : prev
         )
 
         setConversations((prev) =>
           prev.map((c) =>
-            c.id === activeConversation.id
+            c.id === targetConv.id
               ? {
                   ...c,
                   total_tokens: doneData.conversation_total_tokens,
                   title:
                     c.title === 'Nouvelle conversation'
-                      ? text.slice(0, 35) + (text.length > 35 ? '...' : '')
+                      ? (text.trim() || files[0]?.name || 'Discussion').slice(0, 35) +
+                        ((text.trim() || files[0]?.name || '').length > 35 ? '...' : '')
                       : c.title,
                 }
               : c
@@ -282,6 +349,7 @@ export function App() {
       (err) => {
         setIsStreaming(false)
         setStreamingText('')
+        abortControllerRef.current = null
         const errorMsg: Message = {
           id: `err-${Date.now()}`,
           role: 'assistant',
@@ -293,8 +361,108 @@ export function App() {
           created_at: new Date().toISOString(),
         }
         setMessages((prev) => [...prev, errorMsg])
+      },
+      controller.signal,
+      (accumulated) => {
+        // Interruption immédiate du flux de génération demandée par l'utilisateur
+        setIsStreaming(false)
+        setStreamingText('')
+        abortControllerRef.current = null
+
+        if (accumulated && accumulated.trim()) {
+          const interruptedMsg: Message = {
+            id: `stopped-${Date.now()}`,
+            role: 'assistant',
+            sender_name: 'SensAI',
+            content: accumulated.trim() + '\n\n*(Génération interrompue)*',
+            prompt_tokens: 0,
+            completion_tokens: 0,
+            total_tokens: 0,
+            created_at: new Date().toISOString(),
+            interrupted: true,
+          }
+          setMessages((prev) => [...prev, interruptedMsg])
+        }
+      },
+      (startData) => {
+        if (startData.user_message_id) {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === optimisticUserMsg.id
+                ? { ...m, id: startData.user_message_id }
+                : m
+            )
+          )
+        }
       }
     )
+  }
+
+  const handleSendMessage = async (text: string, files: AttachedFile[] = []) => {
+    if (!activeConversation) return
+    await sendPromptForConversation(activeConversation, text, files)
+  }
+
+  // Interruption immédiate du streaming (Esc ou clic sur "Arrêter")
+  const handleStopStreaming = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+      abortControllerRef.current = null
+    }
+  }
+
+  // Modification d'un message passé pour explorer une branche alternative ou fork direct
+  const handleBranchMessage = async (
+    messageId: string,
+    newContent?: string,
+    mode: 'fork' | 'truncate' = 'fork'
+  ) => {
+    if (!activeConversation) return
+
+    // Stopper tout streaming en cours
+    if (isStreaming) {
+      handleStopStreaming()
+    }
+
+    const targetMsg = messages.find((m) => m.id === messageId)
+    const contentPayload = newContent !== undefined ? newContent : targetMsg?.content
+
+    if (mode === 'fork') {
+      try {
+        const branchTitle = `${activeConversation.title.replace(/ \(Branche.*\)$/, '')} (Branche)`
+        const branchedConv = await api.branchConversation(
+          activeConversation.id,
+          messageId,
+          branchTitle,
+          contentPayload
+        )
+        setConversations((prev) => [branchedConv, ...prev])
+        setActiveConversation(branchedConv)
+        setMessages(branchedConv.messages || [])
+        window.history.replaceState(null, '', `?c=${branchedConv.id}`)
+
+        if (newContent && newContent.trim()) {
+          // Lancer la génération de la suite dans le nouvel univers parallèle
+          await sendPromptForConversation(branchedConv, newContent)
+        }
+      } catch (err: any) {
+        console.error('Erreur lors du branchement:', err)
+      }
+    } else {
+      try {
+        await api.truncateConversation(activeConversation.id, messageId, contentPayload)
+        const targetIndex = messages.findIndex((m) => m.id === messageId)
+        const truncatedMessages = targetIndex >= 0 ? messages.slice(0, targetIndex) : messages
+        setMessages(truncatedMessages)
+
+        if (newContent && newContent.trim()) {
+          // Lancer la génération de la nouvelle suite à partir d'ici
+          await sendPromptForConversation(activeConversation, newContent)
+        }
+      } catch (err: any) {
+        console.error('Erreur lors de la troncature:', err)
+      }
+    }
   }
 
   // Déconnexion
@@ -335,6 +503,8 @@ export function App() {
         user={user}
         conversations={conversations}
         activeId={activeConversation?.id || null}
+        activeConversation={activeConversation}
+        messages={messages}
         onSelectConversation={selectConversation}
         onNewConversation={(mode) => handleNewConversation(mode)}
         onDeleteConversation={handleDeleteConversation}
@@ -354,6 +524,8 @@ export function App() {
           activeTools={activeTools}
           onToggleTool={handleToggleTool}
           onSendMessage={handleSendMessage}
+          onStopStreaming={handleStopStreaming}
+          onBranchMessage={handleBranchMessage}
           onToggleSidebar={() => setSidebarOpen((prev) => !prev)}
           onOpenInviteModal={() => setInviteModalOpen(true)}
           onToggleRunSettings={() => setRunSettingsOpen((prev) => !prev)}
@@ -401,6 +573,15 @@ export function App() {
         onMemberAdded={() => {
           if (activeConversation) selectConversation(activeConversation.id)
         }}
+      />
+
+      {/* Modal personnalisée de confirmation de suppression */}
+      <DeleteConversationModal
+        isOpen={Boolean(conversationToDelete)}
+        onClose={() => setConversationToDelete(null)}
+        conversationTitle={conversationToDelete?.title}
+        onConfirm={handleConfirmDeleteConversation}
+        isDeleting={isDeletingConversation}
       />
     </div>
   )
