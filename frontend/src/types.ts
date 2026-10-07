@@ -22,6 +22,8 @@ export interface Conversation {
   created_at?: string
   updated_at?: string
   members?: ConversationMember[]
+  parent_id?: string | null
+  parent_title?: string | null
 }
 
 export interface MessageAttachment {
@@ -40,6 +42,7 @@ export interface Message {
   total_tokens: number
   created_at?: string
   attachments?: MessageAttachment[]
+  interrupted?: boolean
 }
 
 export interface AttachedFile {

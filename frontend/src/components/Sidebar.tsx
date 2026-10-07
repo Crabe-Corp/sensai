@@ -23,6 +23,7 @@ import {
   FileText,
   FileCode,
   FileType,
+  GitBranch,
 } from 'lucide-react'
 import type { Conversation, Message, User as UserType } from '../types'
 import { api } from '../lib/api'
@@ -107,53 +108,47 @@ export function Sidebar({
   })
 
   return (
-    <>
-      {/* Backdrop sombre sur mobile / tablettes */}
-      {isOpen && (
-        <div
-          onClick={onClose}
-          className="fixed inset-0 bg-black/60 backdrop-blur-xs z-40 transition-opacity"
-        />
-      )}
-
-      {/* Drawer menu latéral */}
-      <aside
-        className={`fixed top-0 left-0 h-full w-80 bg-neutral-900 border-r border-neutral-800 z-50 flex flex-col justify-between transition-transform duration-300 ease-in-out ${
-          isOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full'
-        }`}
-      >
+    <aside
+      className={`h-full bg-neutral-900 border-r border-neutral-800 z-20 shrink-0 overflow-hidden transition-all duration-300 ease-in-out ${
+        isOpen
+          ? 'w-80 opacity-100 translate-x-0'
+          : 'w-0 opacity-0 -translate-x-full border-r-0 pointer-events-none'
+      }`}
+    >
+      <div className="w-80 min-w-80 h-full flex flex-col justify-between text-neutral-100">
         {/* En-tête du menu */}
-        <div className="p-4 border-b border-neutral-800 space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 font-bold text-lg text-white">
-              <span>SensAI</span>
-            </div>
-            <button
-              onClick={onClose}
-              className="p-1 rounded-md text-neutral-400 hover:text-white hover:bg-neutral-800 cursor-pointer"
-            >
-              <X className="w-5 h-5" />
-            </button>
+      <div className="p-4 border-b border-neutral-800 space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 font-bold text-lg text-white">
+            <span>SensAI</span>
           </div>
+          <button
+            onClick={onClose}
+            className="p-1 rounded-md text-neutral-400 hover:text-white hover:bg-neutral-800 cursor-pointer"
+            title="Fermer le menu"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
 
-          {/* Bouton "+ New conversation" tout en haut */}
-          <div className="grid grid-cols-2 gap-2">
-            <Button
-              onClick={() => { onNewConversation('solo'); onClose(); }}
-              className="w-full bg-indigo-600 hover:bg-indigo-500 text-white text-xs gap-1.5 cursor-pointer py-2"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Solo</span>
-            </Button>
-            <Button
-              onClick={() => { onNewConversation('work'); onClose(); }}
-              variant="outline"
-              className="w-full border-neutral-700 bg-neutral-800/80 hover:bg-neutral-800 text-amber-300 text-xs gap-1.5 cursor-pointer py-2"
-            >
-              <Users className="w-4 h-4 text-amber-400" />
-              <span>Work (Collab)</span>
-            </Button>
-          </div>
+        {/* Bouton "+ New conversation" tout en haut */}
+        <div className="grid grid-cols-2 gap-2">
+          <Button
+            onClick={() => onNewConversation('solo')}
+            className="w-full bg-indigo-600 hover:bg-indigo-500 text-white text-xs gap-1.5 cursor-pointer py-2"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Solo</span>
+          </Button>
+          <Button
+            onClick={() => onNewConversation('work')}
+            variant="outline"
+            className="w-full border-neutral-700 bg-neutral-800/80 hover:bg-neutral-800 text-amber-300 text-xs gap-1.5 cursor-pointer py-2"
+          >
+            <Users className="w-4 h-4 text-amber-400" />
+            <span>Work (Collab)</span>
+          </Button>
+        </div>
 
           {/* Recherche & Filtre des conversations */}
           <div className="space-y-2 pt-1">
@@ -212,7 +207,7 @@ export function Sidebar({
               return (
                 <div
                   key={conv.id}
-                  onClick={() => { onSelectConversation(conv.id); onClose(); }}
+                  onClick={() => onSelectConversation(conv.id)}
                   className={`group relative flex items-center justify-between p-2.5 rounded-lg text-xs cursor-pointer border transition-colors ${
                     isActive
                       ? 'bg-neutral-800/90 border-neutral-700 text-white shadow-xs'
@@ -220,7 +215,11 @@ export function Sidebar({
                   }`}
                 >
                   <div className="flex items-center gap-2 min-w-0 pr-2">
-                    {conv.mode === 'work' ? (
+                    {conv.title.includes('(Branche') || conv.parent_id ? (
+                      <span title="Branche alternative" className="shrink-0 flex items-center">
+                        <GitBranch className="w-3.5 h-3.5 text-emerald-400" />
+                      </span>
+                    ) : conv.mode === 'work' ? (
                       <Users className="w-3.5 h-3.5 text-amber-400 shrink-0" />
                     ) : (
                       <MessageSquare className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
@@ -375,7 +374,7 @@ export function Sidebar({
             </button>
           </div>
         </div>
-      </aside>
-    </>
+      </div>
+    </aside>
   )
 }

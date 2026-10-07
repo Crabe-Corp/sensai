@@ -39,11 +39,16 @@ export function RunSettingsPanel({
 }: RunSettingsPanelProps) {
   const [toolsOpen, setToolsOpen] = useState(true)
 
-  if (!isOpen) return null
-
   return (
-    <aside className="w-80 sm:w-88 border-l border-neutral-800 bg-neutral-900/95 backdrop-blur-md h-full flex flex-col justify-between z-20 shrink-0 text-neutral-100 overflow-y-auto">
-      {/* Header façon Google AI Studio */}
+    <aside
+      className={`h-full border-l border-neutral-800 bg-neutral-900/95 backdrop-blur-md z-20 shrink-0 text-neutral-100 overflow-hidden transition-all duration-300 ease-in-out ${
+        isOpen
+          ? 'w-80 sm:w-88 opacity-100 translate-x-0'
+          : 'w-0 opacity-0 translate-x-full border-l-0 pointer-events-none'
+      }`}
+    >
+      <div className="w-80 sm:w-88 min-w-[20rem] sm:min-w-[22rem] h-full flex flex-col justify-between overflow-y-auto">
+        {/* Header façon Google AI Studio */}
       <div className="p-4 border-b border-neutral-800 flex items-center justify-between sticky top-0 bg-neutral-900/95 z-10">
         <div className="flex items-center gap-2">
           <span className="text-xs font-semibold tracking-wide text-neutral-300">
@@ -185,6 +190,7 @@ export function RunSettingsPanel({
           </span>
           <span className="font-bold text-amber-300 font-mono">{totalTokens}</span>
         </div>
+      </div>
       </div>
     </aside>
   )

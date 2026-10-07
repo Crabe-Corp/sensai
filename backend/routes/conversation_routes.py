@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 import re
@@ -24,6 +25,17 @@ class CreateConversationRequest(BaseModel):
     mode: Optional[str] = "solo"  # "solo" ou "work"
     model_name: Optional[str] = "qwen3:0.6b"
     tools_enabled: Optional[List[str]] = []
+
+
+class BranchConversationRequest(BaseModel):
+    message_id: str
+    title: Optional[str] = None
+    content: Optional[str] = None
+
+
+class TruncateConversationRequest(BaseModel):
+    message_id: str
+    content: Optional[str] = None
 
 
 class AddMemberRequest(BaseModel):
@@ -207,6 +219,181 @@ def delete_conversation(
     db.delete(conv)
     db.commit()
     return {"success": True, "message": "Conversation supprimée"}
+
+
+@router.post("/{conversation_id}/branch")
+def branch_conversation(
+    conversation_id: str,
+    req: BranchConversationRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    conv = db.query(Conversation).filter(Conversation.id == conversation_id).first()
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversation introuvable")
+
+    if not check_user_access(conv, user, db):
+        raise HTTPException(status_code=403, detail="Accès non autorisé à cette conversation")
+
+    # Trouver le message cible et ses messages précédents
+    target_msg = None
+    target_idx = -1
+    ordered_messages = sorted(conv.messages, key=lambda m: m.created_at or datetime.min)
+
+    # 1. Recherche par identifiant direct
+    for i, m in enumerate(ordered_messages):
+        if m.id == req.message_id:
+            target_msg = m
+            target_idx = i
+            break
+
+    # 2. Si non trouvé par ID (ex: id temporaire temp-xxx), recherche par contenu
+    if target_msg is None and req.content:
+        for i, m in enumerate(ordered_messages):
+            if m.content.strip() == req.content.strip():
+                target_msg = m
+                target_idx = i
+                break
+
+    # 3. Fallback : prendre le dernier message utilisateur s'il existe
+    if target_msg is None and ordered_messages:
+        user_msgs = [(i, m) for i, m in enumerate(ordered_messages) if m.role == "user"]
+        if user_msgs:
+            target_idx, target_msg = user_msgs[-1]
+        else:
+            target_idx = len(ordered_messages) - 1
+            target_msg = ordered_messages[-1]
+
+    # Déterminer les messages à cloner :
+    # Si req.content est fourni et différent du contenu cible (mode édition/remplacement) :
+    # On clone strictement avant target_idx (les messages antérieurs).
+    # Sinon (branchement direct / fork de l'état actuel) :
+    # On clone jusqu'à target_idx inclus, et si la réponse de l'assistant suit directement, on l'inclut également.
+    prior_messages = []
+    if target_idx >= 0:
+        is_edit = bool(req.content and target_msg and req.content.strip() != target_msg.content.strip())
+        if is_edit:
+            prior_messages = ordered_messages[:target_idx]
+        else:
+            end_idx = target_idx + 1
+            if end_idx < len(ordered_messages) and ordered_messages[end_idx].role == "assistant":
+                end_idx += 1
+            prior_messages = ordered_messages[:end_idx]
+    else:
+        prior_messages = ordered_messages
+
+    branch_title = req.title or f"{conv.title} (Branche)"
+    new_conv_id = str(uuid.uuid4())
+    new_conv = Conversation(
+        id=new_conv_id,
+        title=branch_title,
+        created_by_id=user.id,
+        mode=conv.mode,
+        model_name=conv.model_name,
+        tools_enabled=conv.tools_enabled,
+    )
+    db.add(new_conv)
+
+    # Cloner les messages antérieurs dans la nouvelle branche
+    for pm in prior_messages:
+        cloned_msg = Message(
+            id=str(uuid.uuid4()),
+            conversation_id=new_conv_id,
+            sender_id=pm.sender_id,
+            sender_name=pm.sender_name,
+            role=pm.role,
+            content=pm.content,
+            prompt_tokens=pm.prompt_tokens,
+            completion_tokens=pm.completion_tokens,
+            total_tokens=pm.total_tokens,
+            created_at=pm.created_at,
+        )
+        db.add(cloned_msg)
+
+    if conv.mode == "work":
+        db.add(ConversationMember(conversation_id=new_conv_id, user_id=user.id, role="owner"))
+
+    db.commit()
+    db.refresh(new_conv)
+
+    total_tokens = sum(m.total_tokens for m in new_conv.messages)
+    tools = json.loads(new_conv.tools_enabled) if new_conv.tools_enabled else []
+    tools = [t for t in tools if t in ["structured_output", "Structured Output", "mcp_runner"]]
+
+    return {
+        "id": new_conv.id,
+        "title": new_conv.title,
+        "mode": new_conv.mode,
+        "model_name": new_conv.model_name,
+        "tools_enabled": tools,
+        "total_tokens": total_tokens,
+        "message_count": len(new_conv.messages),
+        "is_owner": True,
+        "created_at": new_conv.created_at.isoformat() if new_conv.created_at else None,
+        "parent_id": conv.id,
+        "parent_title": conv.title,
+        "messages": [
+            {
+                "id": m.id,
+                "role": m.role,
+                "sender_name": m.sender_name,
+                "content": m.content,
+                "prompt_tokens": m.prompt_tokens,
+                "completion_tokens": m.completion_tokens,
+                "total_tokens": m.total_tokens,
+                "created_at": m.created_at.isoformat() if m.created_at else None,
+            }
+            for m in new_conv.messages
+        ]
+    }
+
+
+@router.post("/{conversation_id}/truncate")
+def truncate_conversation(
+    conversation_id: str,
+    req: TruncateConversationRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    conv = db.query(Conversation).filter(Conversation.id == conversation_id).first()
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversation introuvable")
+
+    if not check_user_access(conv, user, db):
+        raise HTTPException(status_code=403, detail="Accès non autorisé à cette conversation")
+
+    ordered_messages = sorted(conv.messages, key=lambda m: m.created_at or datetime.min)
+    found_idx = -1
+    for i, m in enumerate(ordered_messages):
+        if m.id == req.message_id:
+            found_idx = i
+            break
+
+    if found_idx == -1 and req.content:
+        for i, m in enumerate(ordered_messages):
+            if m.content.strip() == req.content.strip():
+                found_idx = i
+                break
+
+    if found_idx == -1 and ordered_messages:
+        user_msgs = [i for i, m in enumerate(ordered_messages) if m.role == "user"]
+        if user_msgs:
+            found_idx = user_msgs[-1]
+
+    to_delete = ordered_messages[found_idx:] if found_idx != -1 else []
+    for m in to_delete:
+        db.delete(m)
+
+    conv.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(conv)
+
+    total_tokens = sum(m.total_tokens for m in conv.messages)
+    return {
+        "success": True,
+        "remaining_messages": len(conv.messages),
+        "total_tokens": total_tokens,
+    }
 
 
 @router.get("/{conversation_id}/export")
@@ -505,6 +692,9 @@ async def chat_stream(
         prompt_tokens_eval = user_tokens
         completion_tokens_eval = 0
 
+        # Événement initial notifiant l'identifiant réel en base du message utilisateur
+        yield json.dumps({"type": "start", "user_message_id": user_msg_id}) + "\n"
+
         ollama_payload = {
             "model": model_to_use,
             "messages": history,
@@ -513,33 +703,56 @@ async def chat_stream(
         if is_structured:
             ollama_payload["format"] = "json"
 
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            try:
-                async with client.stream(
-                    "POST",
-                    f"{OLLAMA_BASE_URL}/api/chat",
-                    json=ollama_payload
-                ) as response:
-                    async for raw_line in response.aiter_lines():
-                        if not raw_line:
-                            continue
-                        try:
-                            data = json.loads(raw_line)
-                            msg_chunk = data.get("message", {}).get("content", "")
-                            if msg_chunk:
-                                accumulated_text += msg_chunk
-                                yield json.dumps({"type": "chunk", "content": msg_chunk}) + "\n"
+        try:
+            async with httpx.AsyncClient(timeout=120.0) as client:
+                try:
+                    async with client.stream(
+                        "POST",
+                        f"{OLLAMA_BASE_URL}/api/chat",
+                        json=ollama_payload
+                    ) as response:
+                        async for raw_line in response.aiter_lines():
+                            if not raw_line:
+                                continue
+                            try:
+                                data = json.loads(raw_line)
+                                msg_chunk = data.get("message", {}).get("content", "")
+                                if msg_chunk:
+                                    accumulated_text += msg_chunk
+                                    yield json.dumps({"type": "chunk", "content": msg_chunk}) + "\n"
 
-                            if data.get("done"):
-                                prompt_tokens_eval = data.get("prompt_eval_count") or user_tokens
-                                completion_tokens_eval = data.get("eval_count") or estimate_tokens(accumulated_text)
-                        except Exception:
-                            continue
-            except Exception as e:
-                err_msg = f"\n[Connexion à l'IA indisponible : {str(e)}]"
-                accumulated_text += err_msg
-                yield json.dumps({"type": "chunk", "content": err_msg}) + "\n"
-                completion_tokens_eval = estimate_tokens(accumulated_text)
+                                if data.get("done"):
+                                    prompt_tokens_eval = data.get("prompt_eval_count") or user_tokens
+                                    completion_tokens_eval = data.get("eval_count") or estimate_tokens(accumulated_text)
+                            except Exception:
+                                continue
+                except asyncio.CancelledError:
+                    raise
+                except Exception as e:
+                    err_msg = f"\n[Connexion à l'IA indisponible : {str(e)}]"
+                    accumulated_text += err_msg
+                    yield json.dumps({"type": "chunk", "content": err_msg}) + "\n"
+                    completion_tokens_eval = estimate_tokens(accumulated_text)
+        except asyncio.CancelledError:
+            if accumulated_text.strip():
+                try:
+                    assistant_msg_id = str(uuid.uuid4())
+                    assistant_msg = Message(
+                        id=assistant_msg_id,
+                        conversation_id=conv.id,
+                        sender_id=None,
+                        sender_name="SensAI",
+                        content=accumulated_text.strip() + " *(Génération interrompue)*",
+                        prompt_tokens=prompt_tokens_eval,
+                        completion_tokens=estimate_tokens(accumulated_text),
+                        total_tokens=prompt_tokens_eval + estimate_tokens(accumulated_text),
+                    )
+                    db.add(assistant_msg)
+                    conv.updated_at = datetime.utcnow()
+                    db.commit()
+                except Exception:
+                    pass
+            raise
 
         total_response_tokens = prompt_tokens_eval + completion_tokens_eval
 
@@ -567,6 +780,7 @@ async def chat_stream(
         final_payload = {
             "type": "done",
             "message_id": assistant_msg_id,
+            "user_message_id": user_msg_id,
             "prompt_tokens": prompt_tokens_eval,
             "completion_tokens": completion_tokens_eval,
             "total_tokens": total_response_tokens,

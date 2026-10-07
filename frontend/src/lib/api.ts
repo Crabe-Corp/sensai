@@ -177,15 +177,42 @@ export const api = {
     })
   },
 
+  async branchConversation(
+    conversationId: string,
+    messageId: string,
+    title?: string,
+    content?: string
+  ): Promise<Conversation & { messages: Message[] }> {
+    return apiFetch<Conversation & { messages: Message[] }>(`/api/conversations/${conversationId}/branch`, {
+      method: 'POST',
+      body: JSON.stringify({ message_id: messageId, title, content }),
+    })
+  },
+
+  async truncateConversation(
+    conversationId: string,
+    messageId: string,
+    content?: string
+  ): Promise<{ success: boolean; remaining_messages: number; total_tokens: number }> {
+    return apiFetch<{ success: boolean; remaining_messages: number; total_tokens: number }>(`/api/conversations/${conversationId}/truncate`, {
+      method: 'POST',
+      body: JSON.stringify({ message_id: messageId, content }),
+    })
+  },
+
   // Progressive streaming chat
   async streamChat(
     conversationId: string,
     params: { content: string; model?: string; tools_enabled?: string[]; system_instruction?: string },
     onChunk: (chunk: string) => void,
-    onDone: (data: { message_id: string; prompt_tokens: number; completion_tokens: number; total_tokens: number; conversation_total_tokens: number }) => void,
-    onError: (err: Error) => void
+    onDone: (data: { message_id: string; user_message_id?: string; prompt_tokens: number; completion_tokens: number; total_tokens: number; conversation_total_tokens: number }) => void,
+    onError: (err: Error) => void,
+    signal?: AbortSignal,
+    onAbort?: (accumulatedText: string) => void,
+    onStart?: (data: { user_message_id: string }) => void
   ) {
     const token = authStorage.getToken()
+    let accumulatedText = ''
     try {
       const response = await fetch(`/api/conversations/${conversationId}/chat`, {
         method: 'POST',
@@ -194,6 +221,7 @@ export const api = {
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify(params),
+        signal,
       })
 
       if (!response.ok) {
@@ -207,6 +235,12 @@ export const api = {
       let buffer = ''
 
       while (true) {
+        if (signal?.aborted) {
+          reader.cancel().catch(() => {})
+          if (onAbort) onAbort(accumulatedText)
+          return
+        }
+
         const { done, value } = await reader.read()
         if (done) break
 
@@ -219,7 +253,12 @@ export const api = {
           if (!trimmed) continue
           try {
             const parsed = JSON.parse(trimmed)
-            if (parsed.type === 'chunk') {
+            if (parsed.type === 'start') {
+              if (parsed.user_message_id && onStart) {
+                onStart(parsed)
+              }
+            } else if (parsed.type === 'chunk') {
+              accumulatedText += parsed.content
               onChunk(parsed.content)
             } else if (parsed.type === 'done') {
               onDone(parsed)
@@ -241,6 +280,12 @@ export const api = {
         }
       }
     } catch (err: any) {
+      if (signal?.aborted || err?.name === 'AbortError' || err?.message?.toLowerCase().includes('abort')) {
+        if (onAbort) {
+          onAbort(accumulatedText)
+        }
+        return
+      }
       onError(err instanceof Error ? err : new Error(String(err)))
     }
   },

@@ -14,7 +14,6 @@ import {
   Users,
   Coins,
   UserPlus,
-  Loader2,
   Bot,
   User,
   SlidersHorizontal,
@@ -26,9 +25,28 @@ import {
   Paperclip,
   AlertCircle,
   Plug,
+  Square,
+  Pencil,
+  GitBranch,
+  RotateCcw,
 } from 'lucide-react'
 import type { Conversation, Message, AttachedFile } from '../types'
 import { parseUserMessage } from '../lib/messageParser'
+
+const THINKING_PHRASES = [
+  "Réfléchit...",
+  "Demande au voisin l'information...",
+  "Connecte ses neurones...",
+  "Consulte la bibliothèque numérique...",
+  "Infuse une réponse de qualité...",
+  "Fouille dans ses circuits...",
+  "Assemble les meilleures idées...",
+  "Décode les mystères de la question...",
+  "Prépare les mots justes...",
+  "Active ses synapses...",
+  "Explore toutes les pistes...",
+  "Affine sa pensée...",
+]
 
 interface ChatViewProps {
   conversation: Conversation | null
@@ -38,6 +56,8 @@ interface ChatViewProps {
   activeTools: string[]
   onToggleTool: (toolId: string) => void
   onSendMessage: (text: string, files?: AttachedFile[]) => void
+  onStopStreaming: () => void
+  onBranchMessage: (messageId: string, newContent: string | undefined, mode: 'fork' | 'truncate') => void
   onToggleSidebar: () => void
   onOpenInviteModal: () => void
   onToggleRunSettings: () => void
@@ -102,6 +122,8 @@ export function ChatView({
   activeTools,
   onToggleTool,
   onSendMessage,
+  onStopStreaming,
+  onBranchMessage,
   onToggleSidebar,
   onOpenInviteModal,
   onToggleRunSettings,
@@ -111,13 +133,58 @@ export function ChatView({
   const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([])
   const [fileError, setFileError] = useState<string | null>(null)
   const [isDragging, setIsDragging] = useState(false)
+  const [editingState, setEditingState] = useState<{
+    messageId: string
+    originalContent: string
+    mode: 'fork' | 'truncate'
+  } | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const [thinkingIndex, setThinkingIndex] = useState(0)
+
+  // Rotation des phrases d'attente dynamiques lorsque le modèle réfléchit
+  useEffect(() => {
+    if (!isStreaming || streamingText) return
+
+    const interval = setInterval(() => {
+      setThinkingIndex((prev) => (prev + 1) % THINKING_PHRASES.length)
+    }, 2400)
+
+    return () => clearInterval(interval)
+  }, [isStreaming, streamingText])
 
   // Scroll automatique fluide vers le bas lors de l'arrivée progressive des tokens
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, streamingText, isStreaming])
+
+  // Raccourci clavier pour stopper la génération en plein vol (Esc ou Ctrl+C) ou annuler l'édition
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if (isStreaming) {
+        const isCtrlC =
+          (e.ctrlKey || e.metaKey) &&
+          e.key.toLowerCase() === 'c' &&
+          !window.getSelection()?.toString()
+
+        if (e.key === 'Escape' || isCtrlC) {
+          e.preventDefault()
+          onStopStreaming()
+          setTimeout(() => {
+            textareaRef.current?.focus()
+          }, 50)
+        }
+      } else if (e.key === 'Escape' && editingState) {
+        e.preventDefault()
+        setEditingState(null)
+        setInputText('')
+      }
+    }
+
+    window.addEventListener('keydown', handleGlobalKeyDown)
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown)
+  }, [isStreaming, onStopStreaming, editingState])
 
   const handleAddFiles = async (filesList: FileList | File[]) => {
     setFileError(null)
@@ -179,6 +246,16 @@ export function ChatView({
 
   const handleSend = () => {
     if ((!inputText.trim() && attachedFiles.length === 0) || isStreaming) return
+
+    if (editingState) {
+      onBranchMessage(editingState.messageId, inputText.trim(), editingState.mode)
+      setEditingState(null)
+      setInputText('')
+      setAttachedFiles([])
+      setFileError(null)
+      return
+    }
+
     onSendMessage(inputText, attachedFiles)
     setInputText('')
     setAttachedFiles([])
@@ -189,6 +266,10 @@ export function ChatView({
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       handleSend()
+    } else if (e.key === 'Escape' && editingState) {
+      e.preventDefault()
+      setEditingState(null)
+      setInputText('')
     }
   }
 
@@ -214,7 +295,15 @@ export function ChatView({
                 {conversation?.title || 'Nouvelle discussion'}
               </h2>
 
-              {conversation?.mode === 'work' ? (
+              {conversation?.title?.includes('(Branche') || conversation?.parent_id ? (
+                <Badge
+                  variant="outline"
+                  className="bg-emerald-950/40 border-emerald-800 text-emerald-300 text-[10px] px-2 py-0 gap-1 flex items-center"
+                >
+                  <GitBranch className="w-3 h-3 text-emerald-400" />
+                  <span>Branche alternative</span>
+                </Badge>
+              ) : conversation?.mode === 'work' ? (
                 <Badge
                   variant="outline"
                   className="bg-amber-950/40 border-amber-800 text-amber-300 text-[10px] px-2 py-0 gap-1 flex items-center"
@@ -336,7 +425,7 @@ export function ChatView({
               return (
                 <div
                   key={msg.id}
-                  className={`flex gap-3 ${isUser ? 'ml-auto justify-end' : 'mr-auto justify-start'}`}
+                  className={`group relative flex gap-3 ${isUser ? 'ml-auto justify-end' : 'mr-auto justify-start'}`}
                 >
                   {!isUser && (
                     <div className="w-8 h-8 rounded-lg bg-indigo-950 border border-indigo-800/80 flex items-center justify-center text-indigo-300 shrink-0">
@@ -346,8 +435,8 @@ export function ChatView({
 
                   <div className={`space-y-1.5 max-w-2xl ${isUser ? 'items-end' : 'items-start'}`}>
                     {/* Nom d'expéditeur */}
-                    <div className={`text-[11px] text-neutral-400 ${isUser ? 'text-right' : 'text-left'}`}>
-                      {msg.sender_name || (isUser ? 'Vous' : 'SensAI')}
+                    <div className={`text-[11px] text-neutral-400 flex items-center gap-2 ${isUser ? 'justify-end' : 'justify-start'}`}>
+                      <span>{msg.sender_name || (isUser ? 'Vous' : 'SensAI')}</span>
                     </div>
 
                     {/* Bulle de texte */}
@@ -366,8 +455,8 @@ export function ChatView({
                               key={idx}
                               className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium border ${
                                 isUser
-                                  ? 'bg-indigo-700/80 border-indigo-500/60 text-white'
-                                  : 'bg-neutral-800 border-neutral-700 text-neutral-200'
+                                   ? 'bg-indigo-700/80 border-indigo-500/60 text-white'
+                                   : 'bg-neutral-800 border-neutral-700 text-neutral-200'
                               }`}
                             >
                               <Paperclip className="w-3 h-3 text-indigo-300 shrink-0" />
@@ -393,16 +482,54 @@ export function ChatView({
                       ) : null}
                     </div>
 
-                    {/* Badge de coût en tokens pour chaque réponse de l'IA */}
-                    {!isUser && msg.total_tokens > 0 && (
-                      <div className="flex items-center gap-1.5 text-[10px] text-neutral-400 bg-neutral-900/80 border border-neutral-800/80 px-2 py-0.5 rounded-md w-fit">
-                        <Coins className="w-3 h-3 text-amber-400" />
-                        <span>Coût : </span>
-                        <span className="text-neutral-300 font-medium">Prompt : {msg.prompt_tokens}</span>
-                        <span>•</span>
-                        <span className="text-neutral-300 font-medium">Réponse : {msg.completion_tokens}</span>
-                        <span>•</span>
-                        <span className="text-amber-300 font-bold">Total : {msg.total_tokens} tokens</span>
+                    {/* Badge de coût en tokens ou statut interrompu */}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {msg.interrupted && (
+                        <div className="inline-flex items-center gap-1 text-[10px] text-amber-300 bg-amber-950/40 border border-amber-800/60 px-2 py-0.5 rounded-md">
+                          <Square className="w-2.5 h-2.5 fill-current text-amber-400" />
+                          <span>Génération interrompue</span>
+                        </div>
+                      )}
+                      {!isUser && msg.total_tokens > 0 && (
+                        <div className="flex items-center gap-1.5 text-[10px] text-neutral-400 bg-neutral-900/80 border border-neutral-800/80 px-2 py-0.5 rounded-md w-fit">
+                          <Coins className="w-3 h-3 text-amber-400" />
+                          <span>Coût : </span>
+                          <span className="text-neutral-300 font-medium">Prompt : {msg.prompt_tokens}</span>
+                          <span>•</span>
+                          <span className="text-neutral-300 font-medium">Réponse : {msg.completion_tokens}</span>
+                          <span>•</span>
+                          <span className="text-amber-300 font-bold">Total : {msg.total_tokens} tokens</span>
+                        </div>
+                      )}
+                    </div>
+                    {/* Actions directes en bas du message utilisateur */}
+                    {isUser && !isStreaming && (
+                      <div className="flex items-center justify-end gap-1.5 pt-0.5">
+                        <button
+                          type="button"
+                          onClick={() => onBranchMessage(msg.id, undefined, 'fork')}
+                          title="Créer une nouvelle branche de discussion à partir de ce message"
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium text-emerald-400 hover:text-emerald-300 bg-neutral-900/90 hover:bg-neutral-850 border border-emerald-900/60 hover:border-emerald-700 transition-colors cursor-pointer shadow-xs"
+                        >
+                          <GitBranch className="w-3.5 h-3.5 text-emerald-400" />
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingState({
+                              messageId: msg.id,
+                              originalContent: displayContent,
+                              mode: 'fork',
+                            })
+                            setInputText(displayContent)
+                            textareaRef.current?.focus()
+                          }}
+                          title="Modifier ce message pour relancer une alternative"
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium text-neutral-300 hover:text-white bg-neutral-900/90 hover:bg-neutral-850 border border-neutral-700/80 hover:border-neutral-600 transition-colors cursor-pointer shadow-xs"
+                        >
+                          <Pencil className="w-3.5 h-3.5 text-neutral-400" />
+                        </button>
                       </div>
                     )}
                   </div>
@@ -425,17 +552,23 @@ export function ChatView({
               </div>
 
               <div className="space-y-1.5 max-w-xl">
-                <div className="text-[11px] text-neutral-400 flex items-center gap-1.5">
+                <div className="text-[11px] text-neutral-400 flex items-center gap-2">
                   <span>SensAI</span>
-                  <span className="text-indigo-400 text-[10px] flex items-center gap-1">
-                    <Loader2 className="w-3 h-3 animate-spin" />
-                    Génération en cours...
-                  </span>
                 </div>
 
                 <div className="p-3.5 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap break-words bg-neutral-900 border border-indigo-900/40 text-neutral-100 rounded-bl-xs shadow-md">
-                  {streamingText || '...'}
-                  <span className="inline-block w-1.5 h-4 ml-0.5 bg-indigo-400 animate-pulse align-middle"></span>
+                  {streamingText ? (
+                    <>
+                      {streamingText}
+                      <span className="inline-block w-1.5 h-4 ml-0.5 bg-indigo-400 animate-pulse align-middle" />
+                    </>
+                  ) : (
+                    <div className="py-0.5 select-none">
+                      <span className="animate-shimmer-sweep font-medium text-sm">
+                        {THINKING_PHRASES[thinkingIndex]}
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -448,6 +581,61 @@ export function ChatView({
       {/* Zone inférieure : Prompt Box Inspirée de Google AI Studio */}
       <footer className="p-4 sm:p-6 pt-0 bg-transparent shrink-0">
         <div className="max-w-4xl w-full mx-auto">
+          {/* Bannière de mode modification d'un message passé */}
+          {editingState && (
+            <div className="mb-2 p-2.5 bg-neutral-900/95 border border-indigo-500/50 rounded-xl flex items-center justify-between gap-3 text-xs text-neutral-200 shadow-md animate-fade-in">
+              <div className="flex items-center gap-2 min-w-0">
+                <Pencil className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                <span className="font-semibold text-indigo-300">Modification du message :</span>
+                <span className="truncate text-neutral-400 max-w-sm italic">
+                  "{editingState.originalContent.slice(0, 50)}{editingState.originalContent.length > 50 ? '...' : ''}"
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                <div className="inline-flex rounded-md bg-neutral-950 p-0.5 border border-neutral-800 text-[11px]">
+                  <button
+                    type="button"
+                    onClick={() => setEditingState((prev) => prev ? { ...prev, mode: 'fork' } : null)}
+                    className={`px-2 py-0.5 rounded flex items-center gap-1 transition-colors cursor-pointer ${
+                      editingState.mode === 'fork'
+                        ? 'bg-emerald-600 text-white font-medium'
+                        : 'text-neutral-400 hover:text-neutral-200'
+                    }`}
+                    title="Garde la discussion originale et ouvre une nouvelle branche"
+                  >
+                    <GitBranch className="w-3 h-3 text-emerald-300" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditingState((prev) => prev ? { ...prev, mode: 'truncate' } : null)}
+                    className={`px-2 py-0.5 rounded flex items-center gap-1 transition-colors cursor-pointer ${
+                      editingState.mode === 'truncate'
+                        ? 'bg-amber-600 text-white font-medium'
+                        : 'text-neutral-400 hover:text-neutral-200'
+                    }`}
+                    title="Régénère directement à la place dans cette discussion"
+                  >
+                    <RotateCcw className="w-3 h-3 text-amber-300" />
+                    <span>Remplacer ici</span>
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingState(null)
+                    setInputText('')
+                  }}
+                  className="p-1 rounded text-neutral-400 hover:text-white hover:bg-neutral-800 cursor-pointer"
+                  title="Annuler la modification (Esc)"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          )}
+
           <div
             onDragOver={(e) => {
               e.preventDefault()
@@ -520,11 +708,14 @@ export function ChatView({
             {/* Zone de texte du prompt */}
             <div className="p-3.5 pb-2">
               <Textarea
+                ref={textareaRef}
                 value={inputText}
                 onChange={(e) => setInputText(e.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder={
-                  attachedFiles.length > 0
+                  isStreaming
+                    ? "Génération en cours... (Esc ou Ctrl+C pour arrêter et donner un nouvel ordre)"
+                    : attachedFiles.length > 0
                     ? "Posez une question sur le(s) fichier(s) joint(s) ou ajoutez vos instructions..."
                     : "Tapez un prompt pour discuter avec SensAI ou invoquer un outil..."
                 }
@@ -668,26 +859,51 @@ export function ChatView({
                 })}
               </div>
 
-              {/* À droite : Bouton Run / Envoyer (comme dans Google AI Studio) */}
+              {/* À droite : Bouton Run / Arrêter (comme dans Google AI Studio) */}
               <div className="flex items-center gap-2 shrink-0">
-                <Button
-                  onClick={handleSend}
-                  disabled={(!inputText.trim() && attachedFiles.length === 0) || isStreaming}
-                  size="sm"
-                  className="h-8 px-3.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg gap-1.5 font-medium text-xs cursor-pointer disabled:opacity-50 transition-all shadow-md"
-                >
-                  {isStreaming ? (
-                    <>
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      <span>Génération...</span>
-                    </>
-                  ) : (
-                    <>
-                      <span>Run</span>
+                {isStreaming ? (
+                  <Button
+                    type="button"
+                    onClick={onStopStreaming}
+                    size="sm"
+                    className="h-8 px-3.5 bg-red-600 hover:bg-red-500 text-white rounded-lg gap-1.5 font-medium text-xs cursor-pointer transition-all shadow-md active:scale-95"
+                    title="Arrêter la génération (Raccourci: Esc ou Ctrl+C)"
+                  >
+                    <Square className="w-3 h-3 fill-current" />
+                    <span>Arrêter</span>
+                    <span className="text-[10px] opacity-80 font-mono hidden sm:inline">(Esc)</span>
+                  </Button>
+                ) : (
+                  <Button
+                    onClick={handleSend}
+                    disabled={!inputText.trim() && attachedFiles.length === 0}
+                    size="sm"
+                    className={`h-8 px-3.5 text-white rounded-lg gap-1.5 font-medium text-xs cursor-pointer disabled:opacity-50 transition-all shadow-md ${
+                      editingState
+                        ? editingState.mode === 'fork'
+                          ? 'bg-emerald-600 hover:bg-emerald-500'
+                          : 'bg-amber-600 hover:bg-amber-500'
+                        : 'bg-indigo-600 hover:bg-indigo-500'
+                    }`}
+                  >
+                    <span>
+                      {editingState
+                        ? editingState.mode === 'fork'
+                          ? 'Brancher'
+                          : 'Remplacer'
+                        : 'Run'}
+                    </span>
+                    {editingState ? (
+                      editingState.mode === 'fork' ? (
+                        <GitBranch className="w-3.5 h-3.5" />
+                      ) : (
+                        <RotateCcw className="w-3.5 h-3.5" />
+                      )
+                    ) : (
                       <CornerDownLeft className="w-3.5 h-3.5 opacity-70" />
-                    </>
-                  )}
-                </Button>
+                    )}
+                  </Button>
+                )}
               </div>
             </div>
           </div>
