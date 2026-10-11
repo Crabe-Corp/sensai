@@ -6,16 +6,18 @@ import requests
 from qdrant_client import QdrantClient
 from qdrant_client.http.models import Distance, VectorParams, PointStruct
 
-# Connexion à la base de données
-client = QdrantClient("localhost", port=6333)
 COLLECTION_NAME = "royaumes_combattants"
 TAILLE_VECTEUR = 768 
 
-if not client.collection_exists(COLLECTION_NAME):
-    client.create_collection(
-        collection_name=COLLECTION_NAME,
-        vectors_config=VectorParams(size=TAILLE_VECTEUR, distance=Distance.COSINE),
-    )
+def get_qdrant_client():
+    client = QdrantClient("localhost", port=6333)
+    
+    if not client.collection_exists(COLLECTION_NAME):
+        client.create_collection(
+            collection_name=COLLECTION_NAME,
+            vectors_config=VectorParams(size=TAILLE_VECTEUR, distance=Distance.COSINE),
+        )
+    return client
 
 def preparer_documents_rag(dossier_source):
     documents_finaux = []
@@ -81,6 +83,7 @@ def get_embedding(text):
         return None
 
 def indexer_vers_qdrant(documents_extraits):
+    client = get_qdrant_client()
     points = []
     
     for index, doc in enumerate(documents_extraits):
