@@ -20,6 +20,15 @@ services:
     networks:
       - sensai-network
 
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: vector_db
+    ports:
+      - "6333:6333" # API REST
+      - "6334:6334" # API gRPC
+    volumes:
+      - qdrant_data:/qdrant/storage
+
   ia:
     image: ollama/ollama:latest
     container_name: sensai-ia
@@ -74,3 +83,4 @@ volumes:
   bdd_data:
   ollama_data:
   openwebui_data:
+  qdrant_data:

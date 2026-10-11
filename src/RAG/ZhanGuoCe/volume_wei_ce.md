@@ -1,7 +1,7 @@
 # Wei Ce
 
 
-## Wei 1
+## Volume : Wei 1
 
 
 ### Zhibo Demands Land from Wei Huanzi
@@ -379,8 +379,7 @@ The Wei crown prince was in Chu. He said to Louzi at Yanling, "You must wait for
 He then approached Chuli Zi Ye and said, "Attacking Pishi is the king's top priority, yet we have been unable to capture it; the world will therefore look down upon Qin. Moreover, holding onto Pishi would be advantageous for attacking Han and Wei." Chuli Zi said, "I have already allied with Wei; there is no need to use it [Pishi]." He replied, "I would like to express my humble thoughts to you, Lord. Please do not consider this an offense. Possessing Pishi is a great advantage for the state, yet you gave it to Wei. You must have thought in your heart that you could not hold onto it yourself, so you gave it to Wei instead. Now that your strength is more than sufficient to defend it, why do you not take possession of it?" Chuli Zi asked, "What should I do?" He said, "King Wei relies on Qi and Chu; the people he trusts are Louzi and Dizhang. Now King Qi told King Wei, "If you wish to launch a sudden attack on me with your troops, then I will not come to your rescue." King Chu was angry that Wei did not use Louzi but instead sent Dizhang as an envoy for peace; thus, King Chu has already cut off relations with him. King Wei's fear of impending defeat is evident; Dizhang wants to ally Qi and Qin against Chu in order to undermine Louzi; Louzi, on the other hand, wishes to ally Qin and Chu against Qi in order to weaken Dizhang. You would be better off holding back Wei's peace overtures and sending someone to tell Louzi, "Can you give me the area north of Fen River? I will ally with Chu against Qi in order to strengthen our position; this is my responsibility." Louzi and King Chu must act quickly. He also told Dizi, "Can you give me the territory north of Fen River? I will certainly ally with Qi against Chu in order to strengthen your position." Dizhang and King Qi must act quickly. In this way, you will gain the support of Qi and Chu from outside, and have Louzi and Dizhang as your assistants within. Why then would you not be able to hold territory in Hedong?"
 
 
-### Wei 4
-
+## Wei 4
 
 
 ### Presenting a Memorial to King Qin
