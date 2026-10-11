@@ -6,6 +6,12 @@ from pydantic import BaseModel, Field
 import requests
 from qdrant_client import QdrantClient
 from src.RAG.RAG_embedding import get_embedding, COLLECTION_NAME
+from typing import Any, Literal, TypeVar
+
+import httpx
+from pydantic import BaseModel, Field, ValidationError
+
+T = TypeVar("T", bound=BaseModel)
 
 
 class ChatMessage(BaseModel):
@@ -27,6 +33,13 @@ class OllamaModelNotFoundError(OllamaError):
 
 class OllamaAPIError(OllamaError):
     pass
+
+
+class OllamaStructuredOutputError(OllamaError):
+    def __init__(self, message: str, raw_response: str | None = None, validation_error: Exception | None = None) -> None:
+        super().__init__(message)
+        self.raw_response = raw_response
+        self.validation_error = validation_error
 
 
 class OllamaClient:
@@ -98,7 +111,7 @@ class OllamaClient:
             "messages": formatted_messages, # On passe bien la liste complète à l'API Chat
             "stream": True,
         }
-
+   
         try:
             with self._client.stream("POST", f"{self.base_url}/api/chat", json=payload) as response:
                 if response.status_code == 404:
@@ -130,6 +143,63 @@ class OllamaClient:
         except httpx.HTTPError as exc:
             if not isinstance(exc, (OllamaError,)):
                 raise OllamaAPIError(f"Erreur de communication avec Ollama: {exc}") from exc
+
+    def chat(self, model: str, messages: list[ChatMessage | dict[str, str]], format: str | dict[str, Any] | None = None) -> dict[str, Any]:
+        formatted_messages = [m.model_dump() if isinstance(m, ChatMessage) else m for m in messages]
+        payload: dict[str, Any] = {"model": model, "messages": formatted_messages, "stream": False}
+        if format is not None:
+            payload["format"] = format
+
+        try:
+            response = self._client.post(f"{self.base_url}/api/chat", json=payload)
+            if response.status_code == 404:
+                raise OllamaModelNotFoundError(
+                    f"Le modèle '{model}' est introuvable sur le serveur Ollama."
+                )
+            if response.is_error:
+                raise OllamaAPIError(
+                    f"Erreur HTTP {response.status_code} d'Ollama: {response.text}"
+                )
+            data = response.json()
+            if "error" in data:
+                err_msg = data["error"]
+                if "not found" in err_msg.lower():
+                    raise OllamaModelNotFoundError(f"Modèle '{model}' introuvable: {err_msg}")
+                raise OllamaAPIError(err_msg)
+            return data
+        except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
+            raise OllamaConnectionError(
+                f"Serveur Ollama inaccessible sur {self.base_url}. Vérifiez qu'Ollama est bien démarré."
+            ) from exc
+        except httpx.HTTPError as exc:
+            if not isinstance(exc, (OllamaError,)):
+                raise OllamaAPIError(f"Erreur de communication avec Ollama: {exc}") from exc
+
+    def chat_structured(self, model: str, messages: list[ChatMessage | dict[str, str]], response_format: type[T], max_retries: int = 1) -> T:
+        schema = response_format.model_json_schema()
+        current_messages: list[ChatMessage | dict[str, str]] = list(messages)
+        last_raw_content: str | None = None
+        last_error: Exception | None = None
+
+        for attempt in range(max_retries + 1):
+            response_data = self.chat(model=model, messages=current_messages, format=schema)
+            raw_content = response_data.get("message", {}).get("content", "")
+            last_raw_content = raw_content
+
+            try:
+                return response_format.model_validate_json(raw_content)
+            except (ValidationError, ValueError, json.JSONDecodeError) as exc:
+                last_error = exc
+                if attempt < max_retries:
+                    current_messages.append({"role": "assistant", "content": raw_content})
+                    current_messages.append(
+                        {"role": "user", "content": (f"La réponse précédente est invalide et ne respecte pas le schéma JSON attendu. " f"Erreur de validation : {exc}. " f"Veuillez corriger et renvoyer exclusivement l'objet JSON conforme au schéma."),}
+                    )
+        raise OllamaStructuredOutputError(
+            f"Échec de validation de la réponse structurée ({response_format.__name__}) après {max_retries + 1} tentative(s).",
+            raw_response=last_raw_content,
+            validation_error=last_error,
+        )
 
     def close(self) -> None:
         self._client.close()
