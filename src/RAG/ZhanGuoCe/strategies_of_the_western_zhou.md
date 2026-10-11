@@ -1,0 +1,87 @@
+# Strategies of the Western Zhou
+
+## Western Zhou
+
+
+### Xue Gong Led Qi to Attack Chu on Behalf of Han and Wei
+
+Xue Gong led Qi to attack Chu on behalf of Han and Wei, and then joined with Han and Wei to attack Qin, yet he had to beg for food while borrowing troops from the Western Zhou. Han Qing of the Western Zhou said to Xue Gong, "You led Qi to attack Chu for Han and Wei, taking the area north of Wan and Ye after nine years to strengthen Han and Wei. Now you are attacking Qin again in order to further benefit them." "With no threat from Chu in the south and no danger from Qin in the west, Han and Wei will have more territory and greater power. As a result, Qi will inevitably be weakened." "When the dominant and subordinate powers shift in strength, and when advantages and disadvantages change over time, I secretly fear for your safety." "You would be better off letting our small state secretly ally with Qin while you refrain from attacking, and thus avoid borrowing troops and begging for food." "You should approach Hangu Pass without launching an attack, and let our small state convey your intentions to the King of Qin: 'Xue Gong will certainly defeat Qin in order to strengthen Han and Wei; his advance is intended only to persuade Your Majesty to have Chu cede eastern territories to Qi.'" The King of Qin released the King of Chu as a gesture of reconciliation. "You can let our small state demonstrate this loyalty to Qin, which will avoid the destruction of Qin and allow Chu's eastern territories to be used as a means of self-redemption. The King of Qin is sure to accept this." "Once the King of Chu is released, he will certainly seek an alliance with Qi." "With the eastern territories, Qi will become even stronger, and the Xue family will be free from trouble for generations to come." "Qin will not greatly weaken, yet being located west of the Three Jin states, they will certainly respect Qi." Xue Gong said, "Well said." He therefore sent Han Qing to Qin and instructed the three states not to attack Qin, thus avoiding the need to borrow troops or beg for food from the Western Zhou.
+
+
+### Qin Attacks Wei's General Xi Wu at Yique
+
+The state of Qin attacked Wei's general Xi Wu at Yique and advanced its troops to attack Zhou. Zhou Zui said to Li Dui, "You would be better off preventing Qin from attacking Zhou." The best plan for Zhao is nothing more than to make Qin and Wei fight again. Now, if Qin attacks Zhou and captures it, then its forces will certainly suffer many casualties. If Qin wants to wait for the opportunity to capture Zhou, it must not attack Wei; if Qin attacks Zhou but fails to capture it, having previously exhausted itself by defeating Wei and then suffering a defeat in attacking Zhou, it will certainly not attack Wei again. Now if you prevent them, Qin has yet to make peace with Wei. And if complete Zhao orders it to stop, Qin will certainly dare not disobey; this would mean that you have repelled Qin and secured Zhou. When Qin leaves Zhou, it will inevitably attack Wei again; Wei cannot resist, so it must seek peace through you, and then your influence will be great. If Wei does not make peace but instead quickly resists Qin's attack, this would mean that you preserve Zhou and fight both Qin and Wei. Thus, great influence will entirely belong to Zhao."
+
+### state of Qin ordered Chuli Ji to enter Zhou with a hundred chariots
+
+The state of Qin sent Chuli Ji with a hundred chariots into Zhou; the ruler of Zhou received him with soldiers, showing great respect. King of Chu was angry and rebuked Zhou for honoring Qin's envoy so highly. You Teng said to King of Chu, "In the past, Zhi Bo wanted to attack Youyou and sent him a large bell, transported on a wide chariot. He then followed up with troops, and Youyou was ultimately destroyed because it was unprepared. When Duke Huan attacked Cai, he declared that he was attacking Chu, but in reality he launched a surprise attack on Cai. Now Qin is a country of tigers and wolves, with the intention to swallow Zhou as well; sending Chuli Ji with a hundred chariot into Zhou, the ruler of Zhou was frightened. Taking Cai and Youyou as warnings, he thus placed long weapons in front and strong crossbows at the back, calling it "guarding Ji," but actually imprisoning him. Could the ruler of Zhou possibly not love his country? He was afraid that one day his state would be destroyed, and thus worried about Your Majesty." King of Chu then became pleased.
+
+
+### Campaign Against Yongshi
+
+During the campaign against the Yong clan, the State of Han requisitioned armor and weapons from Zhou. The ruler of Zhou was worried about this and informed Su Dai. Su Dai said, "What is there to be worried about?" "I can make the State of Han stop requisitioning armor and grain from Zhou for you, and I can also help you obtain Gaodu," he said. The ruler of Zhou was greatly pleased and said, "If you are able to do that, I shall entrust the state to your discretion." Su Dai then went to see Gongs Zhong, the chancellor of Han, and said, "Have you not heard about the plan of Chu?" Zhao Ying said to King of Chu, "The State of Han is exhausted from war and its granaries are empty. It has no means to defend the city. If we take advantage of their hunger, it will fall within a month." "Now, after five months of besieging Yongshi and still failing to capture it, this shows that Chu is weak." King of Chu has now begun to doubt Zhao Ying's plan. "Now, by requisitioning armor and provisions from Zhou, you are revealing Chu's weakness." "When Zhao Ying hears of this, he will surely advise King of Chu to send more troops to besiege Yongshi, and Yongshi will certainly fall." Gongs Zhong said, "Well spoken. "However, my envoys have already departed." Dai said, "Why does the chancellor not give Gaodu to Zhou?" Gongs Zhong angrily replied, "Even without requisitioning armor and grain from the State of Zhou, I have already done enough. "Why should I give them Gaodu?" Dai said, "If you give them Gaodu, then the State of Zhou will certainly submit to Han. When Qin hears about this, they will surely become very angry and burn Zhou's diplomatic credentials, refusing to allow their envoys through. This means that by sacrificing a problematic territory like Gaodu, you would gain a loyal ally in Zhou. Why not give it?" Gongs Zhong said, "Well spoken." He did not requisition armor and grain from Zhou but instead gave them Gaodu. As a result, the forces of Chu failed to capture Yongshi and withdrew.
+
+
+### Zhou Jun's Journey to Qin
+
+When Zhou Jun went to Qin, he said to Zhou Zui: "It would be better to praise King Qin's filial piety and thus use Ying as the land for supporting the Dowager Empress." King Qin and the Empress Dowager will surely be pleased, which means you will have control over Qin. If relations are good, King Zhou must credit it to your achievement; if the relationship turns bad, those who advised King Zhou to enter Qin will certainly be held guilty."
+
+
+### Su Li Advises King Zhou
+
+Su Li said to King Zhou, "The one who defeated the states of Han and Wei, killed Xi Wu, attacked Zhao, and captured Lin, Lishi, and Qi was Bai Qi." This is not only about military strategy but also a matter of heavenly destiny. Now, if we attack Liang, Liang will certainly be defeated; once it is defeated, Zhou will face danger. You would be better off stopping this campaign. He said to Bai Qi, "Chu has a man named Yang Youji, who is good at archery." "He can shoot from a hundred paces away and hit the tip of a willow leaf every time; he never misses in a hundred shots." Those around him all said, "That is impressive." One person passing by said, "He is good at shooting; he can be taught how to shoot." Yang Youji said, "Everyone is good, yet you say he can be taught to shoot. Why don't you take my place and shoot it yourself?" The guest replied, "I cannot teach you how to hold the bow with your left hand and bend the right." "One who can shoot a willow leaf and hit it every time in a hundred shots, if he does not take good care to rest properly, after a short while his strength becomes tired. His bow bends and the arrow hooks; one shot misses, and all previous efforts are wasted." Now, it was you who defeated Han and Wei, killed Xi Wu and attacked Zhao to the north, capturing Lin, Lishi and Qi. Your achievements are numerous. Now, you are once again leading the Qin army beyond the frontier, passing through the two Zhou states and trampling over Han to attack Liang. If one campaign fails to achieve success, all previous achievements will be completely lost. You would better claim illness and refrain from going out.
+
+
+### Chu forces stationed to the south of the mountains
+
+The Chu forces were stationed to the south of the mountain; I was about to be appointed as a general under King Chu, and thus became angry with Zhou. Someone advised Duke Zhou, "It would be better for you to have the Crown Prince General Zheng welcome Wu De at the border, while you personally go out to meet him in the suburbs, so that all under heaven will know how highly you regard Wu De." He then leaked this information to the state of Chu, saying: "The reason Duke Zhou serves Wu De is because of a vessel; it must be named 'Mouchu.'" "The king will certainly seek it, and since Wu De has not rendered any service, the king will surely hold him guilty."
+
+
+### Chu Requests a Passage Between the Two Zhou States
+
+Chu Qingdao between the two Zhou states to face Yan and Wei, the Zhou ruler was worried about this. Su Qin said to Duke Zhou, "Clear a road connecting it to the Yellow River; Yan and Wei will certainly resent this." Qi and Qin feared that Chu would seize the Nine Tripods, so they must rescue Yan and Wei and attack Chu. Chu could not defend beyond Fangcheng, how could it control the area between the two Zhou? "If these four states do not resent this, even if you wish not to give them up, Chu will certainly take them by itself."
+
+
+### Sikou Bu for Zhou Zui Advises King Zhou
+
+Sikou Bu, on behalf of Zhou Zui, said to King Zhou: "Your Majesty sent someone to inform Qi Wang that Zhou Zui refused to become the crown prince. I think this action is not advisable for you, Your Majesty." Hanye Shi bought a fine sword for Tai Gong of Qi. The Duke did not know it was excellent, returned the sword and demanded money from him instead. A Yue person offered to buy it for a thousand gold coins, but he refused to sell it even though it was broken. On his deathbed, he entrusted his son and said: "You must not keep this knowledge to yourself." Now that you have appointed Zhou Zui as crown prince, it is a secret known only by you. No one in the world yet believes this. I am afraid that King Qi will actually appoint Guo as crown prince and then transfer it to Zhou Zui, in order to pass this matter on to Qi. You are overly clever, and Zhou Zui is full of deceit; why don't you purchase trustworthy goods instead? Provide for him without showing favoritism toward Zhou Zui so that the whole world can see it."
+
+
+### Qin Summons Duke Zhou
+
+The State of Qin summoned Duke Zhou, but Duke Zhou found it difficult to go. Someone advised King Wei on behalf of Duke Zhou, saying: "The State of Qin has summoned Duke Zhou in order to have him attack Nanyang in the southern part of the State of Wei. "Why does Your Majesty not go out to the south of the Yellow River?" Duke Zhou heard about this and intended to use it as an excuse to refuse going to Qin. "If Duke Zhou does not enter Qin, Qin will certainly dare not cross the Yellow River to attack Nanyang."
+
+
+### Xi Wu Defeated at Yique
+
+Xi Wu was defeated at Yique, and Zhou Jun went to Wei to seek help; the King of Wei refused on the grounds that Shangdang was in urgent need. Zhou Jun returned, saw the Liang You and enjoyed it. Qi Mu Hui said to Zhou Jun: "The 苑 at Wen is no less than this one, yet it is much closer." "I am able to obtain it for you," he added. When Zhou Jun returned and saw the King of Wei, the king asked, "Is Lord Zhou resentful toward me?" He replied, "No, he is not resentful." "And who else would resent you?" "I am worried about a potential threat to Your Majesty." "Lord Zhou is a strategist. He has proposed to use his state as a shield for Your Majesty against Qin, yet you have not reciprocated by defending him. I foresee that he will inevitably submit his state to Qin." "If Qin mobilizes all its troops from outside the passes along with Zhou's forces to attack Nanyang, then both Shangdang regions will be cut off." The King of Wei said, "If that is so, what should we do?" Qi Mu Hui replied: "Lord Zhou's nature does not favor serving Qin for small benefits, yet he is fond of minor advantages." "Now if Your Majesty agrees to station 30,000 troops at Wen and grant him the 苑 there, Lord Zhou will have a reason to explain to his elders and people, and he can enjoy the benefits of the Wen 苑. He would certainly not align with Qin." "I have heard that the profit from the Wen 苑 is eighty jin of gold per year. If Lord Zhou gains control over Wen, he would contribute 120 jin of gold to serve Your Majesty annually; this means for every crisis in Shangdang, we gain an additional forty jin of gold." Therefore, the King of Wei sent Meng Mao to present the Wen 苑 to Lord Zhou and agreed to station troops there.
+
+
+### Exchange of Territories between Han and Wei
+
+Han and Wei exchanged territories, which was disadvantageous to Xi Zhou. Fan Yu said to King of Chu, "Zhou must certainly perish now. Han and Wei exchanged territories; Han gained two counties while Wei lost two counties. The reason for doing so is that it completely encircled the two Zhou states, and its territory was much greater than just two counties; the Nine Tripods were also there. Moreover, Wei controlled Nanyang, Zhengdi, Sanchuan and encircled the two Zhou. Then the area beyond Fangcheng in Chu would be endangered; if Han annexed both Shangdang regions to face Zhao, then the region above Yangchang in Zhao would be endangered. Therefore, on the day the exchange was completed, Chu and Zhao both became vulnerable." King of Chu was alarmed, so he used Zhao to stop the territorial exchange.
+
+
+### Qin Wants to Attack Zhou
+
+Qi Qin wanted to attack Zhou, and Zhou Zui said to King Qin: "Those who plan for your state should not attack Zhou." Attacking Zhou would not actually be beneficial to the state, but it would cause fear of your reputation throughout the world. If all under heaven fears Qin because of its reputation, they will certainly unite in the east with Qi. If troops are exhausted by fighting Zhou and all under heaven unites with Qi, then Qin will be isolated and unable to become a hegemon. This is because the world wants to weaken Qin, so they advise Your Majesty to attack Zhou. "If Qin and all under heaven are exhausted, then your commands will no longer be heeded in Zhou."
+
+
+### Gong Ta Wei Zhou Jun
+
+Gong Ta wei Zhou Jun yue: "Wan shi Qin er qing Jin, Qin ji er Wan wang." Zheng shi Wei er qing Han, Wei gong Cai er Zheng wang. Zhu and Ju were destroyed by Qi, Chen and Cai were destroyed by Chu. These are all cases of relying on distant states for support while undervaluing nearby enemies. Now you rely on Han and Wei while undervaluing Qin, your state may be in danger. You would do better to send Zhou Zui to secretly form an alliance with Zhao to prepare against Qin; then the state will not be destroyed."
+
+
+### To King Qi
+
+He said to King Qi: "Why does Your Majesty not offer territory to Zhou Zui in order to make him crown prince?" King Qi ordered Sima Han to present bribes to Zhou, advancing Zhou Zui's position. Zuo Shang said to Sima Han: "If the Zhou court does not listen, it will mean that your wisdom is ineffective and your relations with Zhou are severed." You would be better off saying to the ruler of Zhou: "What do you wish to appoint?" "Let someone secretly inform Han, and Han will request that the king grant territory to him.'" Zuo Shang thus succeeded in his matter.
+
+
+### Three Kingdoms Attack and Rebel Against Qin
+
+The Three Kingdoms attacked Qin and rebelled; Western Zhou feared that Wei would use this as an excuse to march through their territory. Western Zhou advised the King of Wei, "Chu and Song would not benefit from Qin's virtue toward the Three Kingdoms; they will attack your granaries to benefit Qin." The King of Wei was frightened and ordered his troops to quickly move eastward.
+
+
+### Xi Wu's Defeat
+
+Xi Wu was defeated, and Zhou sent Zhou Zu to Qin. Someone said to Zhou Zu, "Why don't you tell Duke Zhou, 'If I go to Qin, the relations between Qin and Zhou will surely become hostile.'" "The ruler's ministers, who are also important in Qin and desire to become prime minister, will surely speak ill of me in Qin, and I would then be unable to serve as an envoy." "I wish to resign my post before going." "If you appoint him as prime minister, he will obtain the position and not speak ill of Zhou in Qin." "The ruler values Qin highly, which is why he sent a prime minister to go. If you resign before going, it will show contempt for Qin, and you are certainly not exempt from punishment." "If you speak wisely and proceed, the relations with Qin will be good, which would benefit your success. If the relations become hostile, it will not be beneficial for you, and you may even face punishment."

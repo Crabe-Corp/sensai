@@ -1,5 +1,10 @@
 import json
 from collections.abc import Iterator
+from typing import Literal
+import httpx
+from pydantic import BaseModel, Field
+from qdrant_client import QdrantClient
+from src.RAG.RAG_embedding import get_embedding, COLLECTION_NAME
 from typing import Any, Literal, TypeVar
 
 import httpx
@@ -60,10 +65,52 @@ class OllamaClient:
         except httpx.HTTPError as exc:
             raise OllamaAPIError(f"Erreur de récupération des modèles: {exc}") from exc
 
-    def chat_stream(self, model: str, messages: list[ChatMessage | dict[str, str]]) -> Iterator[str]:
-        formatted_messages = [m.model_dump() if isinstance(m, ChatMessage) else m for m in messages]
-        payload = {"model": model, "messages": formatted_messages, "stream": True}
+    def chat_stream(
+        self,
+        model: str,
+        messages: list[ChatMessage | dict[str, str]],
+    ) -> Iterator[str]:
+        formatted_messages = [
+            m.model_dump() if isinstance(m, ChatMessage) else m
+            for m in messages
+        ]
+        
+        derniere_question = formatted_messages[-1]["content"] if formatted_messages else ""
+        
+        client = QdrantClient("localhost", port=6333)
+        
+        vecteur_question = get_embedding(derniere_question)
 
+        reponse_qdrant = client.query_points(
+            collection_name=COLLECTION_NAME,
+            query=vecteur_question,
+            limit=3
+        )
+
+        resultats = reponse_qdrant.points
+        
+        contexte_historique = ""
+        for hit in resultats:
+            source = hit.payload["source"]
+            texte = hit.payload["texte"]
+            contexte_historique += f"[Source : {source}]\n{texte}\n\n"
+        
+        prompt_final = (
+            f"Tu es un conseiller stratégique de la période des Royaumes Combattants. "
+            f"Réponds à la question exclusivement en utilisant ce contexte historique :\n\n"
+            f"{contexte_historique}\n\n"
+            f"Question : {derniere_question}"
+        )
+            
+        # 4. Remplacer le contenu du dernier message par le prompt enrichi
+        formatted_messages[-1]["content"] = prompt_final
+
+        payload = {
+            "model": model,
+            "messages": formatted_messages, # On passe bien la liste complète à l'API Chat
+            "stream": True,
+        }
+   
         try:
             with self._client.stream("POST", f"{self.base_url}/api/chat", json=payload) as response:
                 if response.status_code == 404:
