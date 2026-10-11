@@ -3,7 +3,6 @@ from collections.abc import Iterator
 from typing import Literal
 import httpx
 from pydantic import BaseModel, Field
-import requests
 from qdrant_client import QdrantClient
 from src.RAG.RAG_embedding import get_embedding, COLLECTION_NAME
 
