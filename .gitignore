@@ -1,3 +1,7 @@
+clean.py
+script_scrap.py
+result_embedding
+
 # Byte-compiled / cache files
 __pycache__/
 *.py[cod]
