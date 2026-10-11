@@ -37,6 +37,9 @@ services:
       - ollama_data:/root/.ollama
     networks:
       - sensai-network
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
 
   backend:
     build:
