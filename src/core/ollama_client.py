@@ -200,6 +200,36 @@ class OllamaClient:
             validation_error=last_error,
         )
 
+    def call_model(self, model: str, messages: str):
+        payload: dict[str, Any] = {"model": model, "messages": messages, "stream": False}
+        if format is not None:
+            payload["format"] = format
+
+        try:
+            response = self._client.post(f"{self.base_url}/api/chat", json=payload)
+            if response.status_code == 404:
+                raise OllamaModelNotFoundError(
+                    f"Le modèle '{model}' est introuvable sur le serveur Ollama."
+                )
+            if response.is_error:
+                raise OllamaAPIError(
+                    f"Erreur HTTP {response.status_code} d'Ollama: {response.text}"
+                )
+            data = response.json()
+            if "error" in data:
+                err_msg = data["error"]
+                if "not found" in err_msg.lower():
+                    raise OllamaModelNotFoundError(f"Modèle '{model}' introuvable: {err_msg}")
+                raise OllamaAPIError(err_msg)
+            return data
+        except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
+            raise OllamaConnectionError(
+                f"Serveur Ollama inaccessible sur {self.base_url}. Vérifiez qu'Ollama est bien démarré."
+            ) from exc
+        except httpx.HTTPError as exc:
+            if not isinstance(exc, (OllamaError,)):
+                raise OllamaAPIError(f"Erreur de communication avec Ollama: {exc}") from exc
+
     def close(self) -> None:
         self._client.close()
 

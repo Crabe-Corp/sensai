@@ -2,6 +2,7 @@ import argparse
 import json
 import os
 import sys
+import src.core.memory_management as mem
 from pathlib import Path
 from typing import Any
 from src.core.db.database import init_database, get_kingdom_stats, update_kingdom_gold, get_active_diplomacy
@@ -118,6 +119,9 @@ def run_session(client: OllamaClient, model: str, host: str) -> None:
         except (KeyboardInterrupt, EOFError):
             print("\n\nSession interrompue.")
             break
+
+        if (mem.estimate_tokens(history) >= 2000):
+            mem.enforce_token_budget(model, client, history)
 
         if not user_input:
             print("[Info] Veuillez saisir un message non vide.")
