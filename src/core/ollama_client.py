@@ -17,6 +17,9 @@ class ChatMessage(BaseModel):
     tool_calls: list[dict[str, Any]] | None = None
 
     def model_dump_for_api(self) -> dict[str, Any]:
+        """Convertit le message de chat en dictionnaire conforme à l'API d'Ollama.
+                PARAMS: Aucun
+                RETURN: dictionnaire contenant le rôle, le contenu et d'éventuels appels d'outils"""
         payload: dict[str, Any] = {"role": self.role, "content": self.content}
         if self.tool_calls is not None:
             payload["tool_calls"] = self.tool_calls
@@ -46,6 +49,11 @@ class OllamaStructuredOutputError(OllamaError, StructuredOutputError):
         raw_response: str | None = None,
         validation_error: Exception | None = None,
     ) -> None:
+        """Initialise l'exception d'erreur de sortie structurée spécifique au client Ollama.
+                PARAMS: - message - STR: message décrivant l'erreur
+                        - raw_response - STR: chaîne brute retournée par Ollama
+                        - validation_error - EXCEPTION: erreur d'origine de validation Pydantic
+                RETURN: None"""
         super().__init__(message)
         self.raw_response = raw_response
         self.validation_error = validation_error
@@ -53,11 +61,18 @@ class OllamaStructuredOutputError(OllamaError, StructuredOutputError):
 
 class OllamaClient:
     def __init__(self, base_url: str = "http://localhost:11434", timeout: float = 60.0) -> None:
+        """Initialise le client HTTP direct pour l'API locale d'Ollama.
+                PARAMS: - base_url - STR: adresse racine du serveur Ollama
+                        - timeout - FLOAT: délai maximal d'attente des requêtes en secondes
+                RETURN: None"""
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
         self._client = httpx.Client(timeout=timeout)
 
     def check_connection(self) -> bool:
+        """Vérifie la disponibilité et l'accessibilité du serveur Ollama local.
+                PARAMS: Aucun
+                RETURN: booléen indiquant si le serveur répond correctement"""
         try:
             response = self._client.get(f"{self.base_url}/api/version", timeout=2.0)
             return response.status_code == 200
@@ -65,6 +80,9 @@ class OllamaClient:
             return False
 
     def list_models(self) -> list[str]:
+        """Récupère la liste des noms de modèles installés localement sur le serveur Ollama.
+                PARAMS: Aucun
+                RETURN: liste des identifiants de modèles disponibles"""
         try:
             response = self._client.get(f"{self.base_url}/api/tags")
             response.raise_for_status()
@@ -76,6 +94,9 @@ class OllamaClient:
             raise OllamaAPIError(f"Erreur de récupération des modèles: {exc}") from exc
 
     def _format_messages(self, messages: list[ChatMessage | dict[str, Any]]) -> list[dict[str, Any]]:
+        """Convertit une liste de messages mixtes en liste de dictionnaires pour l'API Ollama.
+                PARAMS: - messages - LIST: liste contenant des ChatMessage ou dictionnaires bruts
+                RETURN: liste de dictionnaires formatés pour l'API Ollama"""
         formatted: list[dict[str, Any]] = []
         for m in messages:
             if isinstance(m, ChatMessage):
@@ -91,6 +112,12 @@ class OllamaClient:
         tools: list[dict[str, Any]] | None = None,
         format: str | dict[str, Any] | None = None,
     ) -> Iterator[dict[str, Any]]:
+        """Émet les morceaux de réponse bruts en streaming ndjson depuis l'API /api/chat d'Ollama.
+                PARAMS: - model - STR: nom du modèle à interroger
+                        - messages - LIST: historique des messages
+                        - tools - LIST: outils déclarés pour function calling
+                        - format - STR | DICT: format de sortie (ex: JSON Schema)
+                RETURN: itérateur de dictionnaires représentant les réponses brutes d'Ollama"""
         formatted_messages = self._format_messages(messages)
         payload: dict[str, Any] = {"model": model, "messages": formatted_messages, "stream": True}
         if tools:
@@ -133,6 +160,11 @@ class OllamaClient:
         messages: list[ChatMessage | dict[str, Any]],
         tools: list[dict[str, Any]] | None = None,
     ) -> Iterator[str]:
+        """Émet directement les fragments textuels (tokens) de la réponse en streaming.
+                PARAMS: - model - STR: nom du modèle à interroger
+                        - messages - LIST: historique des messages
+                        - tools - LIST: outils optionnels
+                RETURN: itérateur de chaînes de caractères correspondant aux tokens générés"""
         for data in self.chat_stream_raw(model=model, messages=messages, tools=tools):
             chunk = data.get("message", {}).get("content", "")
             if chunk:
@@ -145,6 +177,12 @@ class OllamaClient:
         format: str | dict[str, Any] | None = None,
         tools: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
+        """Effectue un appel synchrone bloquant et non streamé à l'API /api/chat d'Ollama.
+                PARAMS: - model - STR: nom du modèle à interroger
+                        - messages - LIST: historique des messages
+                        - format - STR | DICT: contrainte de format optionnelle
+                        - tools - LIST: outils déclarés optionnels
+                RETURN: dictionnaire contenant la réponse complète d'Ollama"""
         formatted_messages = self._format_messages(messages)
         payload: dict[str, Any] = {"model": model, "messages": formatted_messages, "stream": False}
         if format is not None:
@@ -184,6 +222,12 @@ class OllamaClient:
         response_format: type[T],
         max_retries: int = 1,
     ) -> T:
+        """Interroge Ollama avec garantie de conformité stricte au modèle Pydantic response_format.
+                PARAMS: - model - STR: nom du modèle à interroger
+                        - messages - LIST: historique des messages
+                        - response_format - TYPE[T]: classe Pydantic attendue en sortie
+                        - max_retries - INT: nombre de tentatives de relance en cas d'erreur de schéma
+                RETURN: instance validée du modèle Pydantic de type T"""
         try:
             return chat_structured_flow(
                 client_chat_fn=self.chat,
@@ -200,10 +244,21 @@ class OllamaClient:
             ) from exc
 
     def close(self) -> None:
+        """Ferme le client HTTP sous-jacent et libère les connexions actives.
+                PARAMS: Aucun
+                RETURN: None"""
         self._client.close()
 
     def __enter__(self) -> "OllamaClient":
+        """Initialise le contexte d'utilisation du client Ollama.
+                PARAMS: Aucun
+                RETURN: l'instance d'OllamaClient"""
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        """Clôture le client HTTP à la sortie du bloc de contexte.
+                PARAMS: - exc_type - ANY: type de l'exception
+                        - exc_val - ANY: instance de l'exception
+                        - exc_tb - ANY: traceback de l'exception
+                RETURN: None"""
         self.close()

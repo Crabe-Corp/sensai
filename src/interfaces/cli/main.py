@@ -34,6 +34,9 @@ DEFAULT_MODEL = "qwen2.5:1.5b"
 
 
 def load_config_file(config_path: Path) -> dict[str, Any]:
+    """Charge et lit le fichier de configuration JSON s'il existe sur le disque.
+            PARAMS: - config_path - PATH: chemin vers le fichier de configuration JSON
+            RETURN: dictionnaire contenant la configuration lue ou dictionnaire vide"""
     if not config_path.is_file():
         return {}
     try:
@@ -44,6 +47,9 @@ def load_config_file(config_path: Path) -> dict[str, Any]:
 
 
 def resolve_configuration(cli_args: argparse.Namespace) -> tuple[str, str]:
+    """Détermine l'hôte et le modèle Ollama en combinant CLI, variables d'environnement et config.
+            PARAMS: - cli_args - NAMESPACE: arguments analysés de la ligne de commande
+            RETURN: tuple contenant l'URL de l'hôte et le nom du modèle sélectionnés"""
     file_cfg = load_config_file(Path(cli_args.config)) if cli_args.config else {}
 
     host = (
@@ -64,6 +70,9 @@ def resolve_configuration(cli_args: argparse.Namespace) -> tuple[str, str]:
 
 
 def parse_arguments(argv: list[str] | None = None) -> argparse.Namespace:
+    """Analyse les arguments de ligne de commande passés au programme.
+            PARAMS: - argv - LIST[STR] | NONE: arguments de ligne de commande optionnels
+            RETURN: objet Namespace contenant les arguments analysés"""
     parser = argparse.ArgumentParser(
         prog="sensai",
         description="SENSAI CLI — Chatbot conversationnel connecté à Ollama en local.",
@@ -105,6 +114,11 @@ def parse_arguments(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def print_banner(model: str, host: str, tools_enabled: bool = False) -> None:
+    """Affiche la bannière d'accueil de la CLI avec les paramètres de connexion actifs.
+            PARAMS: - model - STR: nom du modèle Ollama en cours d'utilisation
+                    - host - STR: URL du serveur Ollama
+                    - tools_enabled - BOOL: indicateur d'activation du support des outils
+            RETURN: None"""
     print("=" * 60)
     print(" SENSAI CLI — Chatbot Modulaire")
     print(f" Modèle actif : {model}")
@@ -115,6 +129,9 @@ def print_banner(model: str, host: str, tools_enabled: bool = False) -> None:
 
 
 def print_help() -> None:
+    """Affiche dans la console l'ensemble des commandes spéciales disponibles dans la session.
+            PARAMS: Aucun
+            RETURN: None"""
     print("\nCommandes disponibles :")
     print("  /help                     : Affiche ce message d'aide")
     print("  /clear                    : Réinitialise l'historique de la session")
@@ -136,6 +153,13 @@ def run_session(
     tools: Any = None,
     mcp_server_cmd: str | None = None,
 ) -> None:
+    """Gère la boucle interactive du chatbot CLI, l'historique et les commandes slash.
+            PARAMS: - client - OLLAMACLIENT: instance active du client HTTP Ollama
+                    - model - STR: nom du modèle Ollama à utiliser
+                    - host - STR: URL du serveur Ollama
+                    - tools - ANY: registre ou outils optionnels à exposer au LLM
+                    - mcp_server_cmd - STR | NONE: commande de démarrage d'un serveur MCP externe
+            RETURN: None"""
     history: list[ChatMessage] = []
     structured_mode: bool = False
     active_tools = tools
@@ -445,6 +469,9 @@ def run_session(
 
 
 def main(argv: list[str] | None = None) -> int:
+    """ Point d'entrée principal de l'application CLI initialisant l'environnement et la session.
+PARAMS: - argv - LIST[STR] | NONE: arguments de ligne de commande optionnels
+RETURN: code de retour entier (0 en cas de succès, 1 en cas d'erreur)"""
     args = parse_arguments(argv)
     host, model = resolve_configuration(args)
 

@@ -6,7 +6,10 @@ from src.core.db.init_db import init_database
 DB_PATH = Path("kingdoms.db")
 
 def get_kingdom_stats(kingdom_name: str) -> Dict[str, Any]:
-    """Retrieves the current resources and status of a specific kingdom."""
+    """Récupère les ressources actuelles et le statut d'un royaume spécifique.
+            PARAMS: - kingdom_name - STR: le nom du royaume à rechercher
+            RETURN: dictionnaire contenant les statistiques du royaume ou une erreur 404"""
+
     with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
@@ -21,7 +24,10 @@ def get_kingdom_stats(kingdom_name: str) -> Dict[str, Any]:
         return {"error": f"Kingdom '{kingdom_name}' not found.", "code": 404}
 
 def get_active_diplomacy(kingdom_name: str) -> Dict[str, Any]:
-    """Fetches only the currently active diplomatic relations for a kingdom."""
+    """Récupère les relations diplomatiques actives pour un royaume donné.
+            PARAMS: - kingdom_name - STR: le nom du royaume concerné
+            RETURN: dictionnaire avec la liste des relations diplomatiques actives ou une erreur 404"""
+
     with sqlite3.connect(DB_PATH) as conn:
         cursor = conn.cursor()
         query = """

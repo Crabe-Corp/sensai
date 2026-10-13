@@ -12,6 +12,9 @@ class ToolExecutionResult(BaseModel):
     error: str | None = None
 
     def to_tool_message_content(self) -> str:
+        """Sérialise le résultat ou l'erreur de l'outil en chaîne JSON pour le message tool.
+                PARAMS: Aucun
+                RETURN: chaîne JSON représentant le contenu du résultat d'outil"""
         if not self.success:
             return json.dumps(
                 {
@@ -42,9 +45,16 @@ class ToolExecutionResult(BaseModel):
 
 class ToolExecutor:
     def __init__(self, registry: ToolRegistry | None = None) -> None:
+        """Initialise l'exécuteur avec un registre d'outils donné ou le registre par défaut.
+                PARAMS: - registry - TOOLREGISTRY: registre d'outils optionnel
+                RETURN: None"""
         self.registry = registry or default_registry
 
     def execute(self, tool_name: str, arguments: dict[str, Any] | None = None) -> ToolExecutionResult:
+        """Exécute un outil par son nom avec les arguments fournis en capturant les erreurs.
+                PARAMS: - tool_name - STR: le nom de l'outil à exécuter
+                        - arguments - DICT: dictionnaire d'arguments à passer à l'outil
+                RETURN: objet ToolExecutionResult contenant le statut, le résultat ou l'erreur"""
         tool_def = self.registry.get(tool_name)
         if not tool_def:
             return ToolExecutionResult(

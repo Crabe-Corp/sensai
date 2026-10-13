@@ -23,6 +23,11 @@ class MCPTimeoutError(MCPError):
 
 class MCPProtocolError(MCPError):
     def __init__(self, message: str, code: int | None = None, data: Any = None) -> None:
+        """Initialise une exception d'erreur de protocole MCP avec code et données associées.
+                PARAMS: - message - STR: le message d'erreur explicatif
+                        - code - INT: code d'erreur JSON-RPC optionnel
+                        - data - ANY: données contextuelles complémentaires
+                RETURN: None"""
         super().__init__(message)
         self.code = code
         self.data = data
@@ -39,6 +44,9 @@ class MCPTool(BaseModel):
     model_config = {"populate_by_name": True}
 
     def to_tool_definition(self, client: "MCPClient") -> ToolDefinition:
+        """Convertit l'outil MCP en ToolDefinition standard compatible avec le registre interne.
+                PARAMS: - client - MCPCLIENT: instance du client MCP gérant l'appel réseau
+                RETURN: instance ToolDefinition exécutable"""
         def handler(**kwargs: Any) -> Any:
             return client.call_tool(self.name, kwargs)
 
@@ -58,6 +66,12 @@ class MCPClient:
         env: dict[str, str] | None = None,
         default_timeout: float = 15.0,
     ) -> None:
+        """Initialise le client MCP avec la commande d'exécution du sous-processus serveur.
+                PARAMS: - command - STR | LIST[STR]: commande de lancement du serveur MCP
+                        - cwd - STR: répertoire de travail optionnel pour le sous-processus
+                        - env - DICT[STR, STR]: variables d'environnement optionnelles
+                        - default_timeout - FLOAT: délai d'attente maximal par défaut en secondes
+                RETURN: None"""
         if isinstance(command, str):
             self.command = shlex.split(command, posix=False)
         else:
@@ -75,9 +89,15 @@ class MCPClient:
 
     @property
     def is_connected(self) -> bool:
+        """Indique si le sous-processus du serveur MCP est actuellement actif et communicant.
+                PARAMS: Aucun
+                RETURN: booléen indiquant l'état de connexion"""
         return self._is_running and self._process is not None and self._process.poll() is None
 
     def start(self) -> None:
+        """Démarre le sous-processus du serveur MCP, le thread d'écoute et effectue le handshake initial.
+                PARAMS: Aucun
+                RETURN: None"""
         if self.is_connected:
             return
 
@@ -110,6 +130,9 @@ class MCPClient:
         self._initialize_handshake()
 
     def _stdout_reader_loop(self) -> None:
+        """Boucle de lecture asynchrone sur la sortie standard du serveur MCP dispatchant les réponses.
+                PARAMS: Aucun
+                RETURN: None"""
         if not self._process or not self._process.stdout:
             return
 
@@ -135,13 +158,18 @@ class MCPClient:
 
         self._is_running = False
 
-    def _send_rpc(
-        self,
+    def _send_rpc(self,
         method: str,
         params: dict[str, Any] | None = None,
         is_notification: bool = False,
         timeout: float | None = None,
     ) -> dict[str, Any] | None:
+        """Envoie un message JSON au serveur MCP et attend sa réponse si ce n'est pas une notification.
+                PARAMS: - method - STR: le nom de la méthode JSON-RPC à invoquer
+                        - params - DICT: paramètres optionnels de la requête
+                        - is_notification - BOOL: vrai s'il s'agit d'une notification sans attente de retour
+                        - timeout - FLOAT: délai d'attente personnalisé en secondes
+                RETURN: résultat renvoyé par le serveur MCP ou None pour une notification"""
         if not self.is_connected or not self._process or not self._process.stdin:
             raise MCPConnectionError("Le serveur MCP n'est pas connecté.")
 
@@ -203,6 +231,9 @@ class MCPClient:
         return response.get("result", {})
 
     def _initialize_handshake(self) -> None:
+        """Effectue le cycle d'initialisation standard MCP avec le serveur distant.
+                PARAMS: Aucun
+                RETURN: None"""
         init_result = self._send_rpc(
             "initialize",
             params={
@@ -215,6 +246,9 @@ class MCPClient:
         self._send_rpc("notifications/initialized", is_notification=True)
 
     def list_tools(self, timeout: float | None = None) -> list[MCPTool]:
+        """Interroge le serveur MCP pour obtenir la liste de tous les outils disponibles.
+                PARAMS: - timeout - FLOAT: délai d'attente personnalisé en secondes
+                RETURN: liste des objets MCPTool déclarés par le serveur"""
         result = self._send_rpc("tools/list", params={}, timeout=timeout) or {}
         raw_tools = result.get("tools", [])
         return [MCPTool.model_validate(t) for t in raw_tools]
@@ -225,6 +259,11 @@ class MCPClient:
         arguments: dict[str, Any] | None = None,
         timeout: float | None = None,
     ) -> Any:
+        """Exécute un outil spécifique sur le serveur MCP et extrait le résultat textuel ou JSON.
+                PARAMS: - name - STR: le nom de l'outil à appeler
+                        - arguments - DICT: dictionnaire des arguments de l'outil
+                        - timeout - FLOAT: délai d'attente personnalisé en secondes
+                RETURN: résultat retourné par l'outil distant"""
         result = (
             self._send_rpc(
                 "tools/call",
@@ -267,6 +306,10 @@ class MCPClient:
         registry: ToolRegistry,
         prefix: str = "",
     ) -> list[ToolDefinition]:
+        """Récupère les outils du serveur MCP et les enregistre dans le ToolRegistry spécifié.
+                PARAMS: - registry - TOOLREGISTRY: le registre dans lequel enregistrer les outils
+                        - prefix - STR: préfixe textuel optionnel à appliquer aux noms d'outils
+                RETURN: liste des ToolDefinition nouvellement enregistrées"""
         tools = self.list_tools()
         registered: list[ToolDefinition] = []
         for tool_info in tools:
@@ -282,6 +325,9 @@ class MCPClient:
         return registered
 
     def close(self) -> None:
+        """Arrête le sous-processus serveur MCP et libère les ressources associées.
+                PARAMS: Aucun
+                RETURN: None"""
         self._is_running = False
         if self._process:
             try:
@@ -295,8 +341,16 @@ class MCPClient:
             self._process = None
 
     def __enter__(self) -> "MCPClient":
+        """Démarre le client MCP dans le cadre d'un gestionnaire de contexte.
+                PARAMS: Aucun
+                RETURN: l'instance connectée de MCPClient"""
         self.start()
         return self
 
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        """Ferme le client MCP à la sortie d'un bloc de contexte.
+                PARAMS: - exc_type - ANY: type de l'exception levée
+                        - exc_val - ANY: instance de l'exception
+                        - exc_tb - ANY: traceback de l'exception
+                RETURN: None"""
         self.close()

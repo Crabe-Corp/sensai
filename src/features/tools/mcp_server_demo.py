@@ -92,6 +92,9 @@ HISTORICAL_BATTLES = {
 
 
 def _execute_calculate_grain_supply(args: dict[str, Any]) -> dict[str, Any]:
+    """Calcule la quantité de grain et le nombre de charrettes nécessaires pour approvisionner une armée.
+                PARAMS: - args - DICT: dictionnaire contenant kingdom, soldiers et months
+                RETURN: dictionnaire avec le calcul logistique détaillé ou un message d'erreur"""
     kingdom = str(args.get("kingdom", "Inconnu")).strip()
     soldiers = int(args.get("soldiers", 0))
     months = int(args.get("months", 3))
@@ -114,6 +117,9 @@ def _execute_calculate_grain_supply(args: dict[str, Any]) -> dict[str, Any]:
 
 
 def _execute_get_historical_battle(args: dict[str, Any]) -> dict[str, Any]:
+    """Recherche et fournit les informations historiques et stratégiques d'une bataille majeure.
+                PARAMS: - args - DICT: dictionnaire contenant battle_name
+                RETURN: dictionnaire des détails de la bataille ou un message d'erreur avec les batailles disponibles"""
     raw_query = str(args.get("battle_name", "")).strip().lower()
     for key, data in HISTORICAL_BATTLES.items():
         if key in raw_query or raw_query in key:
@@ -127,6 +133,9 @@ def _execute_get_historical_battle(args: dict[str, Any]) -> dict[str, Any]:
 
 
 def handle_request(req: dict[str, Any]) -> dict[str, Any] | None:
+    """Traite une requête JSON-RPC 2.0 reçue par le serveur MCP et génère la réponse correspondante.
+                PARAMS: - req - DICT: dictionnaire représentant la requête JSON-RPC
+                RETURN: dictionnaire de réponse JSON-RPC ou None pour une notification"""
     method = req.get("method")
     req_id = req.get("id")
 
@@ -201,6 +210,9 @@ def handle_request(req: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def main() -> None:
+    """Boucle principale du serveur MCP lisant les requêtes sur stdin et écrivant sur stdout.
+        PARAMS: Aucun
+        RETURN: None"""
     for line in sys.stdin:
         line_clean = line.strip()
         if not line_clean:

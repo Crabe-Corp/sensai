@@ -7,6 +7,9 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 def _extract_docstring_param_descriptions(docstring: str) -> tuple[str, dict[str, str]]:
+    """ Extrait le résumé textuel et les descriptions des paramètres depuis une docstring Python.
+PARAMS: - docstring - STR: la chaîne de documentation brute à analyser
+RETURN: tuple contenant le résumé textuel et le dictionnaire des descriptions de paramètres"""
     if not docstring:
         return "", {}
 
@@ -50,6 +53,9 @@ def _extract_docstring_param_descriptions(docstring: str) -> tuple[str, dict[str
 
 
 def _python_type_to_json_type(annotation: Any) -> tuple[str, dict[str, Any] | None]:
+    """ Mappe une annotation de type Python vers son type JSON Schema correspondant.
+PARAMS: - annotation - ANY: l'annotation de type Python à convertir
+RETURN: tuple contenant le nom du type JSON et un éventuel sous-schéma personnalisé"""
     if annotation is inspect.Parameter.empty or annotation is Any:
         return "string", None
 
@@ -84,6 +90,11 @@ def _python_type_to_json_type(annotation: Any) -> tuple[str, dict[str, Any] | No
 
 
 def extract_tool_schema(func: Callable[..., Any], name: str | None = None, description: str | None = None) -> dict[str, Any]:
+    """ Construit le schéma JSON Schema complet d'un outil callable pour Ollama.
+PARAMS: - func - CALLABLE: la fonction Python à inspecter
+        - name - STR: nom optionnel pour surcharger le nom de la fonction
+        - description - STR: description optionnelle pour surcharger la docstring
+RETURN: dictionnaire représentant le schéma JSON complet de la fonction pour Ollama"""
     tool_name = name or func.__name__
     raw_doc = inspect.cleandoc(func.__doc__ or "")
     doc_summary, doc_params = _extract_docstring_param_descriptions(raw_doc)
@@ -137,6 +148,9 @@ class ToolDefinition(BaseModel):
     handler: Callable[..., Any] = Field(exclude=True)
 
     def to_ollama_dict(self) -> dict[str, Any]:
+        """ Convertit la définition de l'outil au format attendu par l'API Ollama.
+PARAMS: Aucun
+RETURN: dictionnaire représentant la fonction au format attendu par Ollama"""
         return {
             "type": "function",
             "function": {
@@ -149,6 +163,9 @@ class ToolDefinition(BaseModel):
 
 class ToolRegistry:
     def __init__(self) -> None:
+        """ Initialise le registre d'outils avec un dictionnaire vide.
+PARAMS: Aucun
+RETURN: None"""
         self._tools: dict[str, ToolDefinition] = {}
 
     def register(
@@ -158,6 +175,11 @@ class ToolRegistry:
         name: str | None = None,
         description: str | None = None,
     ) -> ToolDefinition:
+        """Enregistre une fonction Python ou une ToolDefinition dans le registre.
+                PARAMS: - func - CALLABLE | TOOLDEFINITION: la fonction ou définition à enregistrer
+                        - name - STR: nom optionnel de l'outil
+                        - description - STR: description optionnelle de l'outil
+                RETURN: l'instance ToolDefinition enregistrée"""
         if isinstance(func, ToolDefinition):
             self._tools[func.name] = func
             return func
@@ -173,27 +195,49 @@ class ToolRegistry:
         return tool_def
 
     def get(self, name: str) -> ToolDefinition | None:
+        """Recherche et retourne une définition d'outil par son nom.
+                PARAMS: - name - STR: le nom de l'outil recherché
+                RETURN: l'instance ToolDefinition trouvée ou None"""
         return self._tools.get(name)
 
     def list_tools(self) -> list[ToolDefinition]:
+        """Retourne la liste de toutes les définitions d'outils enregistrées.
+                PARAMS: Aucun
+                RETURN: liste des objets ToolDefinition enregistrés"""
         return list(self._tools.values())
 
     def to_ollama_tools(self) -> list[dict[str, Any]]:
+        """Exporte l'ensemble des outils enregistrés sous la forme d'une liste de schémas Ollama.
+                PARAMS: Aucun
+                RETURN: liste de dictionnaires au format attendu par Ollama"""
         return [tool.to_ollama_dict() for tool in self._tools.values()]
 
     def register_mcp_client(self, client: Any, prefix: str = "") -> list[ToolDefinition]:
+        """Enregistre dynamiquement tous les outils exposés par un client MCP dans ce registre.
+                PARAMS: - client - ANY: l'instance du client MCP fournissant les outils
+                        - prefix - STR: préfixe textuel optionnel pour nommer les outils importés
+                RETURN: liste des ToolDefinition créées et enregistrées"""
         if hasattr(client, "register_into_registry"):
             return client.register_into_registry(self, prefix=prefix)
         return []
 
     def unregister_tools(self, names: list[str]) -> None:
+        """Retire un ensemble d'outils du registre à partir de leurs noms.
+                PARAMS: - names - LIST: liste des noms d'outils à désinscrire
+                RETURN: None"""
         for name in names:
             self._tools.pop(name, None)
 
     def __contains__(self, name: str) -> bool:
+        """Vérifie si un outil existe dans le registre par son nom.
+                PARAMS: - name - STR: le nom de l'outil à tester
+                RETURN: booléen indiquant la présence de l'outil"""
         return name in self._tools
 
     def clear(self) -> None:
+        """Vide intégralement tous les outils enregistrés dans le registre.
+                PARAMS: Aucun
+                RETURN: None"""
         self._tools.clear()
 
 
@@ -207,6 +251,12 @@ def tool(
     description: str | None = None,
     registry: ToolRegistry | None = None,
 ) -> Any:
+    """Décorateur pour enregistrer une fonction Python comme outil dans un registre.
+                PARAMS: - func - CALLABLE: fonction optionnelle si utilisé sans parenthèses
+                        - name - STR: nom optionnel pour surcharger le nom de l'outil
+                        - description - STR: description optionnelle de l'outil
+                        - registry - TOOLREGISTRY: registre cible dans lequel enregistrer l'outil
+                RETURN: la fonction décorée enrichie de ses métadonnées d'outil"""
     target_registry = registry or default_registry
 
     def decorator(fn: Callable[..., Any]) -> Callable[..., Any]:

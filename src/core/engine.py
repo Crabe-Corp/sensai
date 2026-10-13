@@ -46,6 +46,13 @@ class ConversationEngine:
         executor: ToolExecutor | None = None,
         max_tool_iterations: int = 5,
     ) -> None:
+        """Initialise le moteur conversationnel avec client HTTP, registre d'outils et exécuteur.
+                PARAMS: - client - OLLAMACLIENT: instance optionnelle du client Ollama
+                    - registry - TOOLREGISTRY: registre d'outils optionnel
+                    - executor - TOOLEXECUTOR: exécuteur d'outils optionnel
+                    - max_tool_iterations - INT: nombre maximum d'allers-retours d'appels d'outils
+                RETURN: None"""
+
         self.client = client or OllamaClient()
         self.registry = registry or default_registry
         self.executor = executor or ToolExecutor(registry=self.registry)
@@ -55,6 +62,9 @@ class ConversationEngine:
         self,
         tools: list[dict[str, Any]] | ToolRegistry | list[Any] | bool | None,
     ) -> list[dict[str, Any]] | None:
+        """Normalise les différentes formes d'outils passées en une liste de schémas pour Ollama.
+                PARAMS: - tools - LIST | TOOLREGISTRY | BOOL: définition brute des outils
+                RETURN: liste de dictionnaires de schémas d'outils pour Ollama ou None"""
         if tools is None or tools is False:
             return None
         if isinstance(tools, ToolRegistry):
@@ -77,6 +87,11 @@ class ConversationEngine:
         model: str,
         tools: list[dict[str, Any]] | ToolRegistry | list[Any] | bool | None = None,
     ) -> Iterator[EngineEvent]:
+        """Exécute une session de stream conversationnel gérant l'émission de tokens et l'appel d'outils.
+                PARAMS: - messages - LIST: historique des messages échangés
+                        - model - STR: nom du modèle Ollama à invoquer
+                        - tools - LIST | TOOLREGISTRY | BOOL: outils optionnels à exposer au modèle
+                RETURN: itérateur d'événements EngineEvent (tokens, appels d'outils, résultats, erreurs)"""
         ollama_tools = self._resolve_tools(tools)
         if not ollama_tools:
             try:
@@ -189,5 +204,13 @@ def run_stream(
     registry: ToolRegistry | None = None,
     executor: ToolExecutor | None = None,
 ) -> Iterator[EngineEvent]:
+    """Point d'entrée utilitaire instanciant un ConversationEngine pour streamer la réponse.
+            PARAMS: - messages - LIST: historique des messages échangés
+                    - model - STR: nom du modèle Ollama à utiliser
+                    - tools - LIST | TOOLREGISTRY | BOOL: outils optionnels à fournir
+                    - client - OLLAMACLIENT: client Ollama optionnel
+                    - registry - TOOLREGISTRY: registre d'outils optionnel
+                    - executor - TOOLEXECUTOR: exécuteur d'outils optionnel
+            RETURN: itérateur d'événements EngineEvent"""
     engine = ConversationEngine(client=client, registry=registry, executor=executor)
     yield from engine.run_stream(messages=messages, model=model, tools=tools)

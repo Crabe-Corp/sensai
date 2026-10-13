@@ -4,6 +4,10 @@ from pathlib import Path
 DB_PATH = Path("kingdoms.db")
 
 def init_database() -> None:
+    """Initialise la base de données SQLite des royaumes avec le schéma et les données initiales.
+            PARAMS: Aucun
+            RETURN: None"""
+
     DB_PATH.touch(exist_ok=True)
     with sqlite3.connect(DB_PATH) as conn:
         cursor = conn.cursor()
@@ -58,12 +62,8 @@ def init_database() -> None:
             INSERT INTO kingdoms (name, gold, military_power, status)
             VALUES (?, ?, ?, ?)
         """, kingdoms_data)
-
-        # Récupération des IDs générés pour lier les unités
         cursor.execute("SELECT id, name FROM kingdoms")
         kingdom_ids = {name: k_id for k_id, name in cursor.fetchall()}
-
-        # Injection des unités historiques de chaque royaume
         units_data = [
             (kingdom_ids["Qin"], "Crossbowmen", 8, 4),
             (kingdom_ids["Qin"], "Heavy Infantry", 7, 7),
