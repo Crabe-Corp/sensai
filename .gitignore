@@ -1,3 +1,7 @@
+clean.py
+script_scrap.py
+result_embedding
+
 # Byte-compiled / cache files
 __pycache__/
 *.py[cod]
@@ -11,8 +15,17 @@ env/
 
 # Environment variables & secrets
 .env
+.gitignore
+
 .env.*
 !.env.example
+
+# Frontend
+node_modules/
+dist/
+dist-ssr/
+*.local
+package-lock.json
 
 # Testing & coverage
 .pytest_cache/
@@ -29,6 +42,7 @@ htmlcov/
 *.sqlite
 *.sqlite3
 data/
+uploads/
 *.log
 logs/
 
@@ -43,3 +57,7 @@ logs/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Exports de sessions générés
+exports/*.md
+!exports/.gitkeep
