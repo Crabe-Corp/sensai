@@ -25,6 +25,7 @@ from src.core.ollama_client import (
 )
 from src.core.schemas import HistoricalFigure, KingdomInfo, StructuredResponse
 from src.features.tools import builtin
+from src.features.tools.mcp_client import MCPClient, MCPError
 from src.features.tools.registry import default_registry
 
 DEFAULT_CONFIG_PATH = Path("config.json")
@@ -94,6 +95,12 @@ def parse_arguments(argv: list[str] | None = None) -> argparse.Namespace:
         default=False,
         help="Activer le support des outils MCP.",
     )
+    parser.add_argument(
+        "--mcp-server",
+        type=str,
+        default=None,
+        help="Commande pour lancer un serveur MCP externe (ex: 'python -m src.features.tools.mcp_server_demo').",
+    )
     return parser.parse_args(argv)
 
 
@@ -115,6 +122,7 @@ def print_help() -> None:
     print("  /models                   : Liste les modèles installés sur le serveur Ollama")
     print("  /model [nom]              : Affiche ou change le modèle actif sans redémarrer")
     print("  /tools [on|off]           : Liste les outils disponibles ou active/désactive les outils")
+    print("  /mcp [status|connect|disconnect] : Gère la connexion à un serveur MCP externe")
     print("  /kingdom [nom]            : Génère une fiche de royaume au format JSON strict")
     print("  /figure [nom]             : Génère une fiche de personnage historique")
     print("  /structured-output [msg]  : Active/désactive le mode JSON ou soumet une requête")
@@ -126,11 +134,26 @@ def run_session(
     model: str,
     host: str,
     tools: Any = None,
+    mcp_server_cmd: str | None = None,
 ) -> None:
     history: list[ChatMessage] = []
     structured_mode: bool = False
     active_tools = tools
     tools_enabled = active_tools is not None
+    mcp_client: MCPClient | None = None
+    mcp_tool_names: list[str] = []
+
+    if mcp_server_cmd:
+        try:
+            mcp_client = MCPClient(mcp_server_cmd)
+            mcp_client.start()
+            mcp_defs = default_registry.register_mcp_client(mcp_client)
+            mcp_tool_names = [d.name for d in mcp_defs]
+            active_tools = default_registry
+            tools_enabled = True
+            print(f"[Info] Serveur MCP démarré ({mcp_server_cmd}). {len(mcp_defs)} outil(s) chargé(s).")
+        except Exception as exc:
+            print(f"[Avertissement MCP] Échec de connexion au serveur MCP : {exc}")
 
     print_banner(model, host, tools_enabled=tools_enabled)
     init_database()
@@ -197,6 +220,46 @@ def run_session(
                 for t in registered:
                     print(f"  - {t.name}: {t.description}")
                 print(f"[Info] Statut actuel : {'Activés' if active_tools is not None else 'Désactivés'}")
+            continue
+
+        if user_input == "/mcp" or user_input.startswith("/mcp "):
+            parts = user_input.split(maxsplit=2)
+            subcmd = parts[1].strip().lower() if len(parts) > 1 else "status"
+            if subcmd == "status":
+                if mcp_client and mcp_client.is_connected:
+                    tools = mcp_client.list_tools()
+                    print(f"[Info] Serveur MCP connecté : {' '.join(mcp_client.command)}")
+                    print(f"[Info] Outils MCP exposés ({len(tools)}) : {', '.join(t.name for t in tools)}")
+                else:
+                    print("[Info] Aucun serveur MCP externe connecté.")
+            elif subcmd == "connect":
+                if len(parts) < 3 or not parts[2].strip():
+                    print("[Info] Usage : /mcp connect <commande_serveur> (ex: /mcp connect python -m src.features.tools.mcp_server_demo)")
+                else:
+                    cmd_str = parts[2].strip()
+                    try:
+                        if mcp_client:
+                            default_registry.unregister_tools(mcp_tool_names)
+                            mcp_client.close()
+                        mcp_client = MCPClient(cmd_str)
+                        mcp_client.start()
+                        mcp_defs = default_registry.register_mcp_client(mcp_client)
+                        mcp_tool_names = [d.name for d in mcp_defs]
+                        active_tools = default_registry
+                        print(f"[Info] Serveur MCP connecté avec succès. {len(mcp_defs)} outil(s) enregistré(s) : {', '.join(mcp_tool_names)}")
+                    except Exception as exc:
+                        print(f"[Erreur MCP] Impossible de connecter le serveur : {exc}")
+            elif subcmd in ("disconnect", "stop", "close"):
+                if mcp_client:
+                    default_registry.unregister_tools(mcp_tool_names)
+                    mcp_tool_names.clear()
+                    mcp_client.close()
+                    mcp_client = None
+                    print("[Info] Serveur MCP déconnecté et ses outils ont été retirés.")
+                else:
+                    print("[Info] Aucun serveur MCP n'était connecté.")
+            else:
+                print("[Info] Sous-commandes /mcp disponibles : status, connect <cmd>, disconnect")
             continue
 
         if user_input in ("/kingdom", "/kingdoms") or user_input.startswith(("/kingdom ", "/kingdoms ")):
@@ -376,6 +439,10 @@ def run_session(
             if full_reply:
                 history.append(ChatMessage(role="assistant", content=full_reply))
 
+    if mcp_client:
+        default_registry.unregister_tools(mcp_tool_names)
+        mcp_client.close()
+
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_arguments(argv)
@@ -387,9 +454,24 @@ def main(argv: list[str] | None = None) -> int:
         print(f"[Erreur dans l'initialisation de la BDD] {e}")
         return 1
 
+    file_cfg = load_config_file(Path(args.config)) if args.config else {}
+    mcp_cmd = args.mcp_server or os.getenv("SENSAI_MCP_SERVER") or file_cfg.get("mcp_server")
+    tools_flag = (
+        args.tools
+        or os.getenv("SENSAI_TOOLS", "").lower() in ("1", "true", "yes")
+        or bool(file_cfg.get("tools"))
+        or bool(file_cfg.get("tools_enabled"))
+    )
+
     with OllamaClient(base_url=host) as client:
-        active_tools = default_registry if args.tools else None
-        run_session(client, model=model, host=host, tools=active_tools)
+        active_tools = default_registry if (tools_flag or mcp_cmd) else None
+        run_session(
+            client,
+            model=model,
+            host=host,
+            tools=active_tools,
+            mcp_server_cmd=mcp_cmd,
+        )
     return 0
 
 

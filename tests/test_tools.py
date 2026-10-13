@@ -130,3 +130,34 @@ def test_builtin_get_kingdom_info():
 
     res_unknown = get_kingdom_info("RoyaumeInconnu")
     assert "error" in res_unknown
+
+
+def test_registry_mcp_client_registration_and_unregistration():
+    registry = ToolRegistry()
+
+    class FakeMCPClient:
+        def register_into_registry(self, reg, prefix=""):
+            def handler(**kwargs):
+                return {"result": "ok"}
+
+            t = ToolDefinition(
+                name=f"{prefix}fake_tool",
+                description="Fake MCP tool",
+                parameters={"type": "object", "properties": {}},
+                handler=handler,
+            )
+            reg.register(t)
+            return [t]
+
+    fake = FakeMCPClient()
+    registered = registry.register_mcp_client(fake, prefix="mcp_")
+    assert len(registered) == 1
+    assert "mcp_fake_tool" in registry
+
+    executor = ToolExecutor(registry=registry)
+    exec_res = executor.execute("mcp_fake_tool")
+    assert exec_res.success is True
+    assert exec_res.result == {"result": "ok"}
+
+    registry.unregister_tools(["mcp_fake_tool"])
+    assert "mcp_fake_tool" not in registry

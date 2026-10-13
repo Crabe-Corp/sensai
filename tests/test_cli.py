@@ -156,9 +156,10 @@ def test_run_session_change_model_command():
     assert kwargs["model"] == "mistral"
 
 
-def test_parse_arguments_tools_flag():
-    args = parse_arguments(["--tools"])
+def test_parse_arguments_tools_and_mcp_flag():
+    args = parse_arguments(["--tools", "--mcp-server", "python -m my_mcp_server"])
     assert args.tools is True
+    assert args.mcp_server == "python -m my_mcp_server"
 
 
 def test_run_session_tools_commands(capsys):
@@ -171,6 +172,16 @@ def test_run_session_tools_commands(capsys):
     assert "get_kingdom_info" in captured.out
     assert "Outils MCP activés" in captured.out
     assert "Outils MCP désactivés" in captured.out
+
+
+def test_run_session_mcp_status_and_disconnect(capsys):
+    mock_client = MagicMock()
+    with patch("builtins.input", side_effect=["/mcp status", "/mcp disconnect", "/exit"]):
+        run_session(mock_client, model="qwen2.5:1.5b", host="http://localhost:11434")
+
+    captured = capsys.readouterr()
+    assert "Aucun serveur MCP externe connecté" in captured.out
+    assert "Aucun serveur MCP n'était connecté" in captured.out
 
 
 def test_interfaces_cli_main_direct_import():

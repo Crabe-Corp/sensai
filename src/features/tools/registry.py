@@ -181,6 +181,15 @@ class ToolRegistry:
     def to_ollama_tools(self) -> list[dict[str, Any]]:
         return [tool.to_ollama_dict() for tool in self._tools.values()]
 
+    def register_mcp_client(self, client: Any, prefix: str = "") -> list[ToolDefinition]:
+        if hasattr(client, "register_into_registry"):
+            return client.register_into_registry(self, prefix=prefix)
+        return []
+
+    def unregister_tools(self, names: list[str]) -> None:
+        for name in names:
+            self._tools.pop(name, None)
+
     def __contains__(self, name: str) -> bool:
         return name in self._tools
 
