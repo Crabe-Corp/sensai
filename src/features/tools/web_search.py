@@ -191,8 +191,6 @@ def web_search(query: str, max_results: int = DEFAULT_MAX_RESULTS) -> str:
         errors.append(f"Délai d'attente DuckDuckGo dépassé ({exc})")
     except Exception as exc:
         errors.append(f"Échec DuckDuckGo ({type(exc).__name__}: {exc})")
-
-    # Repli automatique sur Wikipedia si DuckDuckGo ne retourne aucun résultat ou échoue
     if not results:
         try:
             results = search_wikipedia(cleaned_query, max_results=limit, timeout=DEFAULT_TIMEOUT)

@@ -42,6 +42,7 @@ htmlcov/
 *.sqlite
 *.sqlite3
 data/
+storage/
 uploads/
 *.log
 logs/

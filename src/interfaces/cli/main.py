@@ -24,6 +24,13 @@ from src.core.ollama_client import (
     OllamaStructuredOutputError,
 )
 from src.core.schemas import HistoricalFigure, KingdomInfo, StructuredResponse
+from src.features.memory import (
+    ChatSession,
+    ProfileManager,
+    SessionManager,
+    SessionMetadata,
+    UserProfile,
+)
 from src.features.tools import builtin, web_search
 from src.features.tools.mcp_client import MCPClient, MCPError
 from src.features.tools.registry import default_registry
@@ -110,20 +117,44 @@ def parse_arguments(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         help="Commande pour lancer un serveur MCP externe (ex: 'python -m src.features.tools.mcp_server_demo').",
     )
+    parser.add_argument(
+        "--session",
+        type=str,
+        default=None,
+        help="Identifiant de la session à charger ou reprendre.",
+    )
+    parser.add_argument(
+        "--profile",
+        type=str,
+        default=None,
+        help="Nom du profil utilisateur à charger (ex: default, historien).",
+    )
     return parser.parse_args(argv)
 
 
-def print_banner(model: str, host: str, tools_enabled: bool = False) -> None:
+def print_banner(
+    model: str,
+    host: str,
+    tools_enabled: bool = False,
+    profile_name: str | None = None,
+    session_id: str | None = None,
+) -> None:
     """Affiche la bannière d'accueil de la CLI avec les paramètres de connexion actifs.
             PARAMS: - model - STR: nom du modèle Ollama en cours d'utilisation
                     - host - STR: URL du serveur Ollama
                     - tools_enabled - BOOL: indicateur d'activation du support des outils
+                    - profile_name - STR | NONE: nom du profil utilisateur actif
+                    - session_id - STR | NONE: identifiant de la session courante
             RETURN: None"""
     print("=" * 60)
     print(" SENSAI CLI — Chatbot Modulaire")
     print(f" Modèle actif : {model}")
     print(f" Hôte Ollama  : {host}")
     print(f" Outils MCP   : {'Activés' if tools_enabled else 'Désactivés'}")
+    if profile_name:
+        print(f" Profil       : {profile_name}")
+    if session_id:
+        print(f" Session ID   : {session_id}")
     print(" Tapez '/help' pour voir les commandes ou '/exit' pour quitter.")
     print("=" * 60)
 
@@ -136,6 +167,12 @@ def print_help() -> None:
     print("  /help                     : Affiche ce message d'aide")
     print("  /clear                    : Réinitialise l'historique de la session")
     print("  /history                  : Affiche le nombre de messages échangés")
+    print("  /session list             : Liste les sessions sauvegardées")
+    print("  /session load <id>        : Charge une session passée et son historique")
+    print("  /session new [titre]      : Initialise une nouvelle session vierge")
+    print("  /session delete <id>      : Supprime une session existante")
+    print("  /profile show             : Affiche les détails du profil utilisateur actif")
+    print("  /profile load <nom>       : Bascule sur un autre profil utilisateur")
     print("  /models                   : Liste les modèles installés sur le serveur Ollama")
     print("  /model [nom]              : Affiche ou change le modèle actif sans redémarrer")
     print("  /tools [on|off]           : Liste les outils disponibles ou active/désactive les outils")
@@ -152,6 +189,10 @@ def run_session(
     host: str,
     tools: Any = None,
     mcp_server_cmd: str | None = None,
+    session_id: str | None = None,
+    profile_name: str | None = None,
+    session_manager: SessionManager | None = None,
+    profile_manager: ProfileManager | None = None,
 ) -> None:
     """Gère la boucle interactive du chatbot CLI, l'historique et les commandes slash.
             PARAMS: - client - OLLAMACLIENT: instance active du client HTTP Ollama
@@ -159,8 +200,34 @@ def run_session(
                     - host - STR: URL du serveur Ollama
                     - tools - ANY: registre ou outils optionnels à exposer au LLM
                     - mcp_server_cmd - STR | NONE: commande de démarrage d'un serveur MCP externe
+                    - session_id - STR | NONE: identifiant d'une session à restaurer
+                    - profile_name - STR | NONE: nom du profil utilisateur à charger
+                    - session_manager - SESSIONMANAGER | NONE: gestionnaire de sessions persistant
+                    - profile_manager - PROFILEMANAGER | NONE: gestionnaire de profils utilisateur
             RETURN: None"""
-    history: list[ChatMessage] = []
+    if session_manager is None:
+        session_manager = SessionManager()
+    if profile_manager is None:
+        profile_manager = ProfileManager()
+
+    current_profile: UserProfile | None = None
+    if profile_name:
+        current_profile = profile_manager.get_or_create_profile(profile_name)
+
+    current_session: ChatSession
+    if session_id:
+        try:
+            current_session = session_manager.load_session(session_id)
+            if current_session.metadata.model:
+                model = current_session.metadata.model
+            print(f"[Info] Session '{session_id}' chargée ({len(current_session.messages)} messages).")
+        except FileNotFoundError:
+            print(f"[Avertissement] Session '{session_id}' introuvable. Initialisation d'une nouvelle session.")
+            current_session = session_manager.create_session(profile=current_profile, model=model)
+    else:
+        current_session = session_manager.create_session(profile=current_profile, model=model)
+
+    history: list[ChatMessage] = list(current_session.messages)
     structured_mode: bool = False
     active_tools = tools
     tools_enabled = active_tools is not None
@@ -179,7 +246,13 @@ def run_session(
         except Exception as exc:
             print(f"[Avertissement MCP] Échec de connexion au serveur MCP : {exc}")
 
-    print_banner(model, host, tools_enabled=tools_enabled)
+    print_banner(
+        model,
+        host,
+        tools_enabled=tools_enabled,
+        profile_name=current_profile.username if current_profile else None,
+        session_id=current_session.metadata.session_id,
+    )
     init_database()
     engine = ConversationEngine(client=client, registry=default_registry)
 
@@ -200,11 +273,91 @@ def run_session(
 
         if user_input == "/clear":
             history.clear()
+            if current_profile:
+                history.append(ChatMessage(role="system", content=current_profile.format_system_prompt()))
+            current_session.messages = list(history)
+            session_manager.save_session(current_session)
             print("[Info] Historique de session réinitialisé.")
             continue
 
         if user_input == "/history":
-            print(f"[Info] Historique actuel : {len(history)} message(s) en mémoire.")
+            print(f"[Info] Historique actuel : {len(history)} message(s) en mémoire (Session: {current_session.metadata.session_id}).")
+            continue
+
+        if user_input in ("/session", "/sessions") or user_input.startswith(("/session ", "/sessions ")):
+            parts = user_input.split(maxsplit=2)
+            subcmd = parts[1].strip().lower() if len(parts) > 1 else "list"
+            if subcmd == "list":
+                sessions = session_manager.list_sessions()
+                if not sessions:
+                    print("[Info] Aucune session sauvegardée.")
+                else:
+                    print(f"[Info] Sessions sauvegardées ({len(sessions)}) :")
+                    for s in sessions:
+                        active_mark = " (active)" if s.session_id == current_session.metadata.session_id else ""
+                        print(f"  - [{s.session_id}] {s.title} (Modèle: {s.model}, Mis à jour: {s.updated_at[:19]}){active_mark}")
+            elif subcmd == "load":
+                if len(parts) < 3 or not parts[2].strip():
+                    print("[Info] Usage : /session load <id>")
+                else:
+                    target_id = parts[2].strip()
+                    try:
+                        current_session = session_manager.load_session(target_id)
+                        history = list(current_session.messages)
+                        if current_session.metadata.model:
+                            model = current_session.metadata.model
+                        print(f"[Info] Session '{target_id}' chargée avec succès ({len(history)} messages, modèle: {model}).")
+                    except FileNotFoundError:
+                        print(f"[Erreur] Session '{target_id}' introuvable.")
+            elif subcmd == "new":
+                title_arg = parts[2].strip() if len(parts) > 2 and parts[2].strip() else None
+                current_session = session_manager.create_session(profile=current_profile, model=model, title=title_arg)
+                history = list(current_session.messages)
+                print(f"[Info] Nouvelle session initialisée : [{current_session.metadata.session_id}] {current_session.metadata.title}.")
+            elif subcmd in ("delete", "remove", "rm"):
+                if len(parts) < 3 or not parts[2].strip():
+                    print("[Info] Usage : /session delete <id>")
+                else:
+                    target_id = parts[2].strip()
+                    if session_manager.delete_session(target_id):
+                        print(f"[Info] Session '{target_id}' supprimée.")
+                        if current_session.metadata.session_id == target_id:
+                            current_session = session_manager.create_session(profile=current_profile, model=model)
+                            history = list(current_session.messages)
+                            print(f"[Info] Session active réinitialisée : [{current_session.metadata.session_id}].")
+                    else:
+                        print(f"[Erreur] Session '{target_id}' introuvable.")
+            else:
+                print("[Info] Commandes /session disponibles : list, load <id>, new [titre], delete <id>")
+            continue
+
+        if user_input == "/profile" or user_input.startswith("/profile "):
+            parts = user_input.split(maxsplit=2)
+            subcmd = parts[1].strip().lower() if len(parts) > 1 else "show"
+            if subcmd == "show":
+                if current_profile:
+                    print(f"[Profil Utilisateur : {current_profile.username}]")
+                    print(f"  - Style et ton : {current_profile.tone}")
+                    print(f"  - Concision    : {current_profile.conciseness}")
+                    print(f"  - Langue       : {current_profile.language}")
+                    if current_profile.custom_instructions:
+                        print(f"  - Instructions : {current_profile.custom_instructions}")
+                    if current_profile.facts:
+                        print(f"  - Faits connus : {', '.join(current_profile.facts)}")
+                else:
+                    print("[Info] Aucun profil spécifique chargé dans cette session.")
+            elif subcmd in ("load", "switch"):
+                if len(parts) < 3 or not parts[2].strip():
+                    print("[Info] Usage : /profile load <nom>")
+                else:
+                    target_name = parts[2].strip()
+                    current_profile = profile_manager.get_or_create_profile(target_name)
+                    print(f"[Info] Profil '{current_profile.username}' chargé.")
+            elif subcmd == "list":
+                profiles = profile_manager.list_profiles()
+                print(f"[Info] Profils existants ({len(profiles)}) : {', '.join(profiles) if profiles else 'Aucun'}")
+            else:
+                print("[Info] Commandes /profile disponibles : show, load <nom>, list")
             continue
 
         if user_input == "/help":
@@ -223,6 +376,8 @@ def run_session(
             parts = user_input.split(maxsplit=1)
             if len(parts) > 1 and parts[1].strip():
                 model = parts[1].strip()
+                current_session.metadata.model = model
+                session_manager.save_session(current_session)
                 print(f"[Info] Modèle actif modifié : {model}")
             else:
                 print(f"[Info] Modèle actuellement sélectionné : {model}")
@@ -378,6 +533,9 @@ def run_session(
                 print(json.dumps(result.model_dump(), ensure_ascii=False))
                 history.append(ChatMessage(role="user", content=query))
                 history.append(ChatMessage(role="assistant", content=result.response))
+                current_session.messages = list(history)
+                current_session.metadata.model = model
+                session_manager.save_session(current_session)
             except OllamaStructuredOutputError as exc:
                 print(f"[Erreur Sortie Structurée] {exc}")
             except OllamaError as exc:
@@ -398,6 +556,9 @@ def run_session(
                 )
                 print(json.dumps(result.model_dump(), ensure_ascii=False))
                 history.append(ChatMessage(role="assistant", content=result.response))
+                current_session.messages = list(history)
+                current_session.metadata.model = model
+                session_manager.save_session(current_session)
             except OllamaConnectionError as exc:
                 print(f"\n[Erreur de connexion] {exc}")
             except OllamaModelNotFoundError as exc:
@@ -449,6 +610,9 @@ def run_session(
             full_reply = "".join(response_chunks).strip()
             if full_reply:
                 history.append(ChatMessage(role="assistant", content=full_reply))
+                current_session.messages = list(history)
+                current_session.metadata.model = model
+                session_manager.save_session(current_session)
 
         except OllamaConnectionError as exc:
             print(f"\n[Erreur de connexion] {exc}")
@@ -462,6 +626,9 @@ def run_session(
             full_reply = "".join(response_chunks).strip()
             if full_reply:
                 history.append(ChatMessage(role="assistant", content=full_reply))
+                current_session.messages = list(history)
+                current_session.metadata.model = model
+                session_manager.save_session(current_session)
 
     if mcp_client:
         default_registry.unregister_tools(mcp_tool_names)
@@ -489,6 +656,8 @@ RETURN: code de retour entier (0 en cas de succès, 1 en cas d'erreur)"""
         or bool(file_cfg.get("tools"))
         or bool(file_cfg.get("tools_enabled"))
     )
+    profile_name = args.profile or "default"
+    session_id = args.session
 
     with OllamaClient(base_url=host) as client:
         active_tools = default_registry if (tools_flag or mcp_cmd) else None
@@ -498,6 +667,8 @@ RETURN: code de retour entier (0 en cas de succès, 1 en cas d'erreur)"""
             host=host,
             tools=active_tools,
             mcp_server_cmd=mcp_cmd,
+            session_id=session_id,
+            profile_name=profile_name,
         )
     return 0
 
