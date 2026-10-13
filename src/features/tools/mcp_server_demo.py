@@ -211,8 +211,8 @@ def handle_request(req: dict[str, Any]) -> dict[str, Any] | None:
 
 def main() -> None:
     """Boucle principale du serveur MCP lisant les requêtes sur stdin et écrivant sur stdout.
-        PARAMS: Aucun
-        RETURN: None"""
+            PARAMS: Aucun
+            RETURN: None"""
     for line in sys.stdin:
         line_clean = line.strip()
         if not line_clean:

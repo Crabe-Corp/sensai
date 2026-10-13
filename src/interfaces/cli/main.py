@@ -24,7 +24,7 @@ from src.core.ollama_client import (
     OllamaStructuredOutputError,
 )
 from src.core.schemas import HistoricalFigure, KingdomInfo, StructuredResponse
-from src.features.tools import builtin
+from src.features.tools import builtin, web_search
 from src.features.tools.mcp_client import MCPClient, MCPError
 from src.features.tools.registry import default_registry
 

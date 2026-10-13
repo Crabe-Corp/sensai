@@ -22,6 +22,13 @@ RETURN: tuple contenant le résumé textuel et le dictionnaire des descriptions 
 
     for raw_line in lines:
         line = raw_line.strip()
+        if not line:
+            continue
+
+        if line.lower().startswith(("return:", "returns:")):
+            in_summary = False
+            current_param = None
+            continue
 
         sphinx_match = re.match(r"^:param\s+(?:\w+\s+)?(\w+):\s*(.*)$", line)
         if sphinx_match:
@@ -31,16 +38,21 @@ RETURN: tuple contenant le résumé textuel et le dictionnaire des descriptions 
             current_param = p_name
             continue
 
-        google_match = re.match(r"^(\w+)(?:\s*\([^)]+\))?:\s*(.+)$", line)
+        lower_line = line.lower()
+        for prefix in ("params:", "parameters:", "arguments:", "args:"):
+            if lower_line.startswith(prefix):
+                in_summary = False
+                current_param = None
+                remainder = line[len(prefix) :].strip()
+                if remainder:
+                    line = remainder
+                break
+
+        google_match = re.match(r"^(?:-\s*)?(\w+)(?:\s*-\s*\w+)?(?:\s*\([^)]+\))?:\s*(.+)$", line)
         if not in_summary and google_match:
             p_name, p_desc = google_match.groups()
             param_descs[p_name] = p_desc
             current_param = p_name
-            continue
-
-        if line.lower() in ("args:", "arguments:", "parameters:"):
-            in_summary = False
-            current_param = None
             continue
 
         if in_summary:
