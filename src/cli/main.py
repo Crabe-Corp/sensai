@@ -124,6 +124,14 @@ def run_session(client: OllamaClient, model: str, host: str) -> None:
             print("[Info] Veuillez saisir un message non vide.")
             continue
 
+        safe_input, has_confidential_data = mask_pii(user_input)
+
+        is_valid, error_message = validate_input_with_llm(safe_input, client, model)
+
+        if not is_valid:
+            print(f"\nAssistant > {error_message}")
+            continue
+
         if user_input in ("/exit", "/quit"):
             print("Fermeture de SENSAI.")
             break
