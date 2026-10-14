@@ -1,14 +1,16 @@
 import json
+import requests
 from collections.abc import Iterator
 from typing import Literal
 import httpx
 from pydantic import BaseModel, Field
 from qdrant_client import QdrantClient
+from qdrant_client.models import Filter, FieldCondition, MatchValue, Prefetch, NamedVector, NamedSparseVector, FusionQuery, Fusion
 from src.RAG.RAG_embedding import get_embedding, COLLECTION_NAME
 from typing import Any, Literal, TypeVar
-
 import httpx
 from pydantic import BaseModel, Field, ValidationError
+from fastembed import SparseTextEmbedding
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -65,6 +67,38 @@ class OllamaClient:
         except httpx.HTTPError as exc:
             raise OllamaAPIError(f"Erreur de récupération des modèles: {exc}") from exc
 
+    def get_character(self, prompt : str):
+        prompt_systeme = """
+        Tu es un extracteur d'entités. Ton seul but est d'analyser la question de l'utilisateur 
+        et d'extraire le nom du personnage historique principal mentionné.
+        Retourne UNIQUEMENT un JSON strict.
+        Si un personnage est trouvé : {"personnage": "Nom du personnage"}
+        Si aucun personnage n'est clairement mentionné : {"personnage": null}
+        """
+        
+        try:
+            response = requests.post("http://localhost:11434/api/generate", json={
+                "model": "qwen2.5:1.5b", # Utilisez votre modèle le plus rapide ici
+                "prompt": f"{prompt_systeme}\nQuestion : {prompt}",
+                "stream": False,
+                "format": "json"
+            })
+            
+            data = response.json()
+            resultat_json = json.loads(data.get("response", "{}"))
+            
+            personnage = resultat_json.get("personnage")
+            
+            # Nettoyage basique
+            if personnage and isinstance(personnage, str):
+                return personnage.strip()
+                
+            return None
+            
+        except Exception as e:
+            print(f"[!] Erreur lors de l'extraction de l'entité : {e}")
+            return None
+
     def chat_stream(
         self,
         model: str,
@@ -78,21 +112,62 @@ class OllamaClient:
         derniere_question = formatted_messages[-1]["content"] if formatted_messages else ""
         
         client = QdrantClient("localhost", port=6333)
+
+        personnage_cible = self.get_character(derniere_question)
         
         vecteur_question = get_embedding(derniere_question)
+        sparse_vector_question = list(self.bm25_model.embed([derniere_question]))[0]
+
+        qdrant_filter = None
+        if personnage_cible:
+            print(f"[*] Entité détectée : {personnage_cible}")
+            qdrant_filter = Filter(
+                must=[
+                    FieldCondition(
+                        key="personnage_principal",
+                        match=MatchValue(value=personnage_cible.lower()) 
+                    )
+                ]
+            )
+        else:
+            print("[*] Aucune entité spécifique détectée, recherche globale.")
+
 
         reponse_qdrant = client.query_points(
-            collection_name=COLLECTION_NAME,
-            query=vecteur_question,
-            limit=3
+            collection_name="royaumes_combattants",
+            query_filter=qdrant_filter,
+            prefetch=[
+                # Pré-recherche sémantique (Dense)
+                Prefetch(
+                    query=vecteur_question,
+                    using="dense",
+                    limit=20
+                ),
+                # Pré-recherche mots-clés exacts (BM25)
+                Prefetch(
+                    query=sparse_vector_question.as_object(),
+                    using="sparse",
+                    limit=20
+                )
+            ],
+            # Fusion des deux listes avec l'algorithme RRF
+            query=FusionQuery(fusion=Fusion.RRF),
+            limit=5
         )
+
+        # reponse_qdrant = client.query_points(
+        #     collection_name="royaumes_combattants",
+        #     query=vecteur_question,
+        #     query_filter=qdrant_filter,
+        #     limit=5
+        # )
 
         resultats = reponse_qdrant.points
         
         contexte_historique = ""
         for hit in resultats:
             source = hit.payload["source"]
-            texte = hit.payload["texte"]
+            texte = hit.payload ["texte"]
             contexte_historique += f"[Source : {source}]\n{texte}\n\n"
         
         prompt_final = (
