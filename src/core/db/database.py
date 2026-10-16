@@ -2,6 +2,7 @@ import sqlite3
 import json
 from pathlib import Path
 from src.core.db.init_db import init_database
+from src.core.fs_tools import ask_human_confirmation
 
 DB_PATH = Path("kingdoms.db")
 
@@ -33,12 +34,18 @@ def execute_db_update(sql_statement: str) -> str:
     Renvoie le statut de l'opération au format JSON (string).
     """
     try:
+        if sql_statement.strip().upper().startswith("SELECT"):
+            return json.dumps({"error": "Utilisez query_db pour les requêtes SELECT."}, ensure_ascii=False)
+
+        summary = f"Exécuter la requête suivante en base de données :\n  > {sql_statement.strip()}"
+        if not ask_human_confirmation(summary):
+            return json.dumps({
+                "status": "aborted", 
+                "message": "L'utilisateur a refusé et annulé la modification de la base de données."
+            }, ensure_ascii=False)
+
         with sqlite3.connect(DB_PATH) as conn:
             cursor = conn.cursor()
-            
-            if sql_statement.strip().upper().startswith("SELECT"):
-                return json.dumps({"error": "Utilisez query_db pour les requêtes SELECT."}, ensure_ascii=False)
-                
             cursor.execute(sql_statement)
             conn.commit()
             
