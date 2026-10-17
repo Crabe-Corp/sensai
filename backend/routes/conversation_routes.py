@@ -72,127 +72,6 @@ def check_user_access(conversation: Conversation, user: User, db: Session) -> bo
     return False
 
 
-def get_storage_sessions_dir() -> Path:
-    candidates = [
-        Path("storage/sessions"),
-        Path("/app/storage/sessions"),
-        Path("../storage/sessions"),
-    ]
-    for c in candidates:
-        if c.exists():
-            return c
-    p = candidates[0]
-    try:
-        p.mkdir(parents=True, exist_ok=True)
-    except Exception:
-        pass
-    return p
-
-
-def sync_conversation_to_storage(conv: Conversation) -> None:
-    try:
-        sdir = get_storage_sessions_dir()
-        sdir.mkdir(parents=True, exist_ok=True)
-        file_path = sdir / f"{conv.id}.json"
-        temp_path = sdir / f"{conv.id}.json.tmp.{uuid.uuid4().hex[:6]}"
-
-        creator_name = conv.creator.username if conv.creator else None
-        ordered_messages = sorted(conv.messages, key=lambda m: m.created_at or datetime.min)
-        messages_data = [
-            {"role": m.role, "content": m.content, "tool_calls": None}
-            for m in ordered_messages
-        ]
-
-        payload = {
-            "metadata": {
-                "session_id": conv.id,
-                "title": conv.title or f"Session {conv.id[:8]}",
-                "created_at": conv.created_at.isoformat() if conv.created_at else datetime.utcnow().isoformat(),
-                "updated_at": conv.updated_at.isoformat() if conv.updated_at else datetime.utcnow().isoformat(),
-                "model": conv.model_name or "qwen2.5:1.5b",
-                "username": creator_name,
-            },
-            "messages": messages_data,
-        }
-
-        with open(temp_path, "w", encoding="utf-8") as f:
-            f.write(json.dumps(payload, indent=2, ensure_ascii=False))
-        os.replace(temp_path, file_path)
-    except Exception as exc:
-        print(f"[Avertissement Sync] Impossible d'exporter vers storage/sessions : {exc}")
-
-
-def sync_conversation_from_storage(conv_id: str, db: Session, user: Optional[User] = None) -> Optional[Conversation]:
-    try:
-        sdir = get_storage_sessions_dir()
-        file_path = sdir / f"{conv_id}.json"
-        if not file_path.is_file():
-            matches = list(sdir.glob(f"{conv_id}*.json"))
-            if matches:
-                file_path = matches[0]
-            else:
-                return None
-
-        with open(file_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-
-        meta = data.get("metadata", {})
-        messages = data.get("messages", [])
-        real_id = meta.get("session_id", conv_id)
-
-        conv = db.query(Conversation).filter(Conversation.id == real_id).first()
-
-        creator = user
-        if not creator and meta.get("username"):
-            creator = db.query(User).filter(User.username == meta.get("username")).first()
-        if not creator:
-            creator = db.query(User).first()
-        if not creator:
-            creator = User(username="default", password_hash="default_hash")
-            db.add(creator)
-            db.commit()
-            db.refresh(creator)
-
-        if not conv:
-            conv = Conversation(
-                id=real_id,
-                title=meta.get("title", f"Session {real_id[:8]}"),
-                created_by_id=creator.id,
-                mode="solo",
-                model_name=meta.get("model", "qwen2.5:1.5b"),
-            )
-            db.add(conv)
-            db.commit()
-            db.refresh(conv)
-
-        existing_count = len(conv.messages)
-        if len(messages) > existing_count:
-            for new_msg in messages[existing_count:]:
-                m_role = new_msg.get("role", "user")
-                m_content = new_msg.get("content", "")
-                m = Message(
-                    id=str(uuid.uuid4()),
-                    conversation_id=conv.id,
-                    sender_id=creator.id if m_role == "user" else None,
-                    sender_name=creator.username if m_role == "user" else "SensAI",
-                    role=m_role,
-                    content=m_content,
-                    prompt_tokens=estimate_tokens(m_content),
-                    completion_tokens=0,
-                    total_tokens=estimate_tokens(m_content),
-                    created_at=datetime.utcnow(),
-                )
-                db.add(m)
-            conv.updated_at = datetime.utcnow()
-            db.commit()
-            db.refresh(conv)
-
-        return conv
-    except Exception as exc:
-        print(f"[Avertissement Sync] Erreur import storage : {exc}")
-        return None
-
-
 @router.get("")
 def list_conversations(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     owned = db.query(Conversation).filter(Conversation.created_by_id == user.id).all()
@@ -256,7 +135,6 @@ def create_conversation(
 
     db.commit()
     db.refresh(conv)
-    sync_conversation_to_storage(conv)
 
     return {
         "id": conv.id,
@@ -270,103 +148,48 @@ def create_conversation(
     }
 
 
-@router.get("/sync/list")
-def list_conversations_sync(db: Session = Depends(get_db)):
-    """Retourne la liste complète des conversations pour synchronisation avec la CLI."""
-    convs = db.query(Conversation).order_by(Conversation.updated_at.desc()).all()
-    sdir = get_storage_sessions_dir()
-    db_ids = {c.id for c in convs}
-    for f in sdir.glob("*.json"):
-        if f.stem not in db_ids and len(f.stem) > 6:
-            sync_conversation_from_storage(f.stem, db)
+@router.post("/{conversation_id}")
+@router.put("/{conversation_id}")
+def save_conversation(
+    conversation_id: str,
+    payload: dict,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Enregistre ou met à jour une conversation et ses messages."""
+    meta = payload.get("metadata", payload)
+    title = meta.get("title") or payload.get("title")
+    model_name = meta.get("model") or meta.get("model_name") or payload.get("model_name") or "qwen2.5:1.5b"
+    raw_messages = payload.get("messages", [])
 
-    convs = db.query(Conversation).order_by(Conversation.updated_at.desc()).all()
-    return [
-        {
-            "session_id": c.id,
-            "title": c.title,
-            "created_at": c.created_at.isoformat() if c.created_at else "",
-            "updated_at": c.updated_at.isoformat() if c.updated_at else "",
-            "model": c.model_name,
-            "username": c.creator.username if c.creator else None,
-        }
-        for c in convs
-    ]
-
-
-@router.get("/sync/{conversation_id}")
-def get_conversation_sync(conversation_id: str, db: Session = Depends(get_db)):
-    """Expose une conversation spécifique au format ChatSession pour la CLI."""
-    conv = sync_conversation_from_storage(conversation_id, db)
-    if not conv:
-        conv = db.query(Conversation).filter(Conversation.id == conversation_id).first()
-    if not conv:
-        raise HTTPException(status_code=404, detail="Conversation introuvable")
-
-    ordered = sorted(conv.messages, key=lambda m: m.created_at or datetime.min)
-    return {
-        "metadata": {
-            "session_id": conv.id,
-            "title": conv.title,
-            "created_at": conv.created_at.isoformat() if conv.created_at else "",
-            "updated_at": conv.updated_at.isoformat() if conv.updated_at else "",
-            "model": conv.model_name,
-            "username": conv.creator.username if conv.creator else None,
-        },
-        "messages": [
-            {"role": m.role, "content": m.content, "tool_calls": None}
-            for m in ordered
-        ],
-    }
-
-
-@router.post("/sync/{conversation_id}")
-def save_conversation_sync(conversation_id: str, payload: dict, db: Session = Depends(get_db)):
-    """Enregistre ou met à jour une conversation transmise par la CLI."""
-    meta = payload.get("metadata", {})
-    messages = payload.get("messages", [])
-
-    real_id = meta.get("session_id", conversation_id)
-    conv = db.query(Conversation).filter(Conversation.id == real_id).first()
-
-    creator = None
-    if meta.get("username"):
-        creator = db.query(User).filter(User.username == meta.get("username")).first()
-    if not creator:
-        creator = db.query(User).first()
-    if not creator:
-        creator = User(username="default", password_hash="default_hash")
-        db.add(creator)
-        db.commit()
-        db.refresh(creator)
-
+    conv = db.query(Conversation).filter(Conversation.id == conversation_id).first()
     if not conv:
         conv = Conversation(
-            id=real_id,
-            title=meta.get("title", f"Session {real_id[:8]}"),
-            created_by_id=creator.id,
+            id=conversation_id,
+            title=title or f"Session {conversation_id[:8]}",
+            created_by_id=user.id,
             mode="solo",
-            model_name=meta.get("model", "qwen2.5:1.5b"),
+            model_name=model_name,
         )
         db.add(conv)
         db.commit()
         db.refresh(conv)
     else:
-        if meta.get("title"):
-            conv.title = meta["title"]
-        if meta.get("model"):
-            conv.model_name = meta["model"]
+        if title:
+            conv.title = title
+        if model_name:
+            conv.model_name = model_name
 
     existing_count = len(conv.messages)
-    if len(messages) > existing_count:
-        for new_msg in messages[existing_count:]:
+    if len(raw_messages) > existing_count:
+        for new_msg in raw_messages[existing_count:]:
             m_role = new_msg.get("role", "user")
             m_content = new_msg.get("content", "")
             m = Message(
                 id=str(uuid.uuid4()),
                 conversation_id=conv.id,
-                sender_id=creator.id if m_role == "user" else None,
-                sender_name=creator.username if m_role == "user" else "SensAI",
+                sender_id=user.id if m_role == "user" else None,
+                sender_name=user.username if m_role == "user" else "SensAI",
                 role=m_role,
                 content=m_content,
                 prompt_tokens=estimate_tokens(m_content),
@@ -379,22 +202,27 @@ def save_conversation_sync(conversation_id: str, payload: dict, db: Session = De
         db.commit()
         db.refresh(conv)
 
-    sync_conversation_to_storage(conv)
     return {"success": True, "id": conv.id}
 
 
+@router.get("/sync/list")
+def list_conversations_sync(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    return list_conversations(user, db)
+
+
+@router.get("/sync/{conversation_id}")
+def get_conversation_sync(conversation_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    return get_conversation(conversation_id, user, db)
+
+
+@router.post("/sync/{conversation_id}")
+def save_conversation_sync(conversation_id: str, payload: dict, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    return save_conversation(conversation_id, payload, user, db)
+
+
 @router.delete("/sync/{conversation_id}")
-def delete_conversation_sync(conversation_id: str, db: Session = Depends(get_db)):
-    """Supprime une conversation via synchronisation CLI."""
-    conv = db.query(Conversation).filter(Conversation.id == conversation_id).first()
-    if conv:
-        db.delete(conv)
-        db.commit()
-    sdir = get_storage_sessions_dir()
-    f = sdir / f"{conversation_id}.json"
-    if f.is_file():
-        f.unlink()
-    return {"success": True}
+def delete_conversation_sync(conversation_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    return delete_conversation(conversation_id, user, db)
 
 
 @router.get("/{conversation_id}")
@@ -403,7 +231,6 @@ def get_conversation(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    sync_conversation_from_storage(conversation_id, db, user)
     conv = db.query(Conversation).filter(Conversation.id == conversation_id).first()
     if not conv:
         raise HTTPException(status_code=404, detail="Conversation introuvable")
@@ -468,10 +295,6 @@ def delete_conversation(
 
     db.delete(conv)
     db.commit()
-    sdir = get_storage_sessions_dir()
-    f = sdir / f"{conversation_id}.json"
-    if f.is_file():
-        f.unlink()
     return {"success": True, "message": "Conversation supprimée"}
 
 
@@ -1045,7 +868,6 @@ async def chat_stream(
                     db.add(assistant_msg)
                     conv.updated_at = datetime.utcnow()
                     db.commit()
-                    sync_conversation_to_storage(conv)
                 except Exception:
                     pass
             raise
@@ -1067,7 +889,6 @@ async def chat_stream(
         db.add(assistant_msg)
         conv.updated_at = datetime.utcnow()
         db.commit()
-        sync_conversation_to_storage(conv)
         conv_total_tokens = sum(m.total_tokens for m in conv.messages)
 
         final_payload = {
