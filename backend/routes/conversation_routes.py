@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+from pathlib import Path
 import re
 import uuid
 from datetime import datetime
@@ -22,7 +23,7 @@ OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://ia:11434")
 
 class CreateConversationRequest(BaseModel):
     title: Optional[str] = "Nouvelle conversation"
-    mode: Optional[str] = "solo"  # "solo" ou "work"
+    mode: Optional[str] = "solo"
     model_name: Optional[str] = "qwen3:0.6b"
     tools_enabled: Optional[List[str]] = []
 
@@ -71,12 +72,131 @@ def check_user_access(conversation: Conversation, user: User, db: Session) -> bo
     return False
 
 
+def get_storage_sessions_dir() -> Path:
+    candidates = [
+        Path("storage/sessions"),
+        Path("/app/storage/sessions"),
+        Path("../storage/sessions"),
+    ]
+    for c in candidates:
+        if c.exists():
+            return c
+    p = candidates[0]
+    try:
+        p.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
+    return p
+
+
+def sync_conversation_to_storage(conv: Conversation) -> None:
+    try:
+        sdir = get_storage_sessions_dir()
+        sdir.mkdir(parents=True, exist_ok=True)
+        file_path = sdir / f"{conv.id}.json"
+        temp_path = sdir / f"{conv.id}.json.tmp.{uuid.uuid4().hex[:6]}"
+
+        creator_name = conv.creator.username if conv.creator else None
+        ordered_messages = sorted(conv.messages, key=lambda m: m.created_at or datetime.min)
+        messages_data = [
+            {"role": m.role, "content": m.content, "tool_calls": None}
+            for m in ordered_messages
+        ]
+
+        payload = {
+            "metadata": {
+                "session_id": conv.id,
+                "title": conv.title or f"Session {conv.id[:8]}",
+                "created_at": conv.created_at.isoformat() if conv.created_at else datetime.utcnow().isoformat(),
+                "updated_at": conv.updated_at.isoformat() if conv.updated_at else datetime.utcnow().isoformat(),
+                "model": conv.model_name or "qwen2.5:1.5b",
+                "username": creator_name,
+            },
+            "messages": messages_data,
+        }
+
+        with open(temp_path, "w", encoding="utf-8") as f:
+            f.write(json.dumps(payload, indent=2, ensure_ascii=False))
+        os.replace(temp_path, file_path)
+    except Exception as exc:
+        print(f"[Avertissement Sync] Impossible d'exporter vers storage/sessions : {exc}")
+
+
+def sync_conversation_from_storage(conv_id: str, db: Session, user: Optional[User] = None) -> Optional[Conversation]:
+    try:
+        sdir = get_storage_sessions_dir()
+        file_path = sdir / f"{conv_id}.json"
+        if not file_path.is_file():
+            matches = list(sdir.glob(f"{conv_id}*.json"))
+            if matches:
+                file_path = matches[0]
+            else:
+                return None
+
+        with open(file_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        meta = data.get("metadata", {})
+        messages = data.get("messages", [])
+        real_id = meta.get("session_id", conv_id)
+
+        conv = db.query(Conversation).filter(Conversation.id == real_id).first()
+
+        creator = user
+        if not creator and meta.get("username"):
+            creator = db.query(User).filter(User.username == meta.get("username")).first()
+        if not creator:
+            creator = db.query(User).first()
+        if not creator:
+            creator = User(username="default", password_hash="default_hash")
+            db.add(creator)
+            db.commit()
+            db.refresh(creator)
+
+        if not conv:
+            conv = Conversation(
+                id=real_id,
+                title=meta.get("title", f"Session {real_id[:8]}"),
+                created_by_id=creator.id,
+                mode="solo",
+                model_name=meta.get("model", "qwen2.5:1.5b"),
+            )
+            db.add(conv)
+            db.commit()
+            db.refresh(conv)
+
+        existing_count = len(conv.messages)
+        if len(messages) > existing_count:
+            for new_msg in messages[existing_count:]:
+                m_role = new_msg.get("role", "user")
+                m_content = new_msg.get("content", "")
+                m = Message(
+                    id=str(uuid.uuid4()),
+                    conversation_id=conv.id,
+                    sender_id=creator.id if m_role == "user" else None,
+                    sender_name=creator.username if m_role == "user" else "SensAI",
+                    role=m_role,
+                    content=m_content,
+                    prompt_tokens=estimate_tokens(m_content),
+                    completion_tokens=0,
+                    total_tokens=estimate_tokens(m_content),
+                    created_at=datetime.utcnow(),
+                )
+                db.add(m)
+            conv.updated_at = datetime.utcnow()
+            db.commit()
+            db.refresh(conv)
+
+        return conv
+    except Exception as exc:
+        print(f"[Avertissement Sync] Erreur import storage : {exc}")
+        return None
+
+
 @router.get("")
 def list_conversations(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    # Récupérer les conversations créées par l'utilisateur
     owned = db.query(Conversation).filter(Conversation.created_by_id == user.id).all()
 
-    # Récupérer les conversations collaboratives "work" dont l'utilisateur est membre
     memberships = db.query(ConversationMember).filter(ConversationMember.user_id == user.id).all()
     shared_ids = [m.conversation_id for m in memberships]
     shared = db.query(Conversation).filter(Conversation.id.in_(shared_ids)).all() if shared_ids else []
@@ -136,6 +256,7 @@ def create_conversation(
 
     db.commit()
     db.refresh(conv)
+    sync_conversation_to_storage(conv)
 
     return {
         "id": conv.id,
@@ -149,12 +270,140 @@ def create_conversation(
     }
 
 
+@router.get("/sync/list")
+def list_conversations_sync(db: Session = Depends(get_db)):
+    """Retourne la liste complète des conversations pour synchronisation avec la CLI."""
+    convs = db.query(Conversation).order_by(Conversation.updated_at.desc()).all()
+    sdir = get_storage_sessions_dir()
+    db_ids = {c.id for c in convs}
+    for f in sdir.glob("*.json"):
+        if f.stem not in db_ids and len(f.stem) > 6:
+            sync_conversation_from_storage(f.stem, db)
+
+    convs = db.query(Conversation).order_by(Conversation.updated_at.desc()).all()
+    return [
+        {
+            "session_id": c.id,
+            "title": c.title,
+            "created_at": c.created_at.isoformat() if c.created_at else "",
+            "updated_at": c.updated_at.isoformat() if c.updated_at else "",
+            "model": c.model_name,
+            "username": c.creator.username if c.creator else None,
+        }
+        for c in convs
+    ]
+
+
+@router.get("/sync/{conversation_id}")
+def get_conversation_sync(conversation_id: str, db: Session = Depends(get_db)):
+    """Expose une conversation spécifique au format ChatSession pour la CLI."""
+    conv = sync_conversation_from_storage(conversation_id, db)
+    if not conv:
+        conv = db.query(Conversation).filter(Conversation.id == conversation_id).first()
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversation introuvable")
+
+    ordered = sorted(conv.messages, key=lambda m: m.created_at or datetime.min)
+    return {
+        "metadata": {
+            "session_id": conv.id,
+            "title": conv.title,
+            "created_at": conv.created_at.isoformat() if conv.created_at else "",
+            "updated_at": conv.updated_at.isoformat() if conv.updated_at else "",
+            "model": conv.model_name,
+            "username": conv.creator.username if conv.creator else None,
+        },
+        "messages": [
+            {"role": m.role, "content": m.content, "tool_calls": None}
+            for m in ordered
+        ],
+    }
+
+
+@router.post("/sync/{conversation_id}")
+def save_conversation_sync(conversation_id: str, payload: dict, db: Session = Depends(get_db)):
+    """Enregistre ou met à jour une conversation transmise par la CLI."""
+    meta = payload.get("metadata", {})
+    messages = payload.get("messages", [])
+
+    real_id = meta.get("session_id", conversation_id)
+    conv = db.query(Conversation).filter(Conversation.id == real_id).first()
+
+    creator = None
+    if meta.get("username"):
+        creator = db.query(User).filter(User.username == meta.get("username")).first()
+    if not creator:
+        creator = db.query(User).first()
+    if not creator:
+        creator = User(username="default", password_hash="default_hash")
+        db.add(creator)
+        db.commit()
+        db.refresh(creator)
+
+    if not conv:
+        conv = Conversation(
+            id=real_id,
+            title=meta.get("title", f"Session {real_id[:8]}"),
+            created_by_id=creator.id,
+            mode="solo",
+            model_name=meta.get("model", "qwen2.5:1.5b"),
+        )
+        db.add(conv)
+        db.commit()
+        db.refresh(conv)
+    else:
+        if meta.get("title"):
+            conv.title = meta["title"]
+        if meta.get("model"):
+            conv.model_name = meta["model"]
+
+    existing_count = len(conv.messages)
+    if len(messages) > existing_count:
+        for new_msg in messages[existing_count:]:
+            m_role = new_msg.get("role", "user")
+            m_content = new_msg.get("content", "")
+            m = Message(
+                id=str(uuid.uuid4()),
+                conversation_id=conv.id,
+                sender_id=creator.id if m_role == "user" else None,
+                sender_name=creator.username if m_role == "user" else "SensAI",
+                role=m_role,
+                content=m_content,
+                prompt_tokens=estimate_tokens(m_content),
+                completion_tokens=0,
+                total_tokens=estimate_tokens(m_content),
+                created_at=datetime.utcnow(),
+            )
+            db.add(m)
+        conv.updated_at = datetime.utcnow()
+        db.commit()
+        db.refresh(conv)
+
+    sync_conversation_to_storage(conv)
+    return {"success": True, "id": conv.id}
+
+
+@router.delete("/sync/{conversation_id}")
+def delete_conversation_sync(conversation_id: str, db: Session = Depends(get_db)):
+    """Supprime une conversation via synchronisation CLI."""
+    conv = db.query(Conversation).filter(Conversation.id == conversation_id).first()
+    if conv:
+        db.delete(conv)
+        db.commit()
+    sdir = get_storage_sessions_dir()
+    f = sdir / f"{conversation_id}.json"
+    if f.is_file():
+        f.unlink()
+    return {"success": True}
+
+
 @router.get("/{conversation_id}")
 def get_conversation(
     conversation_id: str,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    sync_conversation_from_storage(conversation_id, db, user)
     conv = db.query(Conversation).filter(Conversation.id == conversation_id).first()
     if not conv:
         raise HTTPException(status_code=404, detail="Conversation introuvable")
@@ -219,6 +468,10 @@ def delete_conversation(
 
     db.delete(conv)
     db.commit()
+    sdir = get_storage_sessions_dir()
+    f = sdir / f"{conversation_id}.json"
+    if f.is_file():
+        f.unlink()
     return {"success": True, "message": "Conversation supprimée"}
 
 
@@ -236,19 +489,16 @@ def branch_conversation(
     if not check_user_access(conv, user, db):
         raise HTTPException(status_code=403, detail="Accès non autorisé à cette conversation")
 
-    # Trouver le message cible et ses messages précédents
     target_msg = None
     target_idx = -1
     ordered_messages = sorted(conv.messages, key=lambda m: m.created_at or datetime.min)
 
-    # 1. Recherche par identifiant direct
     for i, m in enumerate(ordered_messages):
         if m.id == req.message_id:
             target_msg = m
             target_idx = i
             break
 
-    # 2. Si non trouvé par ID (ex: id temporaire temp-xxx), recherche par contenu
     if target_msg is None and req.content:
         for i, m in enumerate(ordered_messages):
             if m.content.strip() == req.content.strip():
@@ -256,7 +506,6 @@ def branch_conversation(
                 target_idx = i
                 break
 
-    # 3. Fallback : prendre le dernier message utilisateur s'il existe
     if target_msg is None and ordered_messages:
         user_msgs = [(i, m) for i, m in enumerate(ordered_messages) if m.role == "user"]
         if user_msgs:
@@ -265,11 +514,6 @@ def branch_conversation(
             target_idx = len(ordered_messages) - 1
             target_msg = ordered_messages[-1]
 
-    # Déterminer les messages à cloner :
-    # Si req.content est fourni et différent du contenu cible (mode édition/remplacement) :
-    # On clone strictement avant target_idx (les messages antérieurs).
-    # Sinon (branchement direct / fork de l'état actuel) :
-    # On clone jusqu'à target_idx inclus, et si la réponse de l'assistant suit directement, on l'inclut également.
     prior_messages = []
     if target_idx >= 0:
         is_edit = bool(req.content and target_msg and req.content.strip() != target_msg.content.strip())
@@ -295,7 +539,6 @@ def branch_conversation(
     )
     db.add(new_conv)
 
-    # Cloner les messages antérieurs dans la nouvelle branche
     for pm in prior_messages:
         cloned_msg = Message(
             id=str(uuid.uuid4()),
@@ -619,7 +862,6 @@ async def chat_stream(
     valid_tool_ids = [t["id"] for t in list_tools()] + ["structured_output", "Structured Output", "mcp_runner"]
     tools_to_use = [t for t in raw_tools if t in valid_tool_ids]
 
-    # Enregistrer le message de l'utilisateur
     user_tokens = estimate_tokens(req.content)
     user_msg_id = str(uuid.uuid4())
     user_msg = Message(
@@ -635,7 +877,6 @@ async def chat_stream(
     )
     db.add(user_msg)
     conv.updated_at = datetime.utcnow()
-    # Si premier message, nommer la conversation
     if conv.title == "Nouvelle conversation":
         clean_prompt = re.sub(
             r'\[Fichier joint\s*:\s*[^\]\(\)]+?(?: \([^)]+\))?\](?:\s*--- Début du contenu de [^\n\r]+ ---\s*[\s\S]*?\s*--- Fin du contenu de [^\n\r]+ ---)?',
@@ -653,7 +894,6 @@ async def chat_stream(
 
     db.commit()
 
-    # Diffusion en temps réel WebSocket du message utilisateur (pour le mode "work")
     await manager.broadcast(conv.id, {
         "type": "new_message",
         "message": {
@@ -668,7 +908,6 @@ async def chat_stream(
         }
     })
 
-    # Préparation de l'historique pour Ollama
     history = []
     system_prompt = req.system_instruction.strip() if req.system_instruction and req.system_instruction.strip() else (
         "Tu es SensAI, un assistant virtuel intelligent, clair et direct."
@@ -684,7 +923,6 @@ async def chat_stream(
 
     history.append({"role": "system", "content": system_prompt})
 
-    # Charger les 15 derniers messages pour le contexte
     past_messages = db.query(Message).filter(Message.conversation_id == conv.id).order_by(Message.created_at).limit(15).all()
     for pm in past_messages:
         history.append({"role": pm.role, "content": pm.content})
@@ -695,7 +933,6 @@ async def chat_stream(
         completion_tokens_eval = 0
 
         use_mcp = "mcp_runner" in tools_to_use
-        # Événement initial notifiant l'identifiant réel en base du message utilisateur
         yield json.dumps({"type": "start", "user_message_id": user_msg_id}) + "\n"
 
         ollama_payload = {
@@ -808,13 +1045,13 @@ async def chat_stream(
                     db.add(assistant_msg)
                     conv.updated_at = datetime.utcnow()
                     db.commit()
+                    sync_conversation_to_storage(conv)
                 except Exception:
                     pass
             raise
 
         total_response_tokens = prompt_tokens_eval + completion_tokens_eval
 
-        # Sauvegarder la réponse de l'assistant en BDD
         assistant_msg_id = str(uuid.uuid4())
         assistant_msg = Message(
             id=assistant_msg_id,
@@ -830,11 +1067,9 @@ async def chat_stream(
         db.add(assistant_msg)
         conv.updated_at = datetime.utcnow()
         db.commit()
-
-        # Recalculer le total global de la conversation
+        sync_conversation_to_storage(conv)
         conv_total_tokens = sum(m.total_tokens for m in conv.messages)
 
-        # Message final avec métadonnées de tokens
         final_payload = {
             "type": "done",
             "message_id": assistant_msg_id,
@@ -846,7 +1081,6 @@ async def chat_stream(
         }
         yield json.dumps(final_payload) + "\n"
 
-        # Broadcast WebSocket pour synchro live "work"
         await manager.broadcast(conv.id, {
             "type": "new_message",
             "message": {

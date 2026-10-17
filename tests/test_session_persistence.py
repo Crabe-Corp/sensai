@@ -14,6 +14,11 @@ from src.features.memory.session_manager import (
 from src.interfaces.cli.main import parse_arguments, run_session
 
 
+@pytest.fixture(autouse=True)
+def disable_remote_backend_for_unit_tests(monkeypatch):
+    monkeypatch.setenv("SENSAI_BACKEND_URL", "")
+
+
 class TestUserProfile:
     def test_default_profile_attributes(self):
         profile = UserProfile()
@@ -297,3 +302,126 @@ class TestCliIntegrationPersistence:
         assert "[Profil Utilisateur : archonte]" in captured.out
         assert "aristocratique" in captured.out
         assert "archonte" in captured.out
+
+
+class TestWebCliInteroperability:
+    def test_load_session_by_short_prefix(self, tmp_path: Path):
+        sm = SessionManager(storage_dir=tmp_path)
+        sess = sm.create_session(profile=None, model="qwen2.5:1.5b", title="Prefix Test")
+        sess.add_message(ChatMessage(role="user", content="Bonjour depuis le web"))
+        sm.save_session(sess)
+
+        short_id = sess.metadata.session_id[:8]
+        loaded = sm.load_session(short_id)
+        assert loaded.metadata.session_id == sess.metadata.session_id
+        assert len(loaded.messages) == 1
+        assert loaded.messages[0].content == "Bonjour depuis le web"
+
+    def test_load_session_from_mock_web_backend(self, tmp_path: Path):
+        sm = SessionManager(storage_dir=tmp_path, backend_url="http://mock-backend")
+        remote_data = {
+            "metadata": {
+                "session_id": "remote-uuid-1234-5678",
+                "title": "Discussion Web",
+                "created_at": "2026-10-13T12:00:00Z",
+                "updated_at": "2026-10-13T12:05:00Z",
+                "model": "qwen2.5:1.5b",
+                "username": "web_user",
+                "source": "web",
+            },
+            "messages": [
+                {"role": "user", "content": "Question posée sur le web"},
+                {"role": "assistant", "content": "Réponse fournie sur le web"},
+            ],
+        }
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = remote_data
+
+        with patch("httpx.Client.get", return_value=mock_resp):
+            loaded = sm.load_session("remote-uuid-1234-5678")
+
+        assert loaded.metadata.session_id == "remote-uuid-1234-5678"
+        assert loaded.metadata.title == "Discussion Web"
+        assert loaded.metadata.source == "web"
+        assert len(loaded.messages) == 2
+        assert (tmp_path / "remote-uuid-1234-5678.json").is_file()
+
+    def test_list_sessions_merges_web_remote(self, tmp_path: Path):
+        sm = SessionManager(storage_dir=tmp_path, backend_url="http://mock-backend")
+        local_sess = sm.create_session(profile=None, model="qwen2.5:1.5b", title="Session Locale")
+
+        remote_list_data = [
+            {
+                "session_id": "remote-conv-9999",
+                "title": "Session Web Distante",
+                "created_at": "2026-10-13T14:00:00Z",
+                "updated_at": "2026-10-13T14:10:00Z",
+                "model": "qwen2.5:1.5b",
+                "username": "web_user",
+            }
+        ]
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = remote_list_data
+
+        with patch("httpx.Client.get", return_value=mock_resp):
+            sessions = sm.list_sessions()
+
+        ids = [s.session_id for s in sessions]
+        assert local_sess.metadata.session_id in ids
+        assert "remote-conv-9999" in ids
+        web_item = next(s for s in sessions if s.session_id == "remote-conv-9999")
+        assert web_item.source == "web"
+
+    def test_save_session_syncs_to_web(self, tmp_path: Path):
+        sm = SessionManager(storage_dir=tmp_path, backend_url="http://mock-backend")
+        sess = sm.create_session(profile=None, model="qwen2.5:1.5b", title="Test Sync")
+        sess.add_message(ChatMessage(role="user", content="Message CLI"))
+
+        with patch("httpx.Client.post") as mock_post:
+            sm.save_session(sess, sync_remote=True)
+            assert mock_post.called
+            url = mock_post.call_args[0][0]
+            assert sess.metadata.session_id in url
+
+    def test_cli_continues_conversation_started_on_web(self, tmp_path: Path, capsys):
+        sm = SessionManager(storage_dir=tmp_path / "sessions")
+        pm = ProfileManager(storage_dir=tmp_path / "profiles")
+        mock_client = MagicMock()
+        mock_client.chat_stream.return_value = iter(["Suite de ", "la réponse CLI"])
+
+        # Création d'une conversation simulant celle issue de l'interface Web
+        web_session = sm.create_session(profile=None, model="qwen2.5:1.5b", title="Web Chat Initial")
+        web_session.metadata.source = "web"
+        web_session.add_message(ChatMessage(role="user", content="Premier message Web"))
+        web_session.add_message(ChatMessage(role="assistant", content="Premier retour Web"))
+        sm.save_session(web_session)
+
+        # Lancement de la CLI avec --session ciblant les 8 premiers caractères de l'ID Web
+        short_id = web_session.metadata.session_id[:8]
+        inputs = ["Deuxième message CLI", "/exit"]
+
+        with patch("builtins.input", side_effect=inputs):
+            run_session(
+                client=mock_client,
+                model="qwen2.5:1.5b",
+                host="http://localhost:11434",
+                session_id=short_id,
+                session_manager=sm,
+                profile_manager=pm,
+            )
+
+        captured = capsys.readouterr()
+        assert f"Session '{short_id}' chargée" in captured.out
+
+        # Vérification que la session a été continuée avec succès
+        reloaded = sm.load_session(web_session.metadata.session_id)
+        assert len(reloaded.messages) == 4
+        assert reloaded.messages[0].content == "Premier message Web"
+        assert reloaded.messages[1].content == "Premier retour Web"
+        assert reloaded.messages[2].content == "Deuxième message CLI"
+        assert reloaded.messages[3].content == "Suite de la réponse CLI"
+

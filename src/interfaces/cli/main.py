@@ -5,6 +5,11 @@ import sys
 from pathlib import Path
 from typing import Any
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8")
+
 from src.core.db.database import init_database
 from src.core.engine import (
     ConversationEngine,
@@ -295,7 +300,8 @@ def run_session(
                     print(f"[Info] Sessions sauvegardées ({len(sessions)}) :")
                     for s in sessions:
                         active_mark = " (active)" if s.session_id == current_session.metadata.session_id else ""
-                        print(f"  - [{s.session_id}] {s.title} (Modèle: {s.model}, Mis à jour: {s.updated_at[:19]}){active_mark}")
+                        source_tag = f" [{s.source}]" if getattr(s, "source", "local") != "local" else ""
+                        print(f"  - [{s.session_id[:8]}] {s.title} (Modèle: {s.model}, Mis à jour: {s.updated_at[:19]}){source_tag}{active_mark}")
             elif subcmd == "load":
                 if len(parts) < 3 or not parts[2].strip():
                     print("[Info] Usage : /session load <id>")
@@ -658,8 +664,9 @@ RETURN: code de retour entier (0 en cas de succès, 1 en cas d'erreur)"""
     )
     profile_name = args.profile or "default"
     session_id = args.session
+    timeout = float(os.getenv("SENSAI_TIMEOUT") or file_cfg.get("request_timeout") or 180.0)
 
-    with OllamaClient(base_url=host) as client:
+    with OllamaClient(base_url=host, timeout=timeout) as client:
         active_tools = default_registry if (tools_flag or mcp_cmd) else None
         run_session(
             client,

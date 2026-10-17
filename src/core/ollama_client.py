@@ -60,7 +60,7 @@ class OllamaStructuredOutputError(OllamaError, StructuredOutputError):
 
 
 class OllamaClient:
-    def __init__(self, base_url: str = "http://localhost:11434", timeout: float = 60.0) -> None:
+    def __init__(self, base_url: str = "http://localhost:11434", timeout: float = 180.0) -> None:
         """Initialise le client HTTP direct pour l'API locale d'Ollama.
                 PARAMS: - base_url - STR: adresse racine du serveur Ollama
                         - timeout - FLOAT: délai maximal d'attente des requêtes en secondes
