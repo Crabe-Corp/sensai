@@ -6,7 +6,7 @@ import requests
 import json
 from qdrant_client import QdrantClient
 from fastembed import SparseTextEmbedding
-from qdrant_client.http.models import Distance, VectorParams, PointStruct
+from qdrant_client.http.models import Distance, VectorParams, PointStruct, SparseVectorParams
 
 COLLECTION_NAME = "royaumes_combattants"
 TAILLE_VECTEUR = 768
@@ -15,10 +15,18 @@ bm25_model = SparseTextEmbedding(model_name="Qdrant/bm25")
 def get_qdrant_client():
     client = QdrantClient("localhost", port=6333)
     
+    if client.collection_exists(COLLECTION_NAME):
+        client.delete_collection(COLLECTION_NAME)
+
     if not client.collection_exists(COLLECTION_NAME):
         client.create_collection(
             collection_name=COLLECTION_NAME,
-            vectors_config=VectorParams(size=TAILLE_VECTEUR, distance=Distance.COSINE),
+            vectors_config={
+                "dense": VectorParams(size=TAILLE_VECTEUR, distance=Distance.COSINE)
+            },
+            sparse_vectors_config={
+                "sparse": SparseVectorParams()
+            }
         )
     return client
 

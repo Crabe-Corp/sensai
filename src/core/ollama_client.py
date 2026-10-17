@@ -5,7 +5,7 @@ from typing import Literal
 import httpx
 from pydantic import BaseModel, Field
 from qdrant_client import QdrantClient
-from qdrant_client.models import Filter, FieldCondition, MatchValue, Prefetch, NamedVector, NamedSparseVector, FusionQuery, Fusion
+from qdrant_client.models import Filter, FieldCondition, MatchValue, Prefetch, FusionQuery, Fusion
 from src.RAG.RAG_embedding import get_embedding, COLLECTION_NAME
 from typing import Any, Literal, TypeVar
 import httpx
@@ -48,6 +48,7 @@ class OllamaClient:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
         self._client = httpx.Client(timeout=timeout)
+        self.bm25_model = SparseTextEmbedding(model_name="Qdrant/bm25")
 
     def check_connection(self) -> bool:
         try:
