@@ -6,6 +6,7 @@ import src.core.memory_management as mem
 from pathlib import Path
 from typing import Any
 from src.core.db.database import init_database, get_kingdom_stats, update_kingdom_gold, get_active_diplomacy
+from src.core import singleton_token
 
 if __package__ is None or __package__ == "":
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
@@ -112,6 +113,8 @@ def run_session(client: OllamaClient, model: str, host: str) -> None:
     structured_mode: bool = False
     print_banner(model, host)
     init_database()
+    token_input = 0
+    token_output = 0
 
     while True:
         try:
@@ -120,7 +123,7 @@ def run_session(client: OllamaClient, model: str, host: str) -> None:
             print("\n\nSession interrompue.")
             break
 
-        if (mem.estimate_tokens(history) >= 2000):
+        if (singleton_token.budget_tokens >= 2000):
             mem.enforce_token_budget(model, client, history)
 
         if not user_input:

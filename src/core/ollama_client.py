@@ -7,10 +7,11 @@ from pydantic import BaseModel, Field
 from qdrant_client import QdrantClient
 from qdrant_client.models import Filter, FieldCondition, MatchValue, Prefetch, FusionQuery, Fusion
 from src.RAG.RAG_embedding import get_embedding, COLLECTION_NAME
-from typing import Any, Literal, TypeVar
+from typing import Any, List, Union, TypeVar
 import httpx
 from pydantic import BaseModel, Field, ValidationError
 from fastembed import SparseTextEmbedding
+from src.core import memory_management
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -115,6 +116,10 @@ class OllamaClient:
         client = QdrantClient("localhost", port=6333)
 
         personnage_cible = self.get_character(derniere_question)
+        if personnage_cible:
+            if personnage_cible.lower() not in derniere_question.lower():
+                    print(f"[!] Hallucination détectée : l'IA a inventé '{personnage_cible}'. Ignoré.")
+                    personnage_cible = None
         
         vecteur_question = get_embedding(derniere_question)
         sparse_vector_question = list(self.bm25_model.embed([derniere_question]))[0]
@@ -202,6 +207,12 @@ class OllamaClient:
                     if not line.strip():
                         continue
                     data = json.loads(line)
+                    if data.get("done") == True:
+                        input_tokens = data.get("prompt_eval_count", 0)
+                        output_tokens = data.get("eval_count", 0)
+                        budget_consomme = input_tokens + output_tokens
+                        memory_management.consommer_tokens(budget_consomme)
+                        # print(f"Tokens consommés pour ce message : {budget_consomme}")
                     if "error" in data:
                         err_msg = data["error"]
                         if "not found" in err_msg.lower():
@@ -276,10 +287,20 @@ class OllamaClient:
             validation_error=last_error,
         )
 
-    def call_model(self, model: str, messages: str):
-        payload: dict[str, Any] = {"model": model, "messages": messages, "stream": False}
-        if format is not None:
-            payload["format"] = format
+    def call_model(self, model: str, messages: Union[List[Any], str], response_format: str = None):
+        formatted_messages = []
+        for msg in messages:
+            if hasattr(msg, "role") and hasattr(msg, "content"):
+                formatted_messages.append({"role": msg.role, "content": msg.content})
+            elif isinstance(msg, dict):
+                formatted_messages.append(msg)
+            else:
+                formatted_messages.append(msg)
+
+        payload: dict[str, Any] = {"model": model, "messages": formatted_messages, "stream": False}
+        
+        if response_format is not None:
+            payload["format"] = response_format
 
         try:
             response = self._client.post(f"{self.base_url}/api/chat", json=payload)
