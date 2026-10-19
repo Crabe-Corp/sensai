@@ -86,6 +86,9 @@ class HistoricalFigure(BaseModel):
     @field_validator("role", mode="before")
     @classmethod
     def _normalize_role(cls, value: Any) -> Any:
+        """Normalise le rôle d'un personnage historique vers l'une des valeurs admises.
+                PARAMS: - value - ANY: valeur brute du rôle reçue
+                RETURN: chaîne normalisée ou valeur d'origine inchangée"""
         if isinstance(value, str):
             mapping = {
                 "general": "général",

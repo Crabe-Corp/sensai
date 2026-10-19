@@ -4,6 +4,9 @@ from pathlib import Path
 DB_PATH = Path("kingdoms.db")
 
 def init_database() -> None:
+    """Initialise la base de données SQLite des royaumes avec le schéma et les données initiales.
+            PARAMS: Aucun
+            RETURN: None"""
     DB_PATH.touch(exist_ok=True)
     with sqlite3.connect(DB_PATH) as conn:
         cursor = conn.cursor()

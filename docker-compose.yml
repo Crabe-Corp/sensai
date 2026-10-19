@@ -54,6 +54,7 @@ services:
       PORT: ${BACKEND_PORT:-8080}
     volumes:
       - ./backend:/app
+      - ./storage:/app/storage
     depends_on:
       bdd:
         condition: service_healthy

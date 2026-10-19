@@ -58,7 +58,8 @@ def get_user_model_config(user: User = Depends(get_current_user), db: Session = 
             "active_tools": ["structured_output"]
         }
     tools = json.loads(pref.active_tools) if pref.active_tools else []
-    tools = [t for t in tools if t in ["structured_output", "Structured Output", "mcp_runner"]]
+    valid_ids = [t["id"] for t in list_tools()] + ["structured_output", "Structured Output", "mcp_runner"]
+    tools = [t for t in tools if t in valid_ids]
     return {
         "model_name": pref.model_name,
         "temperature": pref.temperature,
@@ -73,7 +74,8 @@ def update_user_model_config(
     db: Session = Depends(get_db)
 ):
     pref = db.query(ModelPreference).filter(ModelPreference.user_id == user.id).first()
-    cleaned_tools = [t for t in (cfg.active_tools or []) if t in ["structured_output", "Structured Output", "mcp_runner"]]
+    valid_ids = [t["id"] for t in list_tools()] + ["structured_output", "Structured Output", "mcp_runner"]
+    cleaned_tools = [t for t in (cfg.active_tools or []) if t in valid_ids]
     tools_json = json.dumps(cleaned_tools)
     if not pref:
         pref = ModelPreference(
