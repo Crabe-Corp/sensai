@@ -14,6 +14,7 @@ if __package__ is None or __package__ == "":
     sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 from src.core.db.database import init_database
+from src.core import memory_management as mem, singleton_token
 from src.core.sec.security import mask_pii, validate_input_with_llm
 from src.core.engine import (
     ConversationEngine,
@@ -53,6 +54,7 @@ def load_config_file(config_path: Path) -> dict[str, Any]:
     """Charge et lit le fichier de configuration JSON s'il existe sur le disque.
             PARAMS: - config_path - PATH: chemin vers le fichier de configuration JSON
             RETURN: dictionnaire contenant la configuration lue ou dictionnaire vide"""
+
     if not config_path.is_file():
         return {}
     try:
@@ -66,6 +68,7 @@ def resolve_configuration(cli_args: argparse.Namespace) -> tuple[str, str]:
     """Détermine l'hôte et le modèle Ollama en combinant CLI, variables d'environnement et config.
             PARAMS: - cli_args - NAMESPACE: arguments analysés de la ligne de commande
             RETURN: tuple contenant l'URL de l'hôte et le nom du modèle sélectionnés"""
+
     file_cfg = load_config_file(Path(cli_args.config)) if cli_args.config else {}
 
     host = (
@@ -89,6 +92,7 @@ def parse_arguments(argv: list[str] | None = None) -> argparse.Namespace:
     """Analyse les arguments de ligne de commande passés au programme.
             PARAMS: - argv - LIST[STR] | NONE: arguments de ligne de commande optionnels
             RETURN: objet Namespace contenant les arguments analysés"""
+
     parser = argparse.ArgumentParser(
         prog="sensai",
         description="SENSAI CLI — Chatbot conversationnel connecté à Ollama en local.",
@@ -138,6 +142,18 @@ def parse_arguments(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         help="Nom du profil utilisateur à charger (ex: default, historien).",
     )
+    parser.add_argument(
+        "--max-tokens",
+        type=int,
+        default=2000,
+        help="Plafond maximal de tokens avant déclenchement de la compression sémantique.",
+    )
+    parser.add_argument(
+        "--rag",
+        action="store_true",
+        default=False,
+        help="Activer l'enrichissement documentaire automatique RAG.",
+    )
     return parser.parse_args(argv)
 
 
@@ -147,6 +163,7 @@ def print_banner(
     tools_enabled: bool = False,
     profile_name: str | None = None,
     session_id: str | None = None,
+    rag_enabled: bool = False,
 ) -> None:
     """Affiche la bannière d'accueil de la CLI avec les paramètres de connexion actifs.
             PARAMS: - model - STR: nom du modèle Ollama en cours d'utilisation
@@ -155,11 +172,14 @@ def print_banner(
                     - profile_name - STR | NONE: nom du profil utilisateur actif
                     - session_id - STR | NONE: identifiant de la session courante
             RETURN: None"""
+
     print("=" * 60)
     print(" SENSAI CLI — Chatbot Modulaire")
     print(f" Modèle actif : {model}")
     print(f" Hôte Ollama  : {host}")
     print(f" Outils MCP   : {'Activés' if tools_enabled else 'Désactivés'}")
+    if rag_enabled:
+        print(" RAG vectoriel: Activé")
     if profile_name:
         print(f" Profil       : {profile_name}")
     if session_id:
@@ -172,10 +192,13 @@ def print_help() -> None:
     """Affiche dans la console l'ensemble des commandes spéciales disponibles dans la session.
             PARAMS: Aucun
             RETURN: None"""
+
     print("\nCommandes disponibles :")
     print("  /help                     : Affiche ce message d'aide")
     print("  /clear                    : Réinitialise l'historique de la session")
     print("  /history                  : Affiche le nombre de messages échangés")
+    print("  /budget                   : Affiche le nombre de tokens consommés")
+    print("  /rag [on|off]             : Active ou désactive l'enrichissement documentaire RAG")
     print("  /session list             : Liste les sessions sauvegardées")
     print("  /session load <id>        : Charge une session passée et son historique")
     print("  /session new [titre]      : Initialise une nouvelle session vierge")
@@ -202,6 +225,8 @@ def run_session(
     profile_name: str | None = None,
     session_manager: SessionManager | None = None,
     profile_manager: ProfileManager | None = None,
+    max_tokens: int = 2000,
+    rag_enabled: bool = False,
 ) -> None:
     """Gère la boucle interactive du chatbot CLI, l'historique et les commandes slash.
             PARAMS: - client - OLLAMACLIENT: instance active du client HTTP Ollama
@@ -214,6 +239,7 @@ def run_session(
                     - session_manager - SESSIONMANAGER | NONE: gestionnaire de sessions persistant
                     - profile_manager - PROFILEMANAGER | NONE: gestionnaire de profils utilisateur
             RETURN: None"""
+
     if session_manager is None:
         session_manager = SessionManager()
     if profile_manager is None:
@@ -261,11 +287,16 @@ def run_session(
         tools_enabled=tools_enabled,
         profile_name=current_profile.username if current_profile else None,
         session_id=current_session.metadata.session_id,
+        rag_enabled=rag_enabled,
     )
     init_database()
     engine = ConversationEngine(client=client, registry=default_registry)
 
     while True:
+        if singleton_token.budget_tokens >= max_tokens:
+            history = mem.enforce_token_budget(model, client, history, max_history_tokens=max_tokens)
+            current_session.messages = list(history)
+
         try:
             user_input = input("\nYou > ").strip()
         except (KeyboardInterrupt, EOFError):
@@ -279,6 +310,25 @@ def run_session(
         if user_input in ("/exit", "/quit"):
             print("Fermeture de SENSAI.")
             break
+
+        if user_input == "/budget":
+            print(f"[Info] Budget tokens : {singleton_token.budget_tokens} / {max_tokens} consommés.")
+            continue
+
+        if user_input in ("/rag", "/rag on", "/rag off") or user_input.startswith("/rag "):
+            parts = user_input.split(maxsplit=1)
+            arg = parts[1].strip().lower() if len(parts) > 1 else None
+            if arg in ("on", "true", "1", "enable"):
+                rag_enabled = True
+                print("[Info] Enrichissement RAG vectoriel activé.")
+            elif arg in ("off", "false", "0", "disable"):
+                rag_enabled = False
+                print("[Info] Enrichissement RAG vectoriel désactivé.")
+            else:
+                rag_enabled = not rag_enabled
+                status = "activé" if rag_enabled else "désactivé"
+                print(f"[Info] Enrichissement RAG vectoriel {status}.")
+            continue
 
         if user_input == "/clear":
             history.clear()
@@ -561,7 +611,23 @@ def run_session(
             print(f"\nAssistant > {error_message}")
             continue
 
-        user_msg = ChatMessage(role="user", content=safe_input)
+        augmented_input = safe_input
+        if rag_enabled:
+            try:
+                from src.RAG.retriever import retrieve_rag_context
+                rag_ctx = retrieve_rag_context(safe_input)
+                if rag_ctx:
+                    print("[RAG] Contexte historique injecté depuis les chroniques.")
+                    augmented_input = (
+                        f"Tu es un conseiller stratégique des 7 Royaumes Combattants. "
+                        f"Réponds en t'appuyant sur ce contexte historique :\n\n"
+                        f"{rag_ctx}\n\n"
+                        f"Question : {safe_input}"
+                    )
+            except Exception:
+                pass
+
+        user_msg = ChatMessage(role="user", content=augmented_input)
         history.append(user_msg)
 
         if structured_mode:
@@ -659,9 +725,10 @@ def run_session(
 
 
 def main(argv: list[str] | None = None) -> int:
-    """ Point d'entrée principal de l'application CLI initialisant l'environnement et la session.
-PARAMS: - argv - LIST[STR] | NONE: arguments de ligne de commande optionnels
-RETURN: code de retour entier (0 en cas de succès, 1 en cas d'erreur)"""
+    """Point d'entrée principal de l'application CLI initialisant l'environnement et la session.
+            PARAMS: - argv - LIST[STR] | NONE: arguments de ligne de commande optionnels
+            RETURN: code de retour entier (0 en cas de succès, 1 en cas d'erreur)"""
+
     args = parse_arguments(argv)
     host, model = resolve_configuration(args)
 
@@ -693,6 +760,8 @@ RETURN: code de retour entier (0 en cas de succès, 1 en cas d'erreur)"""
             mcp_server_cmd=mcp_cmd,
             session_id=session_id,
             profile_name=profile_name,
+            max_tokens=args.max_tokens,
+            rag_enabled=args.rag,
         )
     return 0
 

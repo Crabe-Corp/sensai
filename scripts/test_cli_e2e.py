@@ -66,6 +66,9 @@ TEST_INPUTS = [
 
 
 def is_ollama_online(host: str = "http://localhost:11434") -> bool:
+    """Vérifie si le serveur local Ollama est en ligne et accessible.
+            PARAMS: - host - STR: URL racine du serveur Ollama
+            RETURN: booléen indiquant si le serveur répond avec succès"""
     try:
         with httpx.Client(timeout=1.0) as client:
             resp = client.get(f"{host}/api/tags")
@@ -75,6 +78,9 @@ def is_ollama_online(host: str = "http://localhost:11434") -> bool:
 
 
 def build_mock_client_and_engine():
+    """Construit un client Ollama factice et un moteur de streaming simulé pour les tests.
+            PARAMS: Aucun
+            RETURN: tuple contenant le client simulé et la fonction fake_run_stream"""
     mock_client = MagicMock(spec=OllamaClient)
     mock_client.base_url = "http://localhost:11434"
     mock_client.list_models.return_value = ["qwen2.5:1.5b", "llama3:latest", "mistral:latest"]
@@ -159,6 +165,9 @@ def build_mock_client_and_engine():
 
 
 def run_e2e_test(live_mode: bool = False) -> tuple[str, list[tuple[str, bool, str]]]:
+    """Exécute l'ensemble du scénario de test de bout en bout de la CLI et consigne les résultats.
+            PARAMS: - live_mode - BOOL: exécute en conditions réelles avec Ollama si True
+            RETURN: tuple contenant la sortie textuelle brute et la liste des vérifications"""
     init_database()
     captured_stdout = io.StringIO()
     checks: list[tuple[str, bool, str]] = []
@@ -275,6 +284,9 @@ def run_e2e_test(live_mode: bool = False) -> tuple[str, list[tuple[str, bool, st
 
 
 def main():
+    """Point d'entrée du script de test CLI E2E analysant les options et exécutant la suite.
+            PARAMS: Aucun
+            RETURN: code de retour entier (0 en cas de succès, 1 si échec)"""
     parser = argparse.ArgumentParser(description="Script de test automatisé de bout en bout de la CLI SENSAI.")
     parser.add_argument(
         "--live",
@@ -310,7 +322,9 @@ def main():
 
 
 def test_cli_e2e():
-    """Test pytest automatisé de bout en bout validant le cycle complet de la CLI SENSAI."""
+    """Test pytest automatisé de bout en bout validant le cycle complet de la CLI SENSAI.
+            PARAMS: Aucun
+            RETURN: None"""
     _raw_output, checks = run_e2e_test(live_mode=False)
     failed = [f"{name}: {detail}" for name, ok, detail in checks if not ok]
     assert not failed, f"Échecs des vérifications E2E CLI: {failed}"

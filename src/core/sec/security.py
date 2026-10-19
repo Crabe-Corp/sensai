@@ -9,7 +9,10 @@ class SecurityDecision(BaseModel):
     )
 
 def mask_pii(text: str) -> Tuple[str, bool]:
-    """Remplace les emails et numéros de téléphone par [DONNÉE MASQUÉE]."""
+    """Remplace les informations personnelles identifiables (emails, téléphones) par un masque.
+            PARAMS: - text - STR: texte source potentiellement sensible
+            RETURN: tuple contenant le texte anonymisé et un booléen indiquant la présence de PII"""
+
     email_pattern = r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
     phone_pattern = r'(?:(?:\+|00)33[\s.-]{0,3}(?:\(0\)[\s.-]{0,3})?|0)[1-9](?:(?:[\s.-]?\d{2}){4}|\d{2}(?:[\s.-]?\d{3}){2})'
     
@@ -21,9 +24,12 @@ def mask_pii(text: str) -> Tuple[str, bool]:
     return masked, has_confidential_data
 
 def validate_input_with_llm(text: str, client: OllamaClient, model: str) -> Tuple[bool, str]:
-    """
-    Évalue si la requête masquée reste dans le thème historique avec des exemples (Few-Shot).
-    """
+    """Évalue si la requête masquée reste dans le thème historique avec des exemples (Few-Shot).
+            PARAMS: - text - STR: message utilisateur nettoyé à valider
+                    - client - OLLAMACLIENT: instance active du client Ollama
+                    - model - STR: nom du modèle Ollama utilisé pour la classification
+            RETURN: tuple contenant le booléen d'autorisation et le message de refus éventuel"""
+
     system_prompt = (
         "Tu es un classifieur de sécurité. Tu dois déterminer si le message est dans le thème "
         "(Chine antique, Royaumes Combattants, histoire de l'unification de la Chine, salutations basiques) ou s'il est "

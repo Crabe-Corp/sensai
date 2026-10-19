@@ -6,9 +6,10 @@ ALLOWED_DIR.mkdir(exist_ok=True)
 (ALLOWED_DIR / "brouillons").mkdir(exist_ok=True)
 
 def ask_human_confirmation(action_summary: str) -> bool:
-    """
-    [A3] Met l'agent en pause et force une validation manuelle.
-    """
+    """Met l'agent en pause et force une validation manuelle par l'utilisateur.
+            PARAMS: - action_summary - STR: résumé explicatif de l'action requérant confirmation
+            RETURN: booléen indiquant l'acceptation (True) ou le refus (False) de l'utilisateur"""
+
     print(f"\n[ATTENTION] Confirmez-vous cette action : {action_summary} ? (O/N)")
     while True:
         try:
@@ -22,9 +23,10 @@ def ask_human_confirmation(action_summary: str) -> bool:
             return False
 
 def is_path_safe(requested_path: str) -> bool:
-    """
-    [T4] Empêche les attaques par path traversal (ex: ../../etc/passwd).
-    """
+    """Vérifie qu'un chemin de fichier reste strictement confiné dans le dossier autorisé.
+            PARAMS: - requested_path - STR: chemin relatif demandé
+            RETURN: booléen indiquant si le chemin est sécurisé"""
+
     try:
         target = (ALLOWED_DIR / requested_path).resolve()
         return ALLOWED_DIR in target.parents or target == ALLOWED_DIR
@@ -32,7 +34,10 @@ def is_path_safe(requested_path: str) -> bool:
         return False
 
 def agent_read_file(filename: str) -> str:
-    """Outil de lecture restreint au dossier autorisé."""
+    """Lit un fichier texte ou markdown restreint au répertoire autorisé des manuscrits.
+            PARAMS: - filename - STR: nom du fichier à lire
+            RETURN: chaîne JSON contenant le statut et le contenu ou un message d'erreur"""
+
     if not is_path_safe(filename):
         return '{"error": "Accès refusé. Vous ne pouvez lire que dans /manuscrit_royaumes."}'
     
@@ -51,7 +56,11 @@ def agent_read_file(filename: str) -> str:
         return f'{{"error": "{str(e)}"}}'
 
 def agent_write_file(filename: str, content: str) -> str:
-    """Outil d'écriture protégé par permissions [T4] et confirmation humaine [A3]."""
+    """Écrit du contenu dans un fichier avec vérification de sécurité et confirmation humaine.
+            PARAMS: - filename - STR: nom du fichier cible
+                    - content - STR: contenu textuel à enregistrer
+            RETURN: chaîne JSON indiquant le résultat de l'écriture ou l'annulation"""
+
     if not is_path_safe(filename):
         return '{"error": "Accès refusé. Vous ne pouvez écrire que dans /manuscrit_royaumes ou ses sous-dossiers."}'
     

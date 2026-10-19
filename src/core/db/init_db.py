@@ -3,15 +3,22 @@ from pathlib import Path
 
 DB_PATH = Path("kingdoms.db")
 
-def init_database() -> None:
+
+def init_database(force_reset: bool = False) -> None:
     """Initialise la base de données SQLite des royaumes avec le schéma et les données initiales.
-            PARAMS: Aucun
+            PARAMS: - force_reset - BOOL: réinitialise de force toutes les tables si True
             RETURN: None"""
+
     DB_PATH.touch(exist_ok=True)
     with sqlite3.connect(DB_PATH) as conn:
         cursor = conn.cursor()
 
-        # Table des royaumes
+        if force_reset:
+            cursor.execute("DROP TABLE IF EXISTS user_progress")
+            cursor.execute("DROP TABLE IF EXISTS alliances")
+            cursor.execute("DROP TABLE IF EXISTS historical_figures")
+            cursor.execute("DROP TABLE IF EXISTS kingdoms")
+
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS kingdoms (
                 id TEXT PRIMARY KEY,
@@ -23,7 +30,6 @@ def init_database() -> None:
             )
         """)
 
-        # Table des figures historiques
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS historical_figures (
                 name TEXT PRIMARY KEY,
@@ -33,7 +39,6 @@ def init_database() -> None:
             )
         """)
 
-        # Table des alliances
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS alliances (
                 kingdom_a TEXT NOT NULL,
@@ -43,7 +48,6 @@ def init_database() -> None:
             )
         """)
 
-        # Table de progression pédagogique
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS user_progress (
                 topic TEXT PRIMARY KEY,
@@ -52,28 +56,27 @@ def init_database() -> None:
             )
         """)
 
-        cursor.execute("DELETE FROM user_progress")
-        cursor.execute("DELETE FROM alliances")
-        cursor.execute("DELETE FROM historical_figures")
-        cursor.execute("DELETE FROM kingdoms")
+        cursor.execute("SELECT COUNT(*) FROM kingdoms")
+        if cursor.fetchone()[0] == 0:
+            kingdoms_data = [
+                ("qin", "Qin", "Xianyang", "independent", None, "Ying Zheng"),
+                ("chu", "Chu", "Shouchun", "independent", None, "King Kaolie"),
+                ("qi", "Qi", "Linzi", "independent", None, "King Jian"),
+                ("zhao", "Zhao", "Handan", "independent", None, "King Daoxiang"),
+                ("wei", "Wei", "Daliang", "independent", None, "King Jingmin"),
+                ("han", "Han", "Xinzheng", "independent", None, "King An"),
+                ("yan", "Yan", "Ji", "independent", None, "King Xi"),
+            ]
+            cursor.executemany("INSERT INTO kingdoms VALUES (?, ?, ?, ?, ?, ?)", kingdoms_data)
 
-        kingdoms_data = [
-            ("qin", "Qin", "Xianyang", "independent", None, "Ying Zheng"),
-            ("chu", "Chu", "Shouchun", "independent", None, "King Kaolie"),
-            ("qi", "Qi", "Linzi", "independent", None, "King Jian"),
-            ("zhao", "Zhao", "Handan", "independent", None, "King Daoxiang"),
-            ("wei", "Wei", "Daliang", "independent", None, "King Jingmin"),
-            ("han", "Han", "Xinzheng", "independent", None, "King An"),
-            ("yan", "Yan", "Ji", "independent", None, "King Xi")
-        ]
-        cursor.executemany("INSERT INTO kingdoms VALUES (?, ?, ?, ?, ?, ?)", kingdoms_data)
-
-        figures_data = [
-            ("Wang Jian", "Qin", "Général", "Actif"),
-            ("Lian Po", "Zhao", "Général", "Exilé"),
-            ("Li Si", "Qin", "Premier ministre", "Actif")
-        ]
-        cursor.executemany("INSERT INTO historical_figures VALUES (?, ?, ?, ?)", figures_data)
+        cursor.execute("SELECT COUNT(*) FROM historical_figures")
+        if cursor.fetchone()[0] == 0:
+            figures_data = [
+                ("Wang Jian", "Qin", "Général", "Actif"),
+                ("Lian Po", "Zhao", "Général", "Exilé"),
+                ("Li Si", "Qin", "Premier ministre", "Actif"),
+            ]
+            cursor.executemany("INSERT INTO historical_figures VALUES (?, ?, ?, ?)", figures_data)
 
         conn.commit()
 

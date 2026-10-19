@@ -4,19 +4,51 @@ import uuid
 import textwrap
 import requests
 import json
-from qdrant_client import QdrantClient
-from fastembed import SparseTextEmbedding
-from qdrant_client.http.models import Distance, VectorParams, PointStruct, SparseVectorParams
+try:
+    from qdrant_client import QdrantClient
+    from qdrant_client.http.models import Distance, VectorParams, PointStruct, SparseVectorParams
+except ImportError:
+    QdrantClient = None
+    Distance = VectorParams = PointStruct = SparseVectorParams = None
 
 COLLECTION_NAME = "royaumes_combattants"
 TAILLE_VECTEUR = 768
-bm25_model = SparseTextEmbedding(model_name="Qdrant/bm25")
+_bm25_model = None
 
-def get_qdrant_client():
-    client = QdrantClient("localhost", port=6333)
-    
-    if client.collection_exists(COLLECTION_NAME):
-        client.delete_collection(COLLECTION_NAME)
+
+def get_bm25_model():
+    """Charge le modèle BM25 à la demande pour éviter un coût réseau au chargement du module.
+            PARAMS: Aucun
+            RETURN: instance du modèle SparseTextEmbedding"""
+
+    global _bm25_model
+    if _bm25_model is None:
+        from fastembed import SparseTextEmbedding
+        _bm25_model = SparseTextEmbedding(model_name="Qdrant/bm25")
+    return _bm25_model
+
+
+class _BM25Proxy:
+    def embed(self, *args, **kwargs):
+        """Délègue l'encodage sparse au modèle BM25 instancié paresseusement.
+                PARAMS: - args, kwargs - ANY: arguments transmis à SparseTextEmbedding.embed
+                RETURN: itérateur ou liste de représentations de vecteurs sparse"""
+
+        return get_bm25_model().embed(*args, **kwargs)
+
+
+bm25_model = _BM25Proxy()
+
+
+def get_qdrant_client(host: str = "localhost", port: int = 6333):
+    """Initialise le client Qdrant et s'assure que la collection existe.
+            PARAMS: - host - STR: adresse d'hôte du serveur Qdrant
+                    - port - INT: port d'écoute du serveur Qdrant
+            RETURN: instance active du client QdrantClient"""
+
+    if QdrantClient is None:
+        raise ImportError("qdrant-client n'est pas installé.")
+    client = QdrantClient(host=host, port=port)
 
     if not client.collection_exists(COLLECTION_NAME):
         client.create_collection(
@@ -31,6 +63,10 @@ def get_qdrant_client():
     return client
 
 def preparer_documents_rag(dossier_source):
+    """Découpe et prépare les fichiers markdown des chroniques en segments indexables.
+            PARAMS: - dossier_source - STR: chemin vers le dossier contenant les fichiers markdown
+            RETURN: liste de dictionnaires contenant le texte et la source de chaque segment"""
+
     documents_finaux = []
     
     for racine, _, fichiers in os.walk(dossier_source):
@@ -75,6 +111,10 @@ def preparer_documents_rag(dossier_source):
     return documents_finaux
 
 def get_embedding(text):
+    """Génère l'embedding dense d'un texte via l'API d'embeddings Ollama.
+            PARAMS: - text - STR: texte source à vectoriser
+            RETURN: liste de flottants représentant le vecteur dense ou None en cas d'erreur"""
+
     try:
         response = requests.post("http://localhost:11434/api/embeddings", json={
             "model": "nomic-embed-text",
@@ -94,6 +134,10 @@ def get_embedding(text):
         return None
 
 def get_metadata(text):
+    """Extrait le personnage historique principal du texte via un appel LLM Ollama.
+            PARAMS: - text - STR: extrait textuel à analyser
+            RETURN: dictionnaire contenant les métadonnées extraites"""
+
     try:
         response = requests.post("http://localhost:11434/api/generate", json={
             "model": "qwen2.5:1.5b",
@@ -115,6 +159,10 @@ def get_metadata(text):
         return {}
 
 def indexer_vers_qdrant(documents_extraits):
+    """Génère les embeddings denses et sparses puis insère les documents par lots dans Qdrant.
+            PARAMS: - documents_extraits - LIST: liste de dictionnaires de documents avec texte et source
+            RETURN: None"""
+
     client = get_qdrant_client()
     points = []
     
