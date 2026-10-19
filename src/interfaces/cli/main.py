@@ -316,6 +316,8 @@ def run_session(
                     except FileNotFoundError:
                         print(f"[Erreur] Session '{target_id}' introuvable.")
             elif subcmd == "new":
+                if not any(m.role in ("user", "assistant") for m in current_session.messages):
+                    session_manager.delete_session(current_session.metadata.session_id)
                 title_arg = parts[2].strip() if len(parts) > 2 and parts[2].strip() else None
                 current_session = session_manager.create_session(profile=current_profile, model=model, title=title_arg)
                 history = list(current_session.messages)
@@ -635,6 +637,10 @@ def run_session(
                 current_session.messages = list(history)
                 current_session.metadata.model = model
                 session_manager.save_session(current_session)
+
+    has_real_messages = any(m.role in ("user", "assistant") for m in current_session.messages)
+    if not has_real_messages:
+        session_manager.delete_session(current_session.metadata.session_id)
 
     if mcp_client:
         default_registry.unregister_tools(mcp_tool_names)

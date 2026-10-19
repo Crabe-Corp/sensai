@@ -172,29 +172,34 @@ def run_e2e_test(live_mode: bool = False) -> tuple[str, list[tuple[str, bool, st
 
     input_generator = iter(TEST_INPUTS)
 
-    if effective_live:
-        print("==> Exécution en direct (LIVE) contre le serveur Ollama...")
-        with OllamaClient(base_url="http://localhost:11434") as real_client:
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp_session_mgr = SessionManager(storage_dir=Path(tmp_dir) / "sessions")
+        if effective_live:
+            print("==> Exécution en direct (LIVE) contre le serveur Ollama...")
+            with OllamaClient(base_url="http://localhost:11434") as real_client:
+                with patch("sys.stdout", captured_stdout), patch("builtins.input", lambda _: next(input_generator)):
+                    run_session(
+                        client=real_client,
+                        model="qwen2.5:1.5b",
+                        host="http://localhost:11434",
+                        tools=None,
+                        profile_name="default",
+                        session_manager=tmp_session_mgr,
+                    )
+        else:
+            print("==> Exécution du protocole de test E2E (Moteur CLI + SQLite + MCP réels)...")
+            mock_client, fake_stream = build_mock_client_and_engine()
             with patch("sys.stdout", captured_stdout), patch("builtins.input", lambda _: next(input_generator)):
-                run_session(
-                    client=real_client,
-                    model="qwen2.5:1.5b",
-                    host="http://localhost:11434",
-                    tools=None,
-                    profile_name="default",
-                )
-    else:
-        print("==> Exécution du protocole de test E2E (Moteur CLI + SQLite + MCP réels)...")
-        mock_client, fake_stream = build_mock_client_and_engine()
-        with patch("sys.stdout", captured_stdout), patch("builtins.input", lambda _: next(input_generator)):
-            with patch("src.interfaces.cli.main.ConversationEngine.run_stream", side_effect=fake_stream):
-                run_session(
-                    client=mock_client,
-                    model="qwen2.5:1.5b",
-                    host="http://localhost:11434",
-                    tools=None,
-                    profile_name="default",
-                )
+                with patch("src.interfaces.cli.main.ConversationEngine.run_stream", side_effect=fake_stream):
+                    run_session(
+                        client=mock_client,
+                        model="qwen2.5:1.5b",
+                        host="http://localhost:11434",
+                        tools=None,
+                        profile_name="default",
+                        session_manager=tmp_session_mgr,
+                    )
 
     raw_output = captured_stdout.getvalue()
 

@@ -2,6 +2,8 @@ import argparse
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from src.cli.main import (
     load_config_file,
     parse_arguments,
