@@ -1,29 +1,18 @@
 import json
 import requests
 from collections.abc import Iterator
-<<<<<<< HEAD
-from typing import Literal
 import httpx
-from pydantic import BaseModel, Field
 from qdrant_client import QdrantClient
 from qdrant_client.models import Filter, FieldCondition, MatchValue, Prefetch, FusionQuery, Fusion
 from src.RAG.RAG_embedding import get_embedding, COLLECTION_NAME
-from typing import Any, List, Union, TypeVar
-import httpx
+from typing import Any, List, Union, TypeVar, Literal
 from pydantic import BaseModel, Field, ValidationError
 from fastembed import SparseTextEmbedding
 from src.core import memory_management
-=======
-from typing import Any, Literal, TypeVar
-import httpx
-from pydantic import BaseModel, Field, ValidationError
-from qdrant_client import QdrantClient
-from src.RAG.RAG_embedding import get_embedding, COLLECTION_NAME
 from src.features.structured_output import (
     StructuredOutputError,
     chat_structured_flow,
 )
->>>>>>> 752c014e404d1ca8c4a8df1ce7688c20397101e0
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -111,7 +100,18 @@ class OllamaClient:
         except httpx.HTTPError as exc:
             raise OllamaAPIError(f"Erreur de récupération des modèles: {exc}") from exc
 
-<<<<<<< HEAD
+    def _format_messages(self, messages: list[ChatMessage | dict[str, Any]]) -> list[dict[str, Any]]:
+            """Convertit une liste de messages mixtes en liste de dictionnaires pour l'API Ollama.
+                    PARAMS: - messages - LIST: liste contenant des ChatMessage ou dictionnaires bruts
+                    RETURN: liste de dictionnaires formatés pour l'API Ollama"""
+            formatted: list[dict[str, Any]] = []
+            for m in messages:
+                if isinstance(m, ChatMessage):
+                    formatted.append(m.model_dump_for_api())
+                elif isinstance(m, dict):
+                    formatted.append(m)
+            return formatted
+
     def get_character(self, prompt : str):
         prompt_systeme = """
         Tu es un extracteur d'entités. Ton seul but est d'analyser la question de l'utilisateur 
@@ -219,71 +219,16 @@ class OllamaClient:
             texte = hit.payload ["texte"]
             contexte_historique += f"[Source : {source}]\n{texte}\n\n"
         
-        prompt_final = (
-            f"Tu es un conseiller stratégique de la période des Royaumes Combattants. "
-            f"Réponds à la question exclusivement en utilisant ce contexte historique :\n\n"
-            f"{contexte_historique}\n\n"
-            f"Question : {derniere_question}"
-        )
-=======
-    def _format_messages(self, messages: list[ChatMessage | dict[str, Any]]) -> list[dict[str, Any]]:
-        """Convertit une liste de messages mixtes en liste de dictionnaires pour l'API Ollama.
-                PARAMS: - messages - LIST: liste contenant des ChatMessage ou dictionnaires bruts
-                RETURN: liste de dictionnaires formatés pour l'API Ollama"""
-        formatted: list[dict[str, Any]] = []
-        for m in messages:
-            if isinstance(m, ChatMessage):
-                formatted.append(m.model_dump_for_api())
-            elif isinstance(m, dict):
-                formatted.append(m)
-        return formatted
-
-    def chat_stream_raw(
-        self,
-        model: str,
-        messages: list[ChatMessage | dict[str, Any]],
-        tools: list[dict[str, Any]] | None = None,
-        format: str | dict[str, Any] | None = None,
-    ) -> Iterator[dict[str, Any]]:
-        """Émet les morceaux de réponse bruts en streaming ndjson depuis l'API /api/chat d'Ollama.
-                PARAMS: - model - STR: nom du modèle à interroger
-                        - messages - LIST: historique des messages
-                        - tools - LIST: outils déclarés pour function calling
-                        - format - STR | DICT: format de sortie (ex: JSON Schema)
-                RETURN: itérateur de dictionnaires représentant les réponses brutes d'Ollama"""
-        formatted_messages = [dict(m) for m in self._format_messages(messages)]
-
-        derniere_question = formatted_messages[-1].get("content", "") if formatted_messages else ""
-        try:
-            if not formatted_messages or formatted_messages[-1].get("role") != "user":
-                raise ValueError("RAG réservé aux messages utilisateur")
-            client = QdrantClient("localhost", port=6333)
-            vecteur_question = get_embedding(derniere_question)
-
-            reponse_qdrant = client.query_points(
-                collection_name=COLLECTION_NAME,
-                query=vecteur_question,
-                limit=3
-            )
-
-            resultats = reponse_qdrant.points
-            contexte_historique = ""
-            for hit in resultats:
-                source = hit.payload.get("source", "")
-                texte = hit.payload.get("texte", "")
-                contexte_historique += f"[Source : {source}]\n{texte}\n\n"
->>>>>>> 752c014e404d1ca8c4a8df1ce7688c20397101e0
+    
             
-            if contexte_historique:
-                prompt_final = (
-                    f"Tu es un conseiller stratégique de la période des Royaumes Combattants. "
-                    f"Réponds à la question exclusivement en utilisant ce contexte historique :\n\n"
-                    f"{contexte_historique}\n\n"
-                    f"Question : {derniere_question}"
-                )
-                formatted_messages[-1]["content"] = prompt_final
-        except Exception:
-            pass
+        if contexte_historique:
+            prompt_final = (
+                f"Tu es un conseiller stratégique de la période des Royaumes Combattants. "
+                f"Réponds à la question exclusivement en utilisant ce contexte historique :\n\n"
+                f"{contexte_historique}\n\n"
+                f"Question : {derniere_question}"
+            )
+            formatted_messages[-1]["content"] = prompt_final
 
         payload: dict[str, Any] = {"model": model, "messages": formatted_messages, "stream": True}
         if tools:
