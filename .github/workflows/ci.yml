@@ -35,7 +35,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.npm
-          key: ${{ runner.os }}-node-${{ hashFiles('frontend/package.json') }}
+          key: ${{ runner.os }}-node-${{ hashFiles('frontend/package-lock.json') }}
           restore-keys: |
             ${{ runner.os }}-node-
 
@@ -45,7 +45,7 @@ jobs:
           if [ -f package-lock.json ]; then
             npm ci
           else
-            npm install --prefer-offline --no-audit
+            npm install --legacy-peer-deps --prefer-offline --no-audit
           fi
 
       - name: Run linter (oxlint)
