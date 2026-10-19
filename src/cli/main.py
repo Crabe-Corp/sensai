@@ -1,26 +1,28 @@
-import argparse
-import json
-import os
 import sys
 import src.core.memory_management as mem
 from pathlib import Path
 from typing import Any
+from src.core.schemas import HistoricalFigure, KingdomInfo, StructuredResponse
 from src.core.db.database import init_database, get_kingdom_stats, update_kingdom_gold, get_active_diplomacy
 from src.core import singleton_token
+import json
+import os
 
 if __package__ is None or __package__ == "":
-    sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from src.core.ollama_client import (
-    ChatMessage,
-    OllamaAPIError,
-    OllamaClient,
-    OllamaConnectionError,
-    OllamaError,
-    OllamaModelNotFoundError,
-    OllamaStructuredOutputError,
+from src.interfaces.cli.main import (
+    DEFAULT_CONFIG_PATH,
+    DEFAULT_HOST,
+    DEFAULT_MODEL,
+    load_config_file,
+    main,
+    parse_arguments,
+    print_banner,
+    print_help,
+    resolve_configuration,
+    run_session,
 )
-from src.core.schemas import HistoricalFigure, KingdomInfo, StructuredResponse
 
 DEFAULT_CONFIG_PATH = Path("config.json")
 DEFAULT_HOST = "http://localhost:11434"
@@ -333,6 +335,18 @@ def main(argv: list[str] | None = None) -> int:
         run_session(client, model=model, host=host)
     return 0
 
+__all__ = [
+    "DEFAULT_CONFIG_PATH",
+    "DEFAULT_HOST",
+    "DEFAULT_MODEL",
+    "load_config_file",
+    "main",
+    "parse_arguments",
+    "print_banner",
+    "print_help",
+    "resolve_configuration",
+    "run_session",
+]
 
 if __name__ == "__main__":
     sys.exit(main())

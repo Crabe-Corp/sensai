@@ -1,81 +1,108 @@
 import sqlite3
+import json
 from pathlib import Path
 from typing import Any, Dict
 from src.core.db.init_db import init_database
+from src.core.fs_tools import ask_human_confirmation
 
 DB_PATH = Path("kingdoms.db")
 
 def get_kingdom_stats(kingdom_name: str) -> Dict[str, Any]:
-    """Retrieves the current resources and status of a specific kingdom."""
+    """Récupère les informations actuelles d'un royaume spécifique.
+            PARAMS: - kingdom_name - STR: le nom du royaume à rechercher
+            RETURN: dictionnaire contenant les informations du royaume ou une erreur 404"""
+
     with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT name, gold, military_power, status FROM kingdoms WHERE name = ?",
+            "SELECT name, capital, status, annexed_year, ruler FROM kingdoms WHERE LOWER(name) = LOWER(?)",
             (kingdom_name,)
         )
         row = cursor.fetchone()
-        
+
         if row:
             return dict(row)
         return {"error": f"Kingdom '{kingdom_name}' not found.", "code": 404}
 
+def get_active_diplomacy(kingdom_name: str) -> Dict[str, Any]:
+    """Récupère les alliances actives pour un royaume donné.
+            PARAMS: - kingdom_name - STR: le nom du royaume concerné
+            RETURN: dictionnaire avec la liste des relations actives ou une erreur 404"""
 
-def update_kingdom_gold(kingdom_name: str, amount: int) -> Dict[str, Any]:
-    """Adds or removes gold from a kingdom's treasury."""
     with sqlite3.connect(DB_PATH) as conn:
         cursor = conn.cursor()
         cursor.execute(
-            "UPDATE kingdoms SET gold = gold + ? WHERE name = ?",
-            (amount, kingdom_name)
+            "SELECT id, name FROM kingdoms WHERE LOWER(name) = LOWER(?)",
+            (kingdom_name,)
         )
-        
-        if cursor.rowcount == 0:
+        kingdom = cursor.fetchone()
+        if not kingdom:
             return {"error": f"Kingdom '{kingdom_name}' not found.", "code": 404}
-            
-        conn.commit()
-        
-        # Récupération de la nouvelle valeur pour confirmer l'action à l'agent
-        cursor.execute("SELECT gold FROM kingdoms WHERE name = ?", (kingdom_name,))
-        new_gold = cursor.fetchone()[0]
-        
-        return {
-            "success": True, 
-            "kingdom": kingdom_name, 
-            "gold_change": amount,
-            "new_total": new_gold
-        }
 
-
-def get_active_diplomacy(kingdom_name: str) -> Dict[str, Any]:
-    """Fetches only the currently active diplomatic relations for a kingdom."""
-    with sqlite3.connect(DB_PATH) as conn:
-        cursor = conn.cursor()
-        
-        # Requête UNION pour vérifier les relations peu importe l'ordre
-        query = """
-            SELECT k2.name, d.relation_status 
-            FROM diplomacy d
-            JOIN kingdoms k1 ON d.kingdom_id_1 = k1.id
-            JOIN kingdoms k2 ON d.kingdom_id_2 = k2.id
-            WHERE k1.name = ? AND d.is_active = 1
+        k_id, k_name = kingdom
+        cursor.execute(
+            """
+            SELECT kingdom_b, type FROM alliances
+            WHERE active = 1 AND (LOWER(kingdom_a) = LOWER(?) OR LOWER(kingdom_a) = LOWER(?))
             UNION
-            SELECT k1.name, d.relation_status 
-            FROM diplomacy d
-            JOIN kingdoms k2 ON d.kingdom_id_2 = k2.id
-            JOIN kingdoms k1 ON d.kingdom_id_1 = k1.id
-            WHERE k2.name = ? AND d.is_active = 1
-        """
-        cursor.execute(query, (kingdom_name, kingdom_name))
+            SELECT kingdom_a, type FROM alliances
+            WHERE active = 1 AND (LOWER(kingdom_b) = LOWER(?) OR LOWER(kingdom_b) = LOWER(?))
+            """,
+            (k_id, k_name, k_id, k_name)
+        )
         relations = cursor.fetchall()
-        
-        if not relations:
-            cursor.execute("SELECT id FROM kingdoms WHERE name = ?", (kingdom_name,))
-            if not cursor.fetchone():
-                return {"error": f"Kingdom '{kingdom_name}' not found.", "code": 404}
-            return {"kingdom": kingdom_name, "relations": []}
-            
+
         return {
-            "kingdom": kingdom_name,
+            "kingdom": k_name,
             "relations": [{"with_kingdom": r[0], "status": r[1]} for r in relations]
         }
+
+def query_db(sql_query: str) -> str:
+    """Exécute une requête SELECT générée par l'agent.
+            PARAMS: - sql_query - STR: requête SQL de lecture (SELECT uniquement)
+            RETURN: chaîne JSON contenant les résultats ou l'erreur"""
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            
+            if not sql_query.strip().upper().startswith("SELECT"):
+                return json.dumps({"error": "Seules les requêtes SELECT sont autorisées ici."}, ensure_ascii=False)
+                
+            cursor.execute(sql_query)
+            rows = cursor.fetchall()
+            
+            results = [dict(row) for row in rows]
+            return json.dumps({"status": "success", "data": results}, ensure_ascii=False)
+            
+    except sqlite3.Error as e:
+        return json.dumps({"status": "error", "message": str(e)}, ensure_ascii=False)
+
+def execute_db_update(sql_statement: str) -> str:
+    """Exécute une requête INSERT, UPDATE ou DELETE générée par l'agent après confirmation humaine.
+            PARAMS: - sql_statement - STR: requête SQL d'écriture
+            RETURN: chaîne JSON contenant le statut de l'opération"""
+    try:
+        if sql_statement.strip().upper().startswith("SELECT"):
+            return json.dumps({"error": "Utilisez query_db pour les requêtes SELECT."}, ensure_ascii=False)
+
+        summary = f"Exécuter la requête suivante en base de données :\n  > {sql_statement.strip()}"
+        if not ask_human_confirmation(summary):
+            return json.dumps({
+                "status": "aborted", 
+                "message": "L'utilisateur a refusé et annulé la modification de la base de données."
+            }, ensure_ascii=False)
+
+        with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.cursor()
+            cursor.execute(sql_statement)
+            conn.commit()
+            
+            return json.dumps({
+                "status": "success", 
+                "rows_affected": cursor.rowcount
+            }, ensure_ascii=False)
+            
+    except sqlite3.Error as e:
+        return json.dumps({"status": "error", "message": str(e)}, ensure_ascii=False)
