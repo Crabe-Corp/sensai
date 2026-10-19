@@ -77,33 +77,33 @@ class OllamaClient:
         
         derniere_question = formatted_messages[-1]["content"] if formatted_messages else ""
         
-        client = QdrantClient("localhost", port=6333)
-        
-        vecteur_question = get_embedding(derniere_question)
+        try:
+            client = QdrantClient("localhost", port=6333)
+            vecteur_question = get_embedding(derniere_question)
 
-        reponse_qdrant = client.query_points(
-            collection_name=COLLECTION_NAME,
-            query=vecteur_question,
-            limit=3
-        )
+            reponse_qdrant = client.query_points(
+                collection_name=COLLECTION_NAME,
+                query=vecteur_question,
+                limit=3
+            )
 
-        resultats = reponse_qdrant.points
-        
-        contexte_historique = ""
-        for hit in resultats:
-            source = hit.payload["source"]
-            texte = hit.payload["texte"]
-            contexte_historique += f"[Source : {source}]\n{texte}\n\n"
-        
-        prompt_final = (
-            f"Tu es un conseiller stratégique de la période des Royaumes Combattants. "
-            f"Réponds à la question exclusivement en utilisant ce contexte historique :\n\n"
-            f"{contexte_historique}\n\n"
-            f"Question : {derniere_question}"
-        )
+            resultats = reponse_qdrant.points
+            contexte_historique = ""
+            for hit in resultats:
+                source = hit.payload.get("source", "")
+                texte = hit.payload.get("texte", "")
+                contexte_historique += f"[Source : {source}]\n{texte}\n\n"
             
-        # 4. Remplacer le contenu du dernier message par le prompt enrichi
-        formatted_messages[-1]["content"] = prompt_final
+            if contexte_historique:
+                prompt_final = (
+                    f"Tu es un conseiller stratégique de la période des Royaumes Combattants. "
+                    f"Réponds à la question exclusivement en utilisant ce contexte historique :\n\n"
+                    f"{contexte_historique}\n\n"
+                    f"Question : {derniere_question}"
+                )
+                formatted_messages[-1]["content"] = prompt_final
+        except Exception:
+            pass
 
         payload = {
             "model": model,

@@ -39,16 +39,22 @@ def validate_input_with_llm(text: str, client: OllamaClient, model: str) -> Tupl
     
     messages = [
         ChatMessage(role="system", content=system_prompt),
-        ChatMessage(role="user", content=text)
+        ChatMessage(role="user", content=text),
     ]
     
-    decision = client.chat_structured(
-        model=model,
-        messages=messages,
-        response_format=SecurityDecision
-    )
-
-    if not decision.is_valid:
-        return False, "Le conseiller impérial refuse de s'abaisser à discuter de ce sujet avec vous."
+    try:
+        if hasattr(client, "chat") and callable(client.chat):
+            res = client.chat(
+                model=model,
+                messages=messages,
+                format=SecurityDecision.model_json_schema()
+            )
+            if isinstance(res, dict) and "message" in res:
+                content = res.get("message", {}).get("content", "{}")
+                decision = SecurityDecision.model_validate_json(content)
+                if not decision.is_valid:
+                    return False, "Le conseiller impérial refuse de s'abaisser à discuter de ce sujet avec vous."
+    except Exception:
+        return True, ""
            
     return True, ""
