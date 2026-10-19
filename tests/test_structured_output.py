@@ -361,7 +361,8 @@ def test_cli_structured_output_direct_query(capsys):
     assert '"response": "Qin Shi Huang a unifié la Chine en 221 av. J.-C."' in captured.out
 
 
-def test_cli_structured_output_toggle_mode(capsys):
+@patch("src.interfaces.cli.main.validate_input_with_llm", return_value=(True, ""))
+def test_cli_structured_output_toggle_mode(mock_validate, capsys):
     mock_client = MagicMock()
     mock_client.chat_structured.return_value = StructuredResponse(
         response="Réponse en mode structuré."
