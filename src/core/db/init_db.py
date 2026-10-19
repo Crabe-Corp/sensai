@@ -4,12 +4,14 @@ from pathlib import Path
 DB_PATH = Path("kingdoms.db")
 
 def init_database() -> None:
-    # Création du fichier et connexion
+    """Initialise la base de données SQLite des royaumes avec le schéma et les données initiales.
+            PARAMS: Aucun
+            RETURN: None"""
+
     DB_PATH.touch(exist_ok=True)
     with sqlite3.connect(DB_PATH) as conn:
         cursor = conn.cursor()
 
-        # Table des royaumes
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS kingdoms (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -20,7 +22,6 @@ def init_database() -> None:
             )
         """)
 
-        # Table de la diplomatie entre les différents royaumes
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS diplomacy (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -33,7 +34,6 @@ def init_database() -> None:
             )
         """)
 
-        # Table des unités militaires historiques des différents royaumes
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS military_units (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -44,15 +44,10 @@ def init_database() -> None:
                 FOREIGN KEY (kingdom_id) REFERENCES kingdoms (id)
             )
         """)
-
-        # SEEDING DES DONNÉES HISTORIQUES
-        
-        # Nettoyage pour éviter les doublons
         cursor.execute("DELETE FROM military_units")
         cursor.execute("DELETE FROM diplomacy")
         cursor.execute("DELETE FROM kingdoms")
 
-        # Injection des 7 royaumes avec leurs forces relatives réelles
         kingdoms_data = [
             ("Qin", 8500, 95000, "Active"),
             ("Chu", 7000, 85000, "Active"),
@@ -67,12 +62,8 @@ def init_database() -> None:
             INSERT INTO kingdoms (name, gold, military_power, status)
             VALUES (?, ?, ?, ?)
         """, kingdoms_data)
-
-        # Récupération des IDs générés pour lier les unités
         cursor.execute("SELECT id, name FROM kingdoms")
         kingdom_ids = {name: k_id for k_id, name in cursor.fetchall()}
-
-        # Injection des unités historiques de chaque royaume
         units_data = [
             (kingdom_ids["Qin"], "Crossbowmen", 8, 4),
             (kingdom_ids["Qin"], "Heavy Infantry", 7, 7),

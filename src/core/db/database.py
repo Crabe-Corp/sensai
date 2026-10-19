@@ -6,7 +6,10 @@ from src.core.db.init_db import init_database
 DB_PATH = Path("kingdoms.db")
 
 def get_kingdom_stats(kingdom_name: str) -> Dict[str, Any]:
-    """Retrieves the current resources and status of a specific kingdom."""
+    """Récupère les ressources actuelles et le statut d'un royaume spécifique.
+            PARAMS: - kingdom_name - STR: le nom du royaume à rechercher
+            RETURN: dictionnaire contenant les statistiques du royaume ou une erreur 404"""
+
     with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
@@ -20,39 +23,13 @@ def get_kingdom_stats(kingdom_name: str) -> Dict[str, Any]:
             return dict(row)
         return {"error": f"Kingdom '{kingdom_name}' not found.", "code": 404}
 
-
-def update_kingdom_gold(kingdom_name: str, amount: int) -> Dict[str, Any]:
-    """Adds or removes gold from a kingdom's treasury."""
-    with sqlite3.connect(DB_PATH) as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            "UPDATE kingdoms SET gold = gold + ? WHERE name = ?",
-            (amount, kingdom_name)
-        )
-        
-        if cursor.rowcount == 0:
-            return {"error": f"Kingdom '{kingdom_name}' not found.", "code": 404}
-            
-        conn.commit()
-        
-        # Récupération de la nouvelle valeur pour confirmer l'action à l'agent
-        cursor.execute("SELECT gold FROM kingdoms WHERE name = ?", (kingdom_name,))
-        new_gold = cursor.fetchone()[0]
-        
-        return {
-            "success": True, 
-            "kingdom": kingdom_name, 
-            "gold_change": amount,
-            "new_total": new_gold
-        }
-
-
 def get_active_diplomacy(kingdom_name: str) -> Dict[str, Any]:
-    """Fetches only the currently active diplomatic relations for a kingdom."""
+    """Récupère les relations diplomatiques actives pour un royaume donné.
+            PARAMS: - kingdom_name - STR: le nom du royaume concerné
+            RETURN: dictionnaire avec la liste des relations diplomatiques actives ou une erreur 404"""
+
     with sqlite3.connect(DB_PATH) as conn:
         cursor = conn.cursor()
-        
-        # Requête UNION pour vérifier les relations peu importe l'ordre
         query = """
             SELECT k2.name, d.relation_status 
             FROM diplomacy d

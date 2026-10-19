@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+from pathlib import Path
 import re
 import uuid
 from datetime import datetime
@@ -14,7 +15,7 @@ from database import get_db
 from models import Conversation, ConversationMember, Message, User
 from realtime import manager
 from security import get_current_user
-from tools_registry import list_tools, run_tool
+from tools_registry import get_ollama_tools, list_tools, run_tool
 
 router = APIRouter(prefix="/api/conversations", tags=["conversations"])
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://ia:11434")
@@ -22,7 +23,7 @@ OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://ia:11434")
 
 class CreateConversationRequest(BaseModel):
     title: Optional[str] = "Nouvelle conversation"
-    mode: Optional[str] = "solo"  # "solo" ou "work"
+    mode: Optional[str] = "solo"
     model_name: Optional[str] = "qwen3:0.6b"
     tools_enabled: Optional[List[str]] = []
 
@@ -73,10 +74,8 @@ def check_user_access(conversation: Conversation, user: User, db: Session) -> bo
 
 @router.get("")
 def list_conversations(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    # Récupérer les conversations créées par l'utilisateur
     owned = db.query(Conversation).filter(Conversation.created_by_id == user.id).all()
 
-    # Récupérer les conversations collaboratives "work" dont l'utilisateur est membre
     memberships = db.query(ConversationMember).filter(ConversationMember.user_id == user.id).all()
     shared_ids = [m.conversation_id for m in memberships]
     shared = db.query(Conversation).filter(Conversation.id.in_(shared_ids)).all() if shared_ids else []
@@ -88,7 +87,8 @@ def list_conversations(user: User = Depends(get_current_user), db: Session = Dep
     for c in sorted_convs:
         total_tokens = sum(m.total_tokens for m in c.messages)
         tools = json.loads(c.tools_enabled) if c.tools_enabled else []
-        tools = [t for t in tools if t in ["structured_output", "Structured Output", "mcp_runner"]]
+        valid_tool_ids = [t["id"] for t in list_tools()] + ["structured_output", "Structured Output", "mcp_runner"]
+        tools = [t for t in tools if t in valid_tool_ids]
         result.append({
             "id": c.id,
             "title": c.title,
@@ -146,6 +146,83 @@ def create_conversation(
         "is_owner": True,
         "created_at": conv.created_at.isoformat()
     }
+
+
+@router.post("/{conversation_id}")
+@router.put("/{conversation_id}")
+def save_conversation(
+    conversation_id: str,
+    payload: dict,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Enregistre ou met à jour une conversation et ses messages."""
+    meta = payload.get("metadata", payload)
+    title = meta.get("title") or payload.get("title")
+    model_name = meta.get("model") or meta.get("model_name") or payload.get("model_name") or "qwen2.5:1.5b"
+    raw_messages = payload.get("messages", [])
+
+    conv = db.query(Conversation).filter(Conversation.id == conversation_id).first()
+    if not conv:
+        conv = Conversation(
+            id=conversation_id,
+            title=title or f"Session {conversation_id[:8]}",
+            created_by_id=user.id,
+            mode="solo",
+            model_name=model_name,
+        )
+        db.add(conv)
+        db.commit()
+        db.refresh(conv)
+    else:
+        if title:
+            conv.title = title
+        if model_name:
+            conv.model_name = model_name
+
+    existing_count = len(conv.messages)
+    if len(raw_messages) > existing_count:
+        for new_msg in raw_messages[existing_count:]:
+            m_role = new_msg.get("role", "user")
+            m_content = new_msg.get("content", "")
+            m = Message(
+                id=str(uuid.uuid4()),
+                conversation_id=conv.id,
+                sender_id=user.id if m_role == "user" else None,
+                sender_name=user.username if m_role == "user" else "SensAI",
+                role=m_role,
+                content=m_content,
+                prompt_tokens=estimate_tokens(m_content),
+                completion_tokens=0,
+                total_tokens=estimate_tokens(m_content),
+                created_at=datetime.utcnow(),
+            )
+            db.add(m)
+        conv.updated_at = datetime.utcnow()
+        db.commit()
+        db.refresh(conv)
+
+    return {"success": True, "id": conv.id}
+
+
+@router.get("/sync/list")
+def list_conversations_sync(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    return list_conversations(user, db)
+
+
+@router.get("/sync/{conversation_id}")
+def get_conversation_sync(conversation_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    return get_conversation(conversation_id, user, db)
+
+
+@router.post("/sync/{conversation_id}")
+def save_conversation_sync(conversation_id: str, payload: dict, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    return save_conversation(conversation_id, payload, user, db)
+
+
+@router.delete("/sync/{conversation_id}")
+def delete_conversation_sync(conversation_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    return delete_conversation(conversation_id, user, db)
 
 
 @router.get("/{conversation_id}")
@@ -235,19 +312,16 @@ def branch_conversation(
     if not check_user_access(conv, user, db):
         raise HTTPException(status_code=403, detail="Accès non autorisé à cette conversation")
 
-    # Trouver le message cible et ses messages précédents
     target_msg = None
     target_idx = -1
     ordered_messages = sorted(conv.messages, key=lambda m: m.created_at or datetime.min)
 
-    # 1. Recherche par identifiant direct
     for i, m in enumerate(ordered_messages):
         if m.id == req.message_id:
             target_msg = m
             target_idx = i
             break
 
-    # 2. Si non trouvé par ID (ex: id temporaire temp-xxx), recherche par contenu
     if target_msg is None and req.content:
         for i, m in enumerate(ordered_messages):
             if m.content.strip() == req.content.strip():
@@ -255,7 +329,6 @@ def branch_conversation(
                 target_idx = i
                 break
 
-    # 3. Fallback : prendre le dernier message utilisateur s'il existe
     if target_msg is None and ordered_messages:
         user_msgs = [(i, m) for i, m in enumerate(ordered_messages) if m.role == "user"]
         if user_msgs:
@@ -264,11 +337,6 @@ def branch_conversation(
             target_idx = len(ordered_messages) - 1
             target_msg = ordered_messages[-1]
 
-    # Déterminer les messages à cloner :
-    # Si req.content est fourni et différent du contenu cible (mode édition/remplacement) :
-    # On clone strictement avant target_idx (les messages antérieurs).
-    # Sinon (branchement direct / fork de l'état actuel) :
-    # On clone jusqu'à target_idx inclus, et si la réponse de l'assistant suit directement, on l'inclut également.
     prior_messages = []
     if target_idx >= 0:
         is_edit = bool(req.content and target_msg and req.content.strip() != target_msg.content.strip())
@@ -294,7 +362,6 @@ def branch_conversation(
     )
     db.add(new_conv)
 
-    # Cloner les messages antérieurs dans la nouvelle branche
     for pm in prior_messages:
         cloned_msg = Message(
             id=str(uuid.uuid4()),
@@ -615,9 +682,9 @@ async def chat_stream(
     raw_tools = req.tools_enabled if req.tools_enabled is not None else (
         json.loads(conv.tools_enabled) if conv.tools_enabled else []
     )
-    tools_to_use = [t for t in raw_tools if t in ["structured_output", "Structured Output", "mcp_runner"]]
+    valid_tool_ids = [t["id"] for t in list_tools()] + ["structured_output", "Structured Output", "mcp_runner"]
+    tools_to_use = [t for t in raw_tools if t in valid_tool_ids]
 
-    # Enregistrer le message de l'utilisateur
     user_tokens = estimate_tokens(req.content)
     user_msg_id = str(uuid.uuid4())
     user_msg = Message(
@@ -633,7 +700,6 @@ async def chat_stream(
     )
     db.add(user_msg)
     conv.updated_at = datetime.utcnow()
-    # Si premier message, nommer la conversation
     if conv.title == "Nouvelle conversation":
         clean_prompt = re.sub(
             r'\[Fichier joint\s*:\s*[^\]\(\)]+?(?: \([^)]+\))?\](?:\s*--- Début du contenu de [^\n\r]+ ---\s*[\s\S]*?\s*--- Fin du contenu de [^\n\r]+ ---)?',
@@ -651,7 +717,6 @@ async def chat_stream(
 
     db.commit()
 
-    # Diffusion en temps réel WebSocket du message utilisateur (pour le mode "work")
     await manager.broadcast(conv.id, {
         "type": "new_message",
         "message": {
@@ -666,7 +731,6 @@ async def chat_stream(
         }
     })
 
-    # Préparation de l'historique pour Ollama
     history = []
     system_prompt = req.system_instruction.strip() if req.system_instruction and req.system_instruction.strip() else (
         "Tu es SensAI, un assistant virtuel intelligent, clair et direct."
@@ -682,7 +746,6 @@ async def chat_stream(
 
     history.append({"role": "system", "content": system_prompt})
 
-    # Charger les 15 derniers messages pour le contexte
     past_messages = db.query(Message).filter(Message.conversation_id == conv.id).order_by(Message.created_at).limit(15).all()
     for pm in past_messages:
         history.append({"role": pm.role, "content": pm.content})
@@ -692,7 +755,7 @@ async def chat_stream(
         prompt_tokens_eval = user_tokens
         completion_tokens_eval = 0
 
-        # Événement initial notifiant l'identifiant réel en base du message utilisateur
+        use_mcp = "mcp_runner" in tools_to_use
         yield json.dumps({"type": "start", "user_message_id": user_msg_id}) + "\n"
 
         ollama_payload = {
@@ -702,10 +765,13 @@ async def chat_stream(
         }
         if is_structured:
             ollama_payload["format"] = "json"
+        if use_mcp:
+            ollama_payload["tools"] = get_ollama_tools()
 
         try:
             async with httpx.AsyncClient(timeout=120.0) as client:
                 try:
+                    tool_calls_to_process = []
                     async with client.stream(
                         "POST",
                         f"{OLLAMA_BASE_URL}/api/chat",
@@ -721,11 +787,63 @@ async def chat_stream(
                                     accumulated_text += msg_chunk
                                     yield json.dumps({"type": "chunk", "content": msg_chunk}) + "\n"
 
+                                tc_list = data.get("message", {}).get("tool_calls")
+                                if tc_list:
+                                    tool_calls_to_process.extend(tc_list)
+
                                 if data.get("done"):
                                     prompt_tokens_eval = data.get("prompt_eval_count") or user_tokens
                                     completion_tokens_eval = data.get("eval_count") or estimate_tokens(accumulated_text)
                             except Exception:
                                 continue
+                    if tool_calls_to_process:
+                        history.append({
+                            "role": "assistant",
+                            "content": accumulated_text,
+                            "tool_calls": tool_calls_to_process,
+                        })
+
+                        for tc in tool_calls_to_process:
+                            fn = tc.get("function", {})
+                            t_name = fn.get("name", "")
+                            t_args = fn.get("arguments", {})
+                            if isinstance(t_args, str):
+                                try:
+                                    t_args = json.loads(t_args)
+                                except Exception:
+                                    t_args = {}
+
+                            tool_output = run_tool(t_name, t_args)
+                            info_text = f"\n\n*[Outil exécuté : {t_name}]*\n```json\n{tool_output}\n```\n\n"
+                            accumulated_text += info_text
+                            yield json.dumps({"type": "chunk", "content": info_text}) + "\n"
+
+                            history.append({"role": "tool", "content": tool_output})
+                        second_payload = {
+                            "model": model_to_use,
+                            "messages": history,
+                            "stream": True,
+                        }
+                        async with client.stream(
+                            "POST",
+                            f"{OLLAMA_BASE_URL}/api/chat",
+                            json=second_payload,
+                        ) as final_resp:
+                            async for raw_line in final_resp.aiter_lines():
+                                if not raw_line:
+                                    continue
+                                try:
+                                    data = json.loads(raw_line)
+                                    msg_chunk = data.get("message", {}).get("content", "")
+                                    if msg_chunk:
+                                        accumulated_text += msg_chunk
+                                        yield json.dumps({"type": "chunk", "content": msg_chunk}) + "\n"
+
+                                    if data.get("done"):
+                                        prompt_tokens_eval = data.get("prompt_eval_count") or user_tokens
+                                        completion_tokens_eval = data.get("eval_count") or estimate_tokens(accumulated_text)
+                                except Exception:
+                                    continue
                 except asyncio.CancelledError:
                     raise
                 except Exception as e:
@@ -756,7 +874,6 @@ async def chat_stream(
 
         total_response_tokens = prompt_tokens_eval + completion_tokens_eval
 
-        # Sauvegarder la réponse de l'assistant en BDD
         assistant_msg_id = str(uuid.uuid4())
         assistant_msg = Message(
             id=assistant_msg_id,
@@ -772,11 +889,8 @@ async def chat_stream(
         db.add(assistant_msg)
         conv.updated_at = datetime.utcnow()
         db.commit()
-
-        # Recalculer le total global de la conversation
         conv_total_tokens = sum(m.total_tokens for m in conv.messages)
 
-        # Message final avec métadonnées de tokens
         final_payload = {
             "type": "done",
             "message_id": assistant_msg_id,
@@ -788,7 +902,6 @@ async def chat_stream(
         }
         yield json.dumps(final_payload) + "\n"
 
-        # Broadcast WebSocket pour synchro live "work"
         await manager.broadcast(conv.id, {
             "type": "new_message",
             "message": {
