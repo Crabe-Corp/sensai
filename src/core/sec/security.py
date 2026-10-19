@@ -5,7 +5,7 @@ from src.core.ollama_client import OllamaClient, ChatMessage
 
 class SecurityDecision(BaseModel):
     is_valid: bool = Field(
-        description="True si le message concerne l'époque des sept Royaumes Combattants, la Chine antique ou l'unification de la Chine. False si le message est hors-sujet, moderne, ou insultant."
+        description="True si le message concerne l'histoire OU s'il s'agit d'une demande de recherche générique sans sujet précis (ex: 'cherche sur internet', 'plus d'infos sur lui'). False UNIQUEMENT si un sujet explicitement moderne (jeux, cuisine) ou des insultes sont mentionnés."
     )
 
 def mask_pii(text: str) -> Tuple[str, bool]:
@@ -31,16 +31,19 @@ def validate_input_with_llm(text: str, client: OllamaClient, model: str) -> Tupl
             RETURN: tuple contenant le booléen d'autorisation et le message de refus éventuel"""
 
     system_prompt = (
-        "Tu es un classifieur de sécurité. Tu dois déterminer si le message est dans le thème "
-        "(Chine antique, Royaumes Combattants, histoire de l'unification de la Chine, salutations basiques) ou s'il est "
-        "hors-sujet (technologie, jeux vidéos, époque moderne, insultes).\n\n"
+        "Tu es un classifieur de sécurité. Tu dois déterminer si le message est autorisé.\n\n"
+        "RÈGLES D'AUTORISATION (is_valid: true) :\n"
+        "- Le message parle de la Chine antique, des Royaumes Combattants, ou d'histoire.\n"
+        "- Le message est une demande générique de recherche sur internet impliquant des pronoms (ex: 'à son sujet', 'sur eux', 'peux-tu chercher'). Étant donné que tu n'as pas l'historique, tu DOIS autoriser ces demandes par défaut.\n\n"
+        "RÈGLES DE REJET (is_valid: false) :\n"
+        "- Le message mentionne EXPLICITEMENT un sujet moderne (jeux vidéos, cuisine, technologie moderne).\n"
+        "- Le message contient des insultes.\n\n"
         "Exemples de classification :\n"
         "Message : 'Quels étaient les 7 royaumes combattants ?'\n-> is_valid: true\n\n"
-        "Message : 'Qui a unifié la Chine ?'\n-> is_valid: true\n\n"
+        "Message : 'Peux-tu faire de plus amples recherches à son sujet sur internet ?'\n-> is_valid: true\n\n"
+        "Message : 'Est-ce que tu peux me trouver plus d'informations à leur sujet sur internet ?'\n-> is_valid: true\n\n"
         "Message : 'Donne moi une recette de pizza.'\n-> is_valid: false\n\n"
-        "Message : 'T'es un gros abruti.'\n-> is_valid: false\n\n"
-        "Message : 'Bonjour, voici mon email [DONNÉE MASQUÉE]. Parle-moi de Qin Shi Huang.'\n-> is_valid: true\n\n"
-        "Message : 'Joue à Hollow Knight.'\n-> is_valid: false"
+        "Message : 'Cherche sur internet des informations sur Fortnite.'\n-> is_valid: false"
     )
     
     messages = [
@@ -49,18 +52,17 @@ def validate_input_with_llm(text: str, client: OllamaClient, model: str) -> Tupl
     ]
     
     try:
-        if hasattr(client, "chat") and callable(client.chat):
-            res = client.chat(
-                model=model,
-                messages=messages,
-                format=SecurityDecision.model_json_schema()
-            )
-            if isinstance(res, dict) and "message" in res:
-                content = res.get("message", {}).get("content", "{}")
-                decision = SecurityDecision.model_validate_json(content)
-                if not decision.is_valid:
-                    return False, "Le conseiller impérial refuse de s'abaisser à discuter de ce sujet avec vous."
+        decision = client.chat_structured(
+            model=model,
+            messages=messages,
+            response_format=SecurityDecision
+        )
+        
+        print(f"\ndebug decision de réponse : {decision.is_valid}")
+        
+        if not decision.is_valid:
+            return False, "Le conseiller impérial refuse de s'abaisser à discuter de ce sujet avec vous."
+            
+        return True, ""
     except Exception:
         return True, ""
-           
-    return True, ""
