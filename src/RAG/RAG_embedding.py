@@ -3,19 +3,30 @@ import re
 import uuid
 import textwrap
 import requests
+import json
 from qdrant_client import QdrantClient
-from qdrant_client.http.models import Distance, VectorParams, PointStruct
+from fastembed import SparseTextEmbedding
+from qdrant_client.http.models import Distance, VectorParams, PointStruct, SparseVectorParams
 
 COLLECTION_NAME = "royaumes_combattants"
-TAILLE_VECTEUR = 768 
+TAILLE_VECTEUR = 768
+bm25_model = SparseTextEmbedding(model_name="Qdrant/bm25")
 
 def get_qdrant_client():
     client = QdrantClient("localhost", port=6333)
     
+    if client.collection_exists(COLLECTION_NAME):
+        client.delete_collection(COLLECTION_NAME)
+
     if not client.collection_exists(COLLECTION_NAME):
         client.create_collection(
             collection_name=COLLECTION_NAME,
-            vectors_config=VectorParams(size=TAILLE_VECTEUR, distance=Distance.COSINE),
+            vectors_config={
+                "dense": VectorParams(size=TAILLE_VECTEUR, distance=Distance.COSINE)
+            },
+            sparse_vectors_config={
+                "sparse": SparseVectorParams()
+            }
         )
     return client
 
@@ -82,27 +93,65 @@ def get_embedding(text):
         print(f"\n[!] Erreur network Ollama : {e}")
         return None
 
+def get_metadata(text):
+    try:
+        response = requests.post("http://localhost:11434/api/generate", json={
+            "model": "qwen2.5:1.5b",
+            # possibilité de modifier ce filtre pour ajouter des precision si par exemple on veut aussi le pays
+            "prompt": f"Extraire le personnage historique principal de ce texte. Retourne UNIQUEMENT un format JSON valide strict, par exemple: {{\"personnage_principal\": \"Li Xin\"}}. S'il n'y en a pas, retourne {{\"personnage_principal\": \"Aucun\"}}. Texte : {text}",
+            "stream": False,
+            "format": "json"
+        })
+        data = response.json()
+
+        if "response" not in data:
+            print(f"\n[!] Erreur from ollama : {data.get('error', data)}")
+            return {}
+            
+        return json.loads(data["response"])
+        
+    except Exception as e:
+        print(f"\n[!] Erreur d'extraction de métadonnées : {e}")
+        return {}
+
 def indexer_vers_qdrant(documents_extraits):
     client = get_qdrant_client()
     points = []
     
     for index, doc in enumerate(documents_extraits):
         vecteur = get_embedding(doc["texte"])
+        metadata_ia = get_metadata(doc["texte"])
+    
+        personnage_extrait = metadata_ia.get("personnage_principal")
+
+        if personnage_extrait and personnage_extrait != "Aucun":
+            if personnage_extrait.lower() not in doc["texte"].lower():
+                print(f"[!] Hallucination détectée : l'IA a inventé '{personnage_extrait}'. Ignoré.")
+                metadata_ia["personnage_principal"] = "Aucun"
         
         if vecteur is None:
             print(f"Bloc {index} de {doc['source']} ignoré (trop long ou erreur).")
             continue
-            
+
+        vecteur_sparse = list(bm25_model.embed([doc["texte"]]))[0]
+
         point_id = str(uuid.uuid4())
         
+        # Fusion du texte, de la source, et des métadonnées générées
+        payload_complet = {
+            "texte": doc["texte"],
+            "source": doc["source"],
+            **metadata_ia
+        }
+
         points.append(
             PointStruct(
                 id=point_id,
-                vector=vecteur,
-                payload={
-                    "texte": doc["texte"],
-                    "source": doc["source"]
-                }
+                vector={
+                    "dense": vecteur,
+                    "sparse": vecteur_sparse.as_object()
+                },
+                payload=payload_complet
             )
         )
         print(f"Vectorisation du bloc {index} ({doc['source']})...")

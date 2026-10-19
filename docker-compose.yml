@@ -53,7 +53,7 @@ services:
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ia:11434}
       PORT: ${BACKEND_PORT:-8080}
     volumes:
-      - ./backend:/app
+      - ./backend:/app:z
       - ./storage:/app/storage
     depends_on:
       bdd:
