@@ -11,6 +11,7 @@ if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8")
 
 from src.core.db.database import init_database
+from src.core.sec.security import mask_pii, validate_input_with_llm
 from src.core.engine import (
     ConversationEngine,
     EngineEvent,
@@ -550,7 +551,14 @@ def run_session(
                 print(f"[Erreur] {exc}")
             continue
 
-        user_msg = ChatMessage(role="user", content=user_input)
+        safe_input, _has_confidential_data = mask_pii(user_input)
+
+        is_valid, error_message = validate_input_with_llm(safe_input, client, model)
+        if not is_valid:
+            print(f"\nAssistant > {error_message}")
+            continue
+
+        user_msg = ChatMessage(role="user", content=safe_input)
         history.append(user_msg)
 
         if structured_mode:

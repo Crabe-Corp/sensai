@@ -3,6 +3,8 @@ from collections.abc import Iterator
 from typing import Any, Literal, TypeVar
 import httpx
 from pydantic import BaseModel, Field, ValidationError
+from qdrant_client import QdrantClient
+from src.RAG.RAG_embedding import get_embedding, COLLECTION_NAME
 from src.features.structured_output import (
     StructuredOutputError,
     chat_structured_flow,
@@ -118,13 +120,44 @@ class OllamaClient:
                         - tools - LIST: outils déclarés pour function calling
                         - format - STR | DICT: format de sortie (ex: JSON Schema)
                 RETURN: itérateur de dictionnaires représentant les réponses brutes d'Ollama"""
-        formatted_messages = self._format_messages(messages)
+        formatted_messages = [dict(m) for m in self._format_messages(messages)]
+
+        derniere_question = formatted_messages[-1].get("content", "") if formatted_messages else ""
+        try:
+            if not formatted_messages or formatted_messages[-1].get("role") != "user":
+                raise ValueError("RAG réservé aux messages utilisateur")
+            client = QdrantClient("localhost", port=6333)
+            vecteur_question = get_embedding(derniere_question)
+
+            reponse_qdrant = client.query_points(
+                collection_name=COLLECTION_NAME,
+                query=vecteur_question,
+                limit=3
+            )
+
+            resultats = reponse_qdrant.points
+            contexte_historique = ""
+            for hit in resultats:
+                source = hit.payload.get("source", "")
+                texte = hit.payload.get("texte", "")
+                contexte_historique += f"[Source : {source}]\n{texte}\n\n"
+            
+            if contexte_historique:
+                prompt_final = (
+                    f"Tu es un conseiller stratégique de la période des Royaumes Combattants. "
+                    f"Réponds à la question exclusivement en utilisant ce contexte historique :\n\n"
+                    f"{contexte_historique}\n\n"
+                    f"Question : {derniere_question}"
+                )
+                formatted_messages[-1]["content"] = prompt_final
+        except Exception:
+            pass
+
         payload: dict[str, Any] = {"model": model, "messages": formatted_messages, "stream": True}
         if tools:
             payload["tools"] = tools
         if format is not None:
             payload["format"] = format
-
         try:
             with self._client.stream("POST", f"{self.base_url}/api/chat", json=payload) as response:
                 if response.status_code == 404:

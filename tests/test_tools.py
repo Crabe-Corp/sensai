@@ -124,8 +124,8 @@ def test_builtin_get_kingdom_info():
     res = get_kingdom_info("Qin")
     assert isinstance(res, dict)
     assert res["name"] == "Qin"
-    assert res["gold"] == 8500
-    assert res["military_power"] == 95000
+    assert res["capital"] == "Xianyang"
+    assert res["ruler"] == "Ying Zheng"
     assert "relations" in res
 
     res_unknown = get_kingdom_info("RoyaumeInconnu")
