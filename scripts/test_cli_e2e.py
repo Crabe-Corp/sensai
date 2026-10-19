@@ -175,6 +175,7 @@ def run_e2e_test(live_mode: bool = False) -> tuple[str, list[tuple[str, bool, st
     import tempfile
     with tempfile.TemporaryDirectory() as tmp_dir:
         tmp_session_mgr = SessionManager(storage_dir=Path(tmp_dir) / "sessions")
+        tmp_profile_mgr = ProfileManager(storage_dir=Path(tmp_dir) / "profiles")
         if effective_live:
             print("==> Exécution en direct (LIVE) contre le serveur Ollama...")
             with OllamaClient(base_url="http://localhost:11434") as real_client:
@@ -186,6 +187,7 @@ def run_e2e_test(live_mode: bool = False) -> tuple[str, list[tuple[str, bool, st
                         tools=None,
                         profile_name="default",
                         session_manager=tmp_session_mgr,
+                        profile_manager=tmp_profile_mgr,
                     )
         else:
             print("==> Exécution du protocole de test E2E (Moteur CLI + SQLite + MCP réels)...")
@@ -199,6 +201,7 @@ def run_e2e_test(live_mode: bool = False) -> tuple[str, list[tuple[str, bool, st
                         tools=None,
                         profile_name="default",
                         session_manager=tmp_session_mgr,
+                        profile_manager=tmp_profile_mgr,
                     )
 
     raw_output = captured_stdout.getvalue()
@@ -304,6 +307,13 @@ def main():
     print("=" * 70 + "\n")
 
     return 0 if all_passed else 1
+
+
+def test_cli_e2e():
+    """Test pytest automatisé de bout en bout validant le cycle complet de la CLI SENSAI."""
+    _raw_output, checks = run_e2e_test(live_mode=False)
+    failed = [f"{name}: {detail}" for name, ok, detail in checks if not ok]
+    assert not failed, f"Échecs des vérifications E2E CLI: {failed}"
 
 
 if __name__ == "__main__":

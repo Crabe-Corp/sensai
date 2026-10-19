@@ -10,6 +10,9 @@ if hasattr(sys.stdout, "reconfigure"):
 if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8")
 
+if __package__ is None or __package__ == "":
+    sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+
 from src.core.db.database import init_database
 from src.core.sec.security import mask_pii, validate_input_with_llm
 from src.core.engine import (
