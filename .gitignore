@@ -1,1 +1,62 @@
+clean.py
+script_scrap.py
+result_embedding
+
+# Byte-compiled / cache files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Environment variables & secrets
 .env
+
+.env.*
+!.env.example
+
+# Frontend
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Testing & coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Type checking & linters
+.mypy_cache/
+.ruff_cache/
+
+# Databases, logs & local data
+*.db
+*.sqlite
+*.sqlite3
+data/
+storage/
+uploads/
+*.log
+logs/
+
+# IDE & editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Operating system files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Exports de sessions générés
+exports/*.md
+!exports/.gitkeep

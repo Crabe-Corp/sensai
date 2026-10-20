@@ -1,0 +1,7 @@
+{
+  "ollama_host": "http://localhost:11434",
+  "default_model": "qwen2.5:1.5b",
+  "request_timeout": 180.0,
+  "tools": true,
+  "mcp_server": "python -m src.features.tools.mcp_server_demo"
+}

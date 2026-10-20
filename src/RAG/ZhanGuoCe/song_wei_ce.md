@@ -1,0 +1,78 @@
+# Song Wei Ce
+
+
+## Song and Wei
+
+### Qi Attacks Song; Song Sends Zangzi to Seek Help from Jing
+
+Qi attacked Song, and Song sent Zangzi to seek help from Jing. King Jing was very pleased and promised to offer strong assistance. Zangzi returned in worry. His charioteer said, "You sought help and received it; why do you look worried?" Zangzi said, "Song is small while Qi is large. To offer aid to the small Song and incur hostility from the great Qi—this is what worries the king; yet King Jing was overly pleased, so he must be trying to reassure me firmly. "If I grow strong while Qi becomes exhausted, it will benefit Jing." Zangzi then returned. King Qi indeed launched an attack, captured five cities of Song, and King Jing did not come to the rescue.
+
+### Gongshu Ban Builds Machinery for Chu
+
+Gongshu Ban prepared machinery for Chu to attack Song with it. Mozi heard about this, and after traveling a hundred li with his feet wrapped in calluses, went to see Gongshu Ban. He said to him, "I have heard of you from Song. "I want to use you to kill the king." Gongshu Ban said, "According to my principles, I would not kill a king." Mozi said, "I heard that you are making the Yun Ti (cloud ladder), which will be used to attack Song. "What crime has Song committed?" "It is against principle to not kill a king but attack a country; this means not killing the few but killing the many. "Dare I ask, what righteousness does attacking Song have?" Gongshu Ban was convinced and requested to present Mozi before the king.
+
+Mozi said to King Chu, "Suppose there is a person here who abandons his ornate carriage and desires to steal his neighbor's dilapidated cart; he abandons his brocade robes and desires to steal the neighbor's coarse cloth tunic; he abandons his fine grain and meat, and desires to steal from his neighbor the dregs and chaff. "What kind of person would this be?" The king said, "He must certainly have a disease of theft."
+
+Mozi said, "Jing's territory spans 5000 *li*, while Song's is only 500 *li*—this is like comparing an ornate carriage to a dilapidated cart." Jing has Yunmeng, where rhinoceroses, crocodiles, deer, and boars abound; the Yangtze and Han rivers are rich in fish, turtles, soft-shelled turtles, and other creatures that provide abundance for the world. Song is a place said to lack pheasants, hares, carp, or fish—this comparison is like fine grain and meat versus dregs and chaff." Jing has tall pines, fine cypress, *pian* trees, nanmu, and yuzhang; Song lacks tall timber. This comparison is like brocade versus a coarse cloth tunic." "Why would Your Majesty's officials attack Song? It is no different from this kind of behavior." The king said, "Well spoken! "Please do not attack Song."
+
+### Xi Shou Attacks Huang
+
+Xi Shou attacked Huang, passed through Wei, and sent someone to say to the ruler of Wei: "The army of our humble state has passed by your great state's neighbor; was there not even a single envoy from you to show concern?" We dare to ask for the punishment. "Now the city of Huang is about to fall; after that, we will move our troops and march them right under your great state's city walls." The ruler of Wei was frightened, tied up three hundred zhu of silk and three hundred yi of gold, and sent them along with the envoy. Nan Wensi stopped him and said: "If they succeed in capturing the city of Huang, they will certainly not come; if they do not succeed, they also dare not come. If they conquer the city of Huang, then their achievements will be great and their reputation beautiful, and internally they will face scrutiny from their peers. Those in power dislike being scrutinized; they will discuss the matter among themselves. Carrying a great reputation and holding onto success, sitting in control while waiting for criticism from within—although Xi Shou may be foolish, he certainly would not do that. If they fail to conquer the city of Huang and are defeated in heart and forced to flee, upon returning home, they might not escape punishment! How could they dare attack your state and further 加重 their guilt for failing to conquer Huang?" Indeed, after conquering the city of Huang, the commander returned with his troops and thus dared not pass through Wei.
+
+### Prince of Liang Attacks Handan
+
+The Prince of Liang attacked Handan and sought advice from Song. The ruler of Song sent an envoy to King Zhao and said, "The Liang army is strong and its authority great. Now they have come seeking advice from our humble state. If we do not comply, I fear it may endanger the state. If aiding Liang would lead them to attack Zhao and harm your country, then I cannot bear it." I hope Your Majesty will issue instructions for our humble state."
+
+King Zhao said, "Indeed. Song is no match for Liang, and I am well aware of this. Weakening Zhao to strengthen Liang will certainly be disadvantageous to Song. Then what advice can I give you that would be appropriate?" The envoy said, "I respectfully request to receive a border city. We will delay their departure and keep them occupied for some time until our officials have had the chance to fortify the city." King Zhao said, "Good."
+
+The people of Song then proceeded to raise their troops and entered the territory of Zhao, surrounding one city. The Prince of Liang was very pleased and said, "The people of Song are helping me attack." King Zhao was also pleased and said, "The people of Song will stop here." Thus the army withdrew without difficulty, bestowing a favor upon Liang while incurring no resentment from Zhao. Therefore, names are given with some addition, and realities find their proper place.
+
+### Said to Da Yin
+
+He said to Da Yin, "You have held office for many days now. If you govern well yourself, then the public will have no affairs." "You are not as virtuous as Lord Chuhe's filial piety. If you were, then Your Majesty would not have taken over the Empress Dowager's affairs, and thus you would always be favored by Song."
+
+### Song and Chu Are Brothers
+
+Song Yu Chu were brothers. Qi attacked Song, and King Chu declared that he would rescue Song. Song therefore sold something valuable to Chu in order to seek peace with Qi, but Qi did not listen. Su Qin said to the prime minister of Qi: "It would be better for you to give in, so as to demonstrate that Song sold something valuable from Chu to Qi." "Chu will become angry and inevitably sever relations with Song in order to serve Qi. If Qi and Chu unite, then attacking Song will be easy."
+
+### Wei Crown Prince Personally Leads His Troops and Passes Through Waihuang of Song
+
+The Wei crown prince personally led his troops and passed through Waihuang of Song. Xu Zi of Waihuang said, "I have a strategy for victory in every battle; can the crown prince listen to me?" The crown prince said, "I would like to hear it." The guest said, "I have long wished to demonstrate it. Now that the crown prince personally leads troops to attack Qi and achieves great victories in Bing and Ju, his wealth will not exceed that of Wei, nor will his rank increase beyond being a king. If the battle is lost, then Wei will never exist again for all generations to come. "This is my strategy for victory in every battle." The crown prince said, "Yes. Please allow me to follow your words and return." The guest said, "Although the crown prince wishes to return, he cannot do so. Many people benefit from the crown prince's warfare and wish to satisfy their desires; even if the crown prince wishes to return, I fear he will not be able to do so." The crown prince got into his carriage and requested to return. His charioteer said, "To depart and then return is the same as retreating north; it would be better to proceed." So they proceeded. He died in battle against the Qi people, and ultimately did not preserve Wei.
+
+### During the Reign of King Kang of Song: A Sparrow Lays an Egg
+
+During the reign of King Kang of Song, there was a sparrow that laid an egg in a corner of the city. The king sent a historian to divinate its meaning, who said: "A small one giving birth to something great—this foretells dominance over the world." King Kang was greatly pleased. He then attacked Teng and Xue, seizing the land north of Huai River. As a result, he became even more confident in his ambition to dominate the world quickly. Thus, he shot at the sky, whipped the earth, cut down ancestral altars, and burned them, saying: "This will subdue all spirits and deities under heaven with awe." Ma Guolao advised him, saying, "Wear a cap without a face," to demonstrate bravery. He cut open the back of a hunchback and carved into the shins of someone who had just crossed a river, causing great alarm among the people of the country. Qi heard about this and attacked him; the people scattered, and the city could not be defended. The king then fled to the residence of Ni Hou but was captured and killed. Seeing an omen yet not acting as if it were a good omen, one turns it into misfortune instead.
+
+### Zhi Bo Wants to Attack Wei
+
+Zhi Bo wanted to attack Wei, and sent four hundred ye ma and one white jade disc to Duke Wei. Duke Wei was very pleased, and his ministers all congratulated him; Nan Wensi, however, looked worried. Duke Wei said, "A great state shows great joy, yet you have a look of worry—why is that?" Wensi said, "Rewards given without merit and gifts offered without effort cannot help but require careful consideration. Four ye ma and one white jade disc—this is the courtesy of a small state, yet a great state offers it to you. You should consider this carefully." Duke Wei conveyed his words to the border officials. Zhi Bo indeed raised an army and launched a surprise attack on Wei, but upon reaching the border he turned back and said, "Wei has a wise man who already knew of my plan."
+
+### Zhi Bo's Attempt to Attack Wei
+
+Zhi Bo wanted to attack Wei, so he pretended that his crown prince had died and sent him to flee to Wei. Nan Wensi said, "The crown prince Yan is a man of virtue; he is greatly loved and favored. Without committing a serious crime, he has fled. There must be some reason for this." He sent someone to intercept him at the border and said, "If more than five chariots pass by, be careful not to admit him." Zhi Bo heard about this and stopped his plan.
+
+### Qin Attacks Pu of Wei
+
+The State of Qin attacked Pu in the State of Wei. Hu Yan said to Chuli Ji, "Do you attack Pu for the sake of the state of Qin?" Or is it for the benefit of Wei? If it is for Wei, then that would be good; but if it is for Qin, then it will not bring much profit. The reason why Wei can remain as the state of Wei is because they have Pu. Now that Pu has fallen into the hands of Wei, Wei will certainly be subjugated by Wei. The reason why the western river region outside Wei cannot be recovered is because it is weak. լ Now, if Wei is merged into Wei, then Wei will surely become strong. On the day when Wei becomes powerful, the area beyond Xihe River will certainly be in danger. Moreover, King Qin will also observe your actions. Harming Qin to benefit Wei will surely make King Qin resent you." Chuli Ji said, "Then what should I do?" Hu Yan said, "You release Pu and refrain from attacking it. I will personally go to warn the defenders of Pu on your behalf, so that they may show virtue toward Duke Wei." Chuli Ji said, "Good."
+
+Hu Yan then entered Pu and told its commander, "Chuli Zi knows that Pu is in trouble. He said, 'I must capture Pu.'" "Now I can make him release Pu from attack." The commander of Pu bowed twice and presented three hundred yi of gold, saying, "If the Qin troops truly withdraw, I will recommend you highly to Duke Wei." Hu Yan took the gold from Pu in order to gain influence within Wei. Chuli Zi also returned with three hundred pieces of gold, and thus showed virtue toward Duke Wei as well.
+
+### Wei Shike Serves Wei
+
+Wei Shike served Wei, but for three years he was not granted an audience. Wei Ke was troubled by this and so went to see Wuxia Xiansheng, offering him a hundred gold pieces. Wuxia Xiansheng said, "Agreed." He then went to see the King of Wei and said, "I have heard that Qin is mobilizing troops, but I do not know where they are heading. Qin and Wei have been in close contact without rest for a long time now. I hope Your Majesty will fully serve Qin, with no other plans." The King of Wei said, "Agreed."
+
+Ke hurried out and upon reaching the Lang Gate turned back and said, "I fear Your Majesty is acting too late in serving Qin." The king asked, "Why?" Xiansheng said: "When people deal with matters concerning themselves, they act too hastily; when dealing with matters concerning others, they are overly slow. Now Your Majesty is slow in attending to your own affairs—how can you possibly be prompt in attending to the affairs of others?" "How do you know this?" "Wei Ke said, 'I have served Your Majesty for three years without being granted an audience.'" "From this I know that Your Majesty is slow." The king hurried to see Wei Ke.
+
+### Wei Sijun Was Ill
+
+Wei Sijun was ill. Fu Zhu said to Yin Shunqie, "If you listen to my words and use them to please the ruler, do not discuss any reductions; the ruler will surely favor you. The actions people take when they are alive differ from their thoughts at the time of death. At first, what you did in this world was to consume Goryeo food; what you used were Tiecuo and Nabo. All the ministers believe that you look down upon your own country and favor Goryeo, so there will certainly be no one who speaks to you about state affairs. You told the ruler: "The actions of Your Majesty throughout the world are greatly mistaken. Tiecuo holds authority over state decisions, and Nabo assists him; from now on, the Gongsun clan will certainly not be offered sacrifices with blood. ""
+
+The ruler said, "Good." He gave him a seal and said, "After I die, you will have control over it." After the successor ruler died, Yin Shunqie administered state affairs according to the ruler's command. The families of Tiecuo and Nabo were all exterminated.
+
+### During the Reign of Wei Sijun: Xumi Fled to Wei
+
+During the reign of Wei Sijun, Xumi fled to Wei, and the state of Wei ransomed him for a hundred jin of gold, but did not give it. He then requested to use Zuo Shi instead. The ministers advised, "To redeem one Xumi with a territory worth a hundred jin of gold—would that not be unreasonable?" The ruler said, "Governance is not trivial even for small matters; disorder does not arise from great ones. If moral instruction and education are conveyed to the people, a city of three hundred households would be sufficient for good governance; if the people lack integrity and shame, even with ten Zuo Shis, how could they be of use?"
+
+### Wei Ren Ying Xin Fu
+
+A man was marrying off a new bride. When the bride got on the carriage, she asked, "The 骖 horse, whose horse is it?" The driver said, "It is borrowed." The bride told the groom's servant, "Pat the 骖 horse gently; do not whip it harshly." When the carriage arrived at the gate, she helped her mother in-law down and instructed the mother-in-law: "Extinguish the stove fire; otherwise it may catch fire." Upon entering the room, she saw a mortar. She said to move it under the window so that it would not hinder those passing by. The master of the house laughed at her. These three remarks were all important points, yet she could not help but be laughed at because the timing was wrong—too early or too late.

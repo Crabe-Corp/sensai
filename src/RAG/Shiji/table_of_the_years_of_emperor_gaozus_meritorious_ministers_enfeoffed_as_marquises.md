@@ -1,0 +1,18 @@
+# Table of the Years of Emperor Gaozu's Meritorious Ministers Enfeoffed as Marquises
+
+## 1
+
+The Grand Historian said: In ancient times, the achievements of ministers were divided into five categories. To establish ancestral temples and stabilize the state through virtue was called xun; to achieve through words was called lao; to accomplish through effort was called gong; to clarify their rank was called fa; and to accumulate days was called yue. The oath of enfeoffment with a title said: "Even if the Yellow River were as narrow as a ribbon, and Mount Tai were as sharp as a whetstone," "the state shall remain eternally peaceful, reaching even to descendants and posterity." At first, they have never failed to wish to consolidate the root, yet gradually the branches and leaves decline and weaken.
+
+## 2
+
+I read about Emperor Gaozu's marquises who had rendered meritorious service, examined the time of their initial enfeoffment, and considered why they lost it. I said: "How extraordinary is this new information!" The Book of Documents says, "Harmonize all the myriad states," and through the Xia and Shang dynasties, this lasted for several thousand years. It is said that the Zhou dynasty enfeoffed eight hundred states; after the reigns of King You and King Li, they appeared in the Spring and Autumn Annals. The Book of Documents mentions the marquises and barons of Tang and Yu, who endured through the Three Dynasties for more than a thousand years. They preserved themselves to serve as vassals protecting the Son of Heaven—was this not due to their firm adherence to benevolence and righteousness, and their loyalty to the laws above? When the Han dynasty rose to power, more than a hundred meritorious subjects were enfeoffed. The empire had just been pacified, so many great cities and famous capitals were scattered or lost. The number of households that could be counted was only about one-tenth to one-third; therefore, the largest marquisates did not exceed ten thousand families, while the smallest had several hundred to five or six hundred households. After several generations, the people gradually returned to their hometowns and the population increased. The marquisates of Xiao, Cao, Jiang, and Guan or others reached as many as forty thousand households; even smaller marquisates doubled in size, with wealth and prosperity comparable to them. Their descendants became arrogant and indulgent, forgetting their ancestors and falling into debauchery and favoritism of concubines. By the time of Taichu, within a hundred years, only five marquises remained; all others had lost their titles and states due to legal offenses or death, thus perishing. The net was also less tightly woven, yet all of them failed to maintain a cautious and reverent attitude toward the laws and prohibitions of their time.
+
+## 3
+
+Living in today's age, one looks back at the ways of ancient times to reflect upon oneself; they are not necessarily entirely the same. Emperors and kings each had different rites and priorities, but ultimately success was the standard by which they were judged; how could one possibly bind them to a single pattern? Observing why some gained respect and favor, and others were disgraced and humiliated—this is also a forest of gains and losses in their own time. Why must one rely on old accounts? Therefore, I carefully examined the beginning and end, compiled their records into a table, though some details of origins and outcomes were not fully complete; I recorded what was clear, leaving gaps for matters in doubt. Later virtuous men who wish to investigate and compile these records may refer to them for examination.
+
+## 4
+
+（ No content provided for translation.)
+
