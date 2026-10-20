@@ -35,13 +35,20 @@ from src.core.ollama_client import (
 )
 from src.core.schemas import HistoricalFigure, KingdomInfo, StructuredResponse
 from src.features.memory import (
+    ArtifactDocument,
+    ArtifactManager,
     ChatSession,
     ProfileManager,
     SessionManager,
     SessionMetadata,
     UserProfile,
 )
-from src.features.tools import builtin, web_search
+from src.features.tools import artifact_tool, builtin, web_search
+from src.features.tools.artifact_tool import (
+    ARTIFACT_SYSTEM_INSTRUCTION,
+    get_active_artifact,
+    set_active_artifact,
+)
 from src.features.tools.mcp_client import MCPClient, MCPError
 from src.features.tools.registry import default_registry
 
@@ -212,6 +219,7 @@ def print_help() -> None:
     print("  /kingdom [nom]            : Génère une fiche de royaume au format JSON strict")
     print("  /figure [nom]             : Génère une fiche de personnage historique")
     print("  /structured-output [msg]  : Active/désactive le mode JSON ou soumet une requête")
+    print("  /artifact [reset|save [path]] : Affiche, réinitialise ou exporte le livrable de la session")
     print("  /exit | /quit             : Quitte l'application\n")
 
 
@@ -225,6 +233,7 @@ def run_session(
     profile_name: str | None = None,
     session_manager: SessionManager | None = None,
     profile_manager: ProfileManager | None = None,
+    artifact_manager: ArtifactManager | None = None,
     max_tokens: int = 2000,
     rag_enabled: bool = False,
 ) -> None:
@@ -238,12 +247,15 @@ def run_session(
                     - profile_name - STR | NONE: nom du profil utilisateur à charger
                     - session_manager - SESSIONMANAGER | NONE: gestionnaire de sessions persistant
                     - profile_manager - PROFILEMANAGER | NONE: gestionnaire de profils utilisateur
+                    - artifact_manager - ARTIFACTMANAGER | NONE: gestionnaire de livrables d'état
             RETURN: None"""
 
     if session_manager is None:
         session_manager = SessionManager()
     if profile_manager is None:
         profile_manager = ProfileManager()
+    if artifact_manager is None:
+        artifact_manager = ArtifactManager()
 
     current_profile: UserProfile | None = None
     if profile_name:
@@ -262,10 +274,22 @@ def run_session(
     else:
         current_session = session_manager.create_session(profile=current_profile, model=model)
 
+    current_artifact = artifact_manager.get_or_create_artifact(current_session.metadata.session_id)
+    set_active_artifact(current_artifact, session_id=current_session.metadata.session_id, manager=artifact_manager)
+
     history: list[ChatMessage] = list(current_session.messages)
     structured_mode: bool = False
     active_tools = tools
     tools_enabled = active_tools is not None
+
+    if tools_enabled:
+        if not history:
+            history.append(ChatMessage(role="system", content=ARTIFACT_SYSTEM_INSTRUCTION))
+        elif history[0].role == "system":
+            if "update_artifact" not in history[0].content:
+                history[0].content = f"{history[0].content}\n\n{ARTIFACT_SYSTEM_INSTRUCTION}"
+        else:
+            history.insert(0, ChatMessage(role="system", content=ARTIFACT_SYSTEM_INSTRUCTION))
     mcp_client: MCPClient | None = None
     mcp_tool_names: list[str] = []
 
@@ -366,6 +390,8 @@ def run_session(
                         history = list(current_session.messages)
                         if current_session.metadata.model:
                             model = current_session.metadata.model
+                        current_artifact = artifact_manager.get_or_create_artifact(current_session.metadata.session_id)
+                        set_active_artifact(current_artifact, session_id=current_session.metadata.session_id, manager=artifact_manager)
                         print(f"[Info] Session '{target_id}' chargée avec succès ({len(history)} messages, modèle: {model}).")
                     except FileNotFoundError:
                         print(f"[Erreur] Session '{target_id}' introuvable.")
@@ -375,6 +401,8 @@ def run_session(
                 title_arg = parts[2].strip() if len(parts) > 2 and parts[2].strip() else None
                 current_session = session_manager.create_session(profile=current_profile, model=model, title=title_arg)
                 history = list(current_session.messages)
+                current_artifact = artifact_manager.get_or_create_artifact(current_session.metadata.session_id)
+                set_active_artifact(current_artifact, session_id=current_session.metadata.session_id, manager=artifact_manager)
                 print(f"[Info] Nouvelle session initialisée : [{current_session.metadata.session_id}] {current_session.metadata.title}.")
             elif subcmd in ("delete", "remove", "rm"):
                 if len(parts) < 3 or not parts[2].strip():
@@ -386,6 +414,8 @@ def run_session(
                         if current_session.metadata.session_id == target_id:
                             current_session = session_manager.create_session(profile=current_profile, model=model)
                             history = list(current_session.messages)
+                            current_artifact = artifact_manager.get_or_create_artifact(current_session.metadata.session_id)
+                            set_active_artifact(current_artifact, session_id=current_session.metadata.session_id, manager=artifact_manager)
                             print(f"[Info] Session active réinitialisée : [{current_session.metadata.session_id}].")
                     else:
                         print(f"[Erreur] Session '{target_id}' introuvable.")
@@ -604,6 +634,37 @@ def run_session(
                 print(f"[Erreur] {exc}")
             continue
 
+        if user_input in ("/artifact", "/artifacts") or user_input.startswith(("/artifact ", "/artifacts ")):
+            parts = user_input.split(maxsplit=2)
+            subcmd = parts[1].strip().lower() if len(parts) > 1 else "show"
+            if subcmd == "show":
+                doc = get_active_artifact()
+                if not doc.sections:
+                    print(f"\n[Artifact : {doc.title}]")
+                    print("  (Livrable vide pour le moment. Les sections s'enrichiront au fil des échanges.)")
+                else:
+                    print("\n" + "=" * 60)
+                    print(f" LIVRABLE — {doc.title}")
+                    print("=" * 60)
+                    print(doc.render_markdown().strip())
+                    print("=" * 60)
+            elif subcmd == "reset":
+                doc = artifact_manager.reset_artifact(current_session.metadata.session_id)
+                set_active_artifact(doc, session_id=current_session.metadata.session_id, manager=artifact_manager)
+                print(f"[Artifact] Livrable réinitialisé pour la session '{current_session.metadata.session_id}'.")
+            elif subcmd == "save":
+                target_path = parts[2].strip() if len(parts) > 2 and parts[2].strip() else None
+                doc = get_active_artifact()
+                if target_path:
+                    saved = doc.save(Path(target_path))
+                    print(f"[Artifact] Livrable exporté avec succès dans '{saved}'.")
+                else:
+                    saved = artifact_manager.save_artifact(current_session.metadata.session_id, doc)
+                    print(f"[Artifact] Livrable sauvegardé dans '{saved}'.")
+            else:
+                print("[Info] Commandes /artifact disponibles : /artifact (afficher), /artifact reset, /artifact save [path]")
+            continue
+
         safe_input, _has_confidential_data = mask_pii(user_input)
 
         is_valid, error_message = validate_input_with_llm(safe_input, client, model)
@@ -644,6 +705,7 @@ def run_session(
                 current_session.messages = list(history)
                 current_session.metadata.model = model
                 session_manager.save_session(current_session)
+                artifact_manager.save_artifact(current_session.metadata.session_id, get_active_artifact())
             except OllamaConnectionError as exc:
                 print(f"\n[Erreur de connexion] {exc}")
             except OllamaModelNotFoundError as exc:
@@ -698,6 +760,7 @@ def run_session(
                 current_session.messages = list(history)
                 current_session.metadata.model = model
                 session_manager.save_session(current_session)
+                artifact_manager.save_artifact(current_session.metadata.session_id, get_active_artifact())
 
         except OllamaConnectionError as exc:
             print(f"\n[Erreur de connexion] {exc}")
@@ -714,10 +777,22 @@ def run_session(
                 current_session.messages = list(history)
                 current_session.metadata.model = model
                 session_manager.save_session(current_session)
+                artifact_manager.save_artifact(current_session.metadata.session_id, get_active_artifact())
 
     has_real_messages = any(m.role in ("user", "assistant") for m in current_session.messages)
     if not has_real_messages:
         session_manager.delete_session(current_session.metadata.session_id)
+        doc = get_active_artifact()
+        if not doc.sections:
+            for ext in ("md", "json"):
+                p = artifact_manager.get_storage_path(current_session.metadata.session_id, ext)
+                if p.is_file():
+                    try:
+                        p.unlink()
+                    except OSError:
+                        pass
+    else:
+        artifact_manager.save_artifact(current_session.metadata.session_id, get_active_artifact())
 
     if mcp_client:
         default_registry.unregister_tools(mcp_tool_names)
