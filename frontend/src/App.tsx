@@ -7,7 +7,7 @@ import { SettingsModal } from './components/SettingsModal'
 import { ModelsModal } from './components/ModelsModal'
 import { WorkInviteModal } from './components/WorkInviteModal'
 import { DeleteConversationModal } from './components/DeleteConversationModal'
-import { api, authStorage } from './lib/api'
+import { api, authStorage, UNAUTHORIZED_EVENT } from './lib/api'
 import type { Conversation, Message, User, AttachedFile } from './types'
 
 export function App() {
@@ -57,6 +57,19 @@ export function App() {
       setLoadingAuth(false)
     }
     initAuth()
+  }, [])
+
+  // Session invalidée côté serveur (401) : retour à l'écran de connexion
+  useEffect(() => {
+    const onUnauthorized = () => {
+      setUser(null)
+      setActiveConversation(null)
+      setMessages([])
+      setIsStreaming(false)
+      setStreamingText('')
+    }
+    window.addEventListener(UNAUTHORIZED_EVENT, onUnauthorized)
+    return () => window.removeEventListener(UNAUTHORIZED_EVENT, onUnauthorized)
   }, [])
 
   // Chargement des conversations et configuration initiale

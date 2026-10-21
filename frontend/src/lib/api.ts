@@ -8,6 +8,15 @@ export const authStorage = {
   clearToken: () => localStorage.removeItem(TOKEN_KEY),
 }
 
+export const UNAUTHORIZED_EVENT = 'sensai:unauthorized'
+
+// Token expiré/invalide : on le purge et on prévient l'application pour revenir à l'écran de connexion
+function handleUnauthorized(endpoint: string) {
+  if (endpoint.startsWith('/api/auth/login') || endpoint.startsWith('/api/auth/register')) return
+  authStorage.clearToken()
+  window.dispatchEvent(new Event(UNAUTHORIZED_EVENT))
+}
+
 async function apiFetch<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const token = authStorage.getToken()
   const headers = new Headers(options.headers || {})
@@ -24,6 +33,7 @@ async function apiFetch<T>(endpoint: string, options: RequestInit = {}): Promise
   })
 
   if (!response.ok) {
+    if (response.status === 401) handleUnauthorized(endpoint)
     let errorDetail = 'Une erreur est survenue'
     try {
       const errJson = await response.json()
@@ -225,6 +235,10 @@ export const api = {
       })
 
       if (!response.ok) {
+        if (response.status === 401) {
+          handleUnauthorized(`/api/conversations/${conversationId}/chat`)
+          throw new Error('Session expirée, veuillez vous reconnecter')
+        }
         throw new Error(`Erreur HTTP: ${response.status}`)
       }
 
