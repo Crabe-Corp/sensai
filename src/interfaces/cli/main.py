@@ -44,6 +44,7 @@ from src.features.memory import (
 from src.features.tools import builtin, web_search
 from src.features.tools.mcp_client import MCPClient, MCPError
 from src.features.tools.registry import default_registry
+import requests
 
 DEFAULT_CONFIG_PATH = Path("config.json")
 DEFAULT_HOST = "http://localhost:11434"
@@ -85,6 +86,7 @@ def resolve_configuration(cli_args: argparse.Namespace) -> tuple[str, str]:
         or file_cfg.get("default_model")
         or DEFAULT_MODEL
     )
+
     return host, model
 
 
@@ -143,22 +145,18 @@ def parse_arguments(argv: list[str] | None = None) -> argparse.Namespace:
         help="Nom du profil utilisateur à charger (ex: default, historien).",
     )
     parser.add_argument(
-        "--max-tokens",
-        type=int,
-        default=2000,
-        help="Plafond maximal de tokens avant déclenchement de la compression sémantique.",
-    )
-    parser.add_argument(
         "--rag",
         action="store_true",
         default=False,
         help="Activer l'enrichissement documentaire automatique RAG.",
     )
+    
     return parser.parse_args(argv)
 
 
 def print_banner(
     model: str,
+    max_token : int,
     host: str,
     tools_enabled: bool = False,
     profile_name: str | None = None,
@@ -176,6 +174,7 @@ def print_banner(
     print("=" * 60)
     print(" SENSAI CLI — Chatbot Modulaire")
     print(f" Modèle actif : {model}")
+    print(f" Context      : {max_token}")
     print(f" Hôte Ollama  : {host}")
     print(f" Outils MCP   : {'Activés' if tools_enabled else 'Désactivés'}")
     if rag_enabled:
@@ -226,7 +225,7 @@ def run_session(
     session_manager: SessionManager | None = None,
     profile_manager: ProfileManager | None = None,
     max_tokens: int = 2000,
-    rag_enabled: bool = False,
+    rag_enabled: bool = True,
 ) -> None:
     """Gère la boucle interactive du chatbot CLI, l'historique et les commandes slash.
             PARAMS: - client - OLLAMACLIENT: instance active du client HTTP Ollama
@@ -283,6 +282,7 @@ def run_session(
 
     print_banner(
         model,
+        max_tokens,
         host,
         tools_enabled=tools_enabled,
         profile_name=current_profile.username if current_profile else None,
@@ -315,7 +315,7 @@ def run_session(
             print(f"[Info] Budget tokens : {singleton_token.budget_tokens} / {max_tokens} consommés.")
             continue
 
-        if user_input in ("/rag", "/rag on", "/rag off") or user_input.startswith("/rag "):
+        if user_input in ("/rag on", "/rag off"):
             parts = user_input.split(maxsplit=1)
             arg = parts[1].strip().lower() if len(parts) > 1 else None
             if arg in ("on", "true", "1", "enable"):
@@ -729,8 +729,28 @@ def main(argv: list[str] | None = None) -> int:
             PARAMS: - argv - LIST[STR] | NONE: arguments de ligne de commande optionnels
             RETURN: code de retour entier (0 en cas de succès, 1 en cas d'erreur)"""
 
-    args = parse_arguments(argv)
+    args = parse_arguments(argv) # args correspond a un tableau de configuration de l'app (ex : Namespace(model=None, host=None, config='config.json', tools=False, mcp_server=None, session=None, profile=None, max_tokens=2000, rag=False))
     host, model = resolve_configuration(args)
+
+    try:
+        response = requests.post(host + "/api/show", json={"model": model})
+    
+        if response.status_code == 200:
+            show_data = response.json()
+            model_details = show_data.get("model_info", {})
+
+            for key, value in model_details.items():
+                if "context_length" in key:
+                    context_length = value
+                    break
+
+            print(f"[Info] Context length détecté pour {model} : {context_length}")
+        else:
+            print(f"[Avertissement] Modèle {model} introuvable ou erreur. Code: {response.status_code}")
+            
+    except Exception as e:
+        print(f"[Erreur dans la récupération du context length] {e}")
+        context_length = 2000
 
     try:
         init_database()
@@ -746,6 +766,7 @@ def main(argv: list[str] | None = None) -> int:
         or bool(file_cfg.get("tools"))
         or bool(file_cfg.get("tools_enabled"))
     )
+    
     profile_name = args.profile or "default"
     session_id = args.session
     timeout = float(os.getenv("SENSAI_TIMEOUT") or file_cfg.get("request_timeout") or 180.0)
@@ -760,11 +781,10 @@ def main(argv: list[str] | None = None) -> int:
             mcp_server_cmd=mcp_cmd,
             session_id=session_id,
             profile_name=profile_name,
-            max_tokens=args.max_tokens,
+            max_tokens = context_length,
             rag_enabled=args.rag,
         )
     return 0
-
 
 if __name__ == "__main__":
     sys.exit(main())

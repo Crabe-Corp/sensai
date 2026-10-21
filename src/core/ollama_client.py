@@ -140,7 +140,7 @@ class OllamaClient:
                         - format - STR | DICT: format de sortie (ex: JSON Schema)
                 RETURN: itérateur de dictionnaires représentant les réponses brutes d'Ollama"""
 
-        formatted_messages = self._format_messages(messages)
+        formatted_messages = self._format_messages(messages) # Correspond au dernier prompt entré 
         payload: dict[str, Any] = {"model": model, "messages": formatted_messages, "stream": True}
         if tools:
             payload["tools"] = tools
