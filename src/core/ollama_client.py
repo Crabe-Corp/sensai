@@ -3,6 +3,7 @@ from collections.abc import Iterator
 from typing import Any, List, Literal, TypeVar, Union
 import httpx
 from pydantic import BaseModel
+from src.core import sementic_cache
 
 from src.features.structured_output import (
     StructuredOutputError,
@@ -140,7 +141,8 @@ class OllamaClient:
                         - format - STR | DICT: format de sortie (ex: JSON Schema)
                 RETURN: itérateur de dictionnaires représentant les réponses brutes d'Ollama"""
 
-        formatted_messages = self._format_messages(messages) # Correspond au dernier prompt entré 
+        formatted_messages = self._format_messages(messages)
+        dernier_prompt = formatted_messages[-1].get("content", "") if formatted_messages else ""
         payload: dict[str, Any] = {"model": model, "messages": formatted_messages, "stream": True}
         if tools:
             payload["tools"] = tools
@@ -158,12 +160,19 @@ class OllamaClient:
                     raise OllamaAPIError(
                         f"Erreur HTTP {response.status_code} d'Ollama: {response.text}"
                     )
+
+                reponse_complete = ""
                 for line in response.iter_lines():
                     if not line.strip():
                         continue
                     data = json.loads(line)
+
+                    chunk_content = data.get("message", {}).get("content", "")
+                    reponse_complete += chunk_content
+
                     if data.get("done") is True:
                         self._track_token_usage(data)
+                        sementic_cache.add_to_cache(prompt=dernier_prompt, llm_response=reponse_complete)
                     if "error" in data:
                         err_msg = data["error"]
                         if "not found" in err_msg.lower():
@@ -228,6 +237,10 @@ class OllamaClient:
                     raise OllamaModelNotFoundError(f"Modèle '{model}' introuvable: {err_msg}")
                 raise OllamaAPIError(err_msg)
             self._track_token_usage(data)
+            dernier_prompt = formatted_messages[-1].get("content", "") if formatted_messages else ""
+            reponse_texte = data.get("message", {}).get("content", "")
+            if dernier_prompt and reponse_texte:
+                sementic_cache.add_to_cache(prompt=dernier_prompt, llm_response=reponse_texte)
             return data
         except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
             raise OllamaConnectionError(

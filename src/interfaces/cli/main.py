@@ -16,6 +16,7 @@ if __package__ is None or __package__ == "":
 from src.core.db.database import init_database
 from src.core import memory_management as mem, singleton_token
 from src.core.sec.security import mask_pii, validate_input_with_llm
+from src.core import sementic_cache
 from src.core.engine import (
     ConversationEngine,
     EngineEvent,
@@ -226,6 +227,7 @@ def run_session(
     profile_manager: ProfileManager | None = None,
     max_tokens: int = 2000,
     rag_enabled: bool = True,
+    cache_build: bool = False,
 ) -> None:
     """Gère la boucle interactive du chatbot CLI, l'historique et les commandes slash.
             PARAMS: - client - OLLAMACLIENT: instance active du client HTTP Ollama
@@ -627,6 +629,20 @@ def run_session(
             except Exception:
                 pass
 
+        if cache_build:
+            try:
+                from src.core import sementic_cache
+                cache_result = sementic_cache.get_info_cache(prompt=safe_input)
+                if cache_result:
+                    print("[SEMENTIC CACHE] question already asked find")
+                    sys.stdout.write("\nAssistant > ")
+                    print(cache_result)
+                    history.append(ChatMessage(role="user", content=safe_input))
+                    history.append(ChatMessage(role="assistant", content=cache_result))
+                    return 0
+            except Exception:
+                pass
+
         user_msg = ChatMessage(role="user", content=augmented_input)
         history.append(user_msg)
 
@@ -758,6 +774,15 @@ def main(argv: list[str] | None = None) -> int:
         print(f"[Erreur dans l'initialisation de la BDD] {e}")
         return 1
 
+    cache_build = False
+    try:
+        sementic_cache.create_cache()
+        cache_build = True
+    except Exception as e:
+        print("[Erreur dans la creation du cache] {e}")
+        cache_build = False
+        return 1
+
     file_cfg = load_config_file(Path(args.config)) if args.config else {}
     mcp_cmd = args.mcp_server or os.getenv("SENSAI_MCP_SERVER") or file_cfg.get("mcp_server")
     tools_flag = (
@@ -783,6 +808,7 @@ def main(argv: list[str] | None = None) -> int:
             profile_name=profile_name,
             max_tokens = context_length,
             rag_enabled=args.rag,
+            cache_build=cache_build
         )
     return 0
 
