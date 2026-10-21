@@ -782,6 +782,11 @@ async def chat_stream(
                                 continue
                             try:
                                 data = json.loads(raw_line)
+                                if data.get("error"):
+                                    err_msg = f"\n[Erreur du modèle {model_to_use} : {data['error']}]"
+                                    accumulated_text += err_msg
+                                    yield json.dumps({"type": "chunk", "content": err_msg}) + "\n"
+                                    continue
                                 msg_chunk = data.get("message", {}).get("content", "")
                                 if msg_chunk:
                                     accumulated_text += msg_chunk

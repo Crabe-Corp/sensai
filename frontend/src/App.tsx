@@ -68,8 +68,13 @@ export function App() {
         api.getModels().catch(() => ({ models: ['qwen3:0.6b'], default: 'qwen3:0.6b' })),
       ])
       setConversations(convs)
-      setModelsList(modelsData.models || ['qwen3:0.6b'])
-      setCurrentModel(cfg.model_name || 'qwen3:0.6b')
+      const availableModels: string[] = modelsData.models || ['qwen3:0.6b']
+      // Le modèle sauvegardé peut ne plus être installé : on retombe sur un modèle disponible
+      const initialModel = availableModels.includes(cfg.model_name)
+        ? cfg.model_name
+        : modelsData.default || availableModels[0] || 'qwen3:0.6b'
+      setModelsList(availableModels)
+      setCurrentModel(initialModel)
       const cleanTools = (cfg.active_tools || []).filter(
         (t: string) => t === 'structured_output' || t === 'Structured Output' || t === 'mcp_runner'
       )
@@ -87,7 +92,7 @@ export function App() {
       }
 
       // Règle demandée : à chaque connexion, on ouvre une nouvelle conversation
-      await handleNewConversation('solo', cfg.model_name, cfg.active_tools)
+      await handleNewConversation('solo', initialModel, cleanTools.length > 0 ? cleanTools : ['structured_output'])
     } catch {
       // ignore
     }
