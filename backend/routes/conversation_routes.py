@@ -778,6 +778,9 @@ async def chat_stream(
             "model": model_to_use,
             "messages": history,
             "stream": True,
+            # Les modèles à réflexion (qwen3...) rangent leur sortie dans message.thinking, que l'on
+            # n'affiche pas : avec format=json le contenu restait vide. On désactive la réflexion.
+            "think": False,
         }
         if is_structured:
             ollama_payload["format"] = "json"
@@ -895,6 +898,12 @@ async def chat_stream(
                     pass
             raise
 
+        if not accumulated_text.strip():
+            # Aucune erreur mais aucun contenu : on le dit plutôt que d'afficher une bulle vide
+            empty_msg = f"[Le modèle {model_to_use} n'a renvoyé aucune réponse. Réessayez ou changez de modèle.]"
+            accumulated_text = empty_msg
+            yield json.dumps({"type": "chunk", "content": empty_msg}) + "\n"
+
         total_response_tokens = prompt_tokens_eval + completion_tokens_eval
 
         assistant_msg_id = str(uuid.uuid4())
@@ -904,7 +913,7 @@ async def chat_stream(
             sender_id=None,
             sender_name="SensAI",
             role="assistant",
-            content=accumulated_text or "...",
+            content=accumulated_text,
             prompt_tokens=prompt_tokens_eval,
             completion_tokens=completion_tokens_eval,
             total_tokens=total_response_tokens,
