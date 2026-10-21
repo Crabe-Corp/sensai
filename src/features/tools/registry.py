@@ -8,8 +8,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 def _extract_docstring_param_descriptions(docstring: str) -> tuple[str, dict[str, str]]:
     """ Extrait le résumé textuel et les descriptions des paramètres depuis une docstring Python.
-PARAMS: - docstring - STR: la chaîne de documentation brute à analyser
-RETURN: tuple contenant le résumé textuel et le dictionnaire des descriptions de paramètres"""
+            PARAMS: - docstring - STR: la chaîne de documentation brute à analyser
+            RETURN: tuple contenant le résumé textuel et le dictionnaire des descriptions de paramètres"""
     if not docstring:
         return "", {}
 

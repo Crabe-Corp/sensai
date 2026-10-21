@@ -25,7 +25,6 @@ class ArtifactDocument(BaseModel):
 
         existing = self.sections.get(clean_name, "").strip()
         if existing:
-            # Sépare par saut de ligne simple pour les listes et double pour les paragraphes
             sep = "\n" if (existing.endswith("-") or clean_content.startswith(("-", "*", "1."))) else "\n\n"
             self.sections[clean_name] = f"{existing}{sep}{clean_content}"
         else:
@@ -74,7 +73,6 @@ class ArtifactDocument(BaseModel):
         idx = 0
         total = len(lines)
 
-        # Extraction d'un éventuel frontmatter YAML
         if total > 0 and lines[0].strip() == "---":
             idx = 1
             while idx < total and lines[idx].strip() != "---":

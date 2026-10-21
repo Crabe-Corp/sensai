@@ -3,7 +3,6 @@ import re
 import urllib.parse
 from typing import Any
 import httpx
-
 from src.features.tools.registry import tool
 
 DEFAULT_TIMEOUT: float = 5.0
@@ -21,12 +20,14 @@ def clean_ddg_url(raw_url: str) -> str:
             PARAMS: raw_url - STR: URL brute issue du code HTML.
             RETURN: STR: URL cible propre déchiffrée ou URL brute d'origine.
     """
+
     if not raw_url:
         return ""
     if raw_url.startswith("//"):
         raw_url = "https:" + raw_url
     elif raw_url.startswith("/l/?"):
         raw_url = "https://duckduckgo.com" + raw_url
+
     parsed = urllib.parse.urlparse(raw_url)
     if ("duckduckgo.com" in parsed.netloc or not parsed.netloc) and "uddg" in parsed.query:
         params = urllib.parse.parse_qs(parsed.query)
@@ -65,7 +66,6 @@ def parse_ddg_html(html_content: str, max_results: int = DEFAULT_MAX_RESULTS) ->
             })
             if len(results) >= max_results:
                 break
-
     return results
 
 
@@ -91,12 +91,7 @@ def search_duckduckgo(
         return parse_ddg_html(response.text, max_results=max_results)
 
 
-def search_wikipedia(
-    query: str,
-    max_results: int = DEFAULT_MAX_RESULTS,
-    timeout: float = DEFAULT_TIMEOUT,
-    lang: str = "fr",
-) -> list[dict[str, str]]:
+def search_wikipedia(query: str, max_results: int = DEFAULT_MAX_RESULTS, timeout: float = DEFAULT_TIMEOUT, lang: str = "fr") -> list[dict[str, str]]:
     """Recherche encyclopédique de secours via l'API publique Wikipedia.
             PARAMS: - query - STR: Termes de la recherche.
                     - max_results - INT: Nombre maximal de résultats souhaités.
@@ -104,6 +99,7 @@ def search_wikipedia(
                     - lang - STR: Code langue de l'encyclopédie (ex: 'fr' ou 'en').
             RETURN: list[dict[str, str]]: Liste de dictionnaires contenant title, snippet et url.
     """
+
     endpoint = f"https://{lang}.wikipedia.org/w/api.php"
     params: dict[str, Any] = {
         "action": "query",
@@ -138,9 +134,7 @@ def search_wikipedia(
 
     if not results and lang != "en":
         return search_wikipedia(query, max_results=max_results, timeout=timeout, lang="en")
-
     return results
-
 
 def format_search_results(query: str, results: list[dict[str, str]]) -> str:
     """Formate les résultats de recherche en texte clair et incitatif pour le LLM.
@@ -148,27 +142,22 @@ def format_search_results(query: str, results: list[dict[str, str]]) -> str:
                     - results - LIST: Liste des sources extraites.
             RETURN: STR: Chaîne de caractères structurée contenant les sources et le rappel de citation d'URL.
     """
+
     if not results:
         return f"Aucun résultat trouvé sur le Web pour la recherche : \"{query}\"."
-
     lines = [f"Résultats de recherche Web pour \"{query}\" :\n"]
     for idx, item in enumerate(results, start=1):
         title = item.get("title", "Sans titre").strip()
         url = item.get("url", "").strip()
         snippet = item.get("snippet", "").strip()
-
         lines.append(f"[{idx}] {title}")
         if url:
             lines.append(f"URL : {url}")
         if snippet:
             lines.append(f"Extrait : {snippet}")
         lines.append("")
-
-    lines.append(
-        "(Instruction : Mentionne et cite expressément les URLs sources pertinentes dans ta réponse finale si tu utilises ces informations.)"
-    )
+    lines.append("(Instruction : Mentionne et cite expressément les URLs sources pertinentes dans ta réponse finale si tu utilises ces informations.)")
     return "\n".join(lines).strip()
-
 
 @tool
 def web_search(query: str, max_results: int = DEFAULT_MAX_RESULTS) -> str:
@@ -177,14 +166,13 @@ def web_search(query: str, max_results: int = DEFAULT_MAX_RESULTS) -> str:
                     - max_results - INT: Nombre maximal de résultats souhaités.
             RETURN: STR: Synthèse textuelle formatée des sources trouvées invitant à citer les URLs, ou message d'erreur informatif.
     """
+
     cleaned_query = (query or "").strip()
     if not cleaned_query:
         return "Requête de recherche vide : veuillez spécifier des termes de recherche."
-
     limit = max(1, min(max_results, 10))
     errors: list[str] = []
     results: list[dict[str, str]] = []
-
     try:
         results = search_duckduckgo(cleaned_query, max_results=limit, timeout=DEFAULT_TIMEOUT)
     except (httpx.TimeoutException, TimeoutError) as exc:
@@ -198,14 +186,11 @@ def web_search(query: str, max_results: int = DEFAULT_MAX_RESULTS) -> str:
             errors.append(f"Délai d'attente Wikipedia dépassé ({exc})")
         except Exception as exc:
             errors.append(f"Échec Wikipedia ({type(exc).__name__}: {exc})")
-
     if results:
         return format_search_results(cleaned_query, results)
-
     if errors:
         return (
             f"Erreur lors de la recherche Web pour \"{cleaned_query}\" : "
             f"services réseau inaccessibles ({'; '.join(errors)})."
         )
-
     return f"Aucun résultat trouvé sur le Web pour la recherche : \"{cleaned_query}\"."
