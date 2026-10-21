@@ -77,7 +77,8 @@ RETURN: instance validée du modèle Pydantic de type T"""
         last_raw_content = raw_content
 
         try:
-            return validate_structured_json(raw_content, response_format)
+            # return validate_structured_json(raw_content, response_format)
+            return response_format.model_validate_json(raw_content)
         except (ValidationError, ValueError, json.JSONDecodeError) as exc:
             last_error = exc
             if attempt < max_retries:

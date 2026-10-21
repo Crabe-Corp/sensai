@@ -147,7 +147,7 @@ def parse_arguments(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--rag",
         action="store_true",
-        default=False,
+        default=True,
         help="Activer l'enrichissement documentaire automatique RAG.",
     )
     
@@ -615,7 +615,7 @@ def run_session(
         if rag_enabled:
             try:
                 from src.RAG.retriever import retrieve_rag_context
-                rag_ctx = retrieve_rag_context(safe_input)
+                rag_ctx = retrieve_rag_context(safe_input, ollama_url=host, ollama_model=model)
                 if rag_ctx:
                     print("[RAG] Contexte historique injecté depuis les chroniques.")
                     augmented_input = (
