@@ -14,12 +14,16 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 from src.features.tools import ToolExecutor, default_registry  # noqa: E402
-from src.features.tools import builtin, web_search  # noqa: E402,F401  (enregistrent les outils)
+from src.features.tools import builtin, forms, web_search  # noqa: E402,F401  (enregistrent les outils)
+from src.features.tools.forms import normalize_form  # noqa: E402,F401
 
 # "Structured Output" n'est pas un outil appelé par le modèle : c'est un mode de réponse (JSON)
 STRUCTURED_OUTPUT_IDS = ("structured_output", "Structured Output")
 # Ancien identifiant du frontend : active tous les outils du registre
 ALL_TOOLS_ID = "mcp_runner"
+# Outil interactif : sur le web, l'appel n'est pas exécuté, il devient un formulaire affiché à l'utilisateur
+FORM_TOOL_NAME = "ask_user_form"
+FORM_BLOCK_LANG = "sensai-form"
 
 _executor = ToolExecutor(registry=default_registry)
 
@@ -32,6 +36,7 @@ _TOOL_UI = {
     "update_kingdom_database": ("Database", "Base de données"),
     "read_manuscript_file": ("FileText", "Manuscrits"),
     "write_manuscript_file": ("FileText", "Manuscrits"),
+    "ask_user_form": ("ListChecks", "Interaction"),
 }
 
 _STRUCTURED_OUTPUT_INFO = {
@@ -74,3 +79,9 @@ def get_ollama_tools(enabled_ids: List[str]) -> List[Dict[str, Any]]:
 
 def run_tool(tool_id: str, args: Dict[str, Any]) -> str:
     return _executor.execute(tool_id, args or {}).to_tool_message_content()
+
+
+def build_form_block(args: Dict[str, Any]) -> str:
+    """Bloc markdown décrivant le formulaire, rendu par le frontend (ValueError si invalide)."""
+    form = normalize_form((args or {}).get("title"), (args or {}).get("questions"))
+    return f"\n```{FORM_BLOCK_LANG}\n{json.dumps(form, ensure_ascii=False)}\n```\n"

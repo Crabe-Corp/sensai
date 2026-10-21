@@ -16,7 +16,7 @@ from src.features.tools.registry import (
     extract_tool_schema,
     tool,
 )
-from src.features.tools import web_search
+from src.features.tools import forms, web_search
 
 __all__ = [
     "MCPClient",
@@ -31,6 +31,7 @@ __all__ = [
     "ToolRegistry",
     "default_registry",
     "extract_tool_schema",
+    "forms",
     "tool",
     "web_search",
 ]

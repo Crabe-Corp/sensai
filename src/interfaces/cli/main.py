@@ -41,7 +41,7 @@ from src.features.memory import (
     SessionMetadata,
     UserProfile,
 )
-from src.features.tools import builtin, web_search
+from src.features.tools import builtin, forms, web_search
 from src.features.tools.mcp_client import MCPClient, MCPError
 from src.features.tools.registry import default_registry
 

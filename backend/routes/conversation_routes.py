@@ -15,7 +15,15 @@ from database import get_db
 from models import Conversation, ConversationMember, Message, User
 from realtime import manager
 from security import get_current_user
-from tools_registry import ALL_TOOLS_ID, get_ollama_tools, list_tools, run_tool
+from tools_registry import (
+    ALL_TOOLS_ID,
+    FORM_TOOL_NAME,
+    build_form_block,
+    get_ollama_tools,
+    list_tools,
+    run_tool,
+    selected_tool_names,
+)
 
 MAX_TOOL_ROUNDS = 4  # nombre maximal d'allers-retours modèle <-> outils par message
 
@@ -746,6 +754,12 @@ async def chat_stream(
             "Ne mets jamais de phrase entière en guise de clé."
         )
 
+    if FORM_TOOL_NAME in selected_tool_names(tools_to_use):
+        system_prompt += (
+            f"\nSi des informations indispensables manquent pour répondre, utilise l'outil {FORM_TOOL_NAME} "
+            "pour les demander à l'utilisateur au lieu de les deviner, puis attends ses réponses."
+        )
+
     history.append({"role": "system", "content": system_prompt})
 
     past_messages = db.query(Message).filter(Message.conversation_id == conv.id).order_by(Message.created_at).limit(15).all()
@@ -773,6 +787,7 @@ async def chat_stream(
         try:
             async with httpx.AsyncClient(timeout=120.0) as client:
                 try:
+                    form_sent = False
                     for round_idx in range(MAX_TOOL_ROUNDS + 1):
                         round_payload = {**ollama_payload, "messages": history}
                         if round_idx == MAX_TOOL_ROUNDS:
@@ -829,6 +844,19 @@ async def chat_stream(
                                 except Exception:
                                     t_args = {}
 
+                            if t_name == FORM_TOOL_NAME:
+                                # Formulaire : on l'envoie au frontend et on termine le tour,
+                                # les réponses reviendront comme prochain message de l'utilisateur
+                                try:
+                                    form_block = build_form_block(t_args)
+                                except ValueError as form_exc:
+                                    history.append({"role": "tool", "tool_name": t_name, "content": json.dumps({"status": "error", "message": str(form_exc)}, ensure_ascii=False)})
+                                    continue
+                                accumulated_text += form_block
+                                yield json.dumps({"type": "chunk", "content": form_block}) + "\n"
+                                form_sent = True
+                                break
+
                             # Les outils sont synchrones (réseau, SQL, fichiers) : hors de la boucle d'événements
                             tool_output = await asyncio.to_thread(run_tool, t_name, t_args)
                             info_text = f"\n\n*[Outil exécuté : {t_name}]*\n```json\n{tool_output}\n```\n\n"
@@ -836,6 +864,9 @@ async def chat_stream(
                             yield json.dumps({"type": "chunk", "content": info_text}) + "\n"
 
                             history.append({"role": "tool", "tool_name": t_name, "content": tool_output})
+
+                        if form_sent:
+                            break
                 except asyncio.CancelledError:
                     raise
                 except Exception as e:

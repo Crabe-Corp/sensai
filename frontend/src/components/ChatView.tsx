@@ -30,7 +30,8 @@ import {
   RotateCcw,
 } from 'lucide-react'
 import type { Conversation, Message, AttachedFile, ToolInfo } from '../types'
-import { parseUserMessage } from '../lib/messageParser'
+import { parseUserMessage, parseFormMessage, stripFormBlock } from '../lib/messageParser'
+import { FormCard } from './FormCard'
 
 const THINKING_PHRASES = [
   "Réfléchit...",
@@ -421,11 +422,14 @@ export function ChatView({
               </div>
             </div>
           ) : (
-            messages.map((msg) => {
+            messages.map((msg, msgIndex) => {
               const isUser = msg.role === 'user'
               const { cleanContent: displayContent, attachments: displayAttachments } = isUser
                 ? parseUserMessage(msg.content, msg.attachments)
                 : { cleanContent: msg.content, attachments: msg.attachments || [] }
+              const { text: messageText, form: messageForm } = isUser
+                ? { text: displayContent, form: null }
+                : parseFormMessage(displayContent)
 
               return (
                 <div
@@ -476,15 +480,22 @@ export function ChatView({
                         </div>
                       )}
 
-                      {displayContent ? (
-                        !isUser && isJsonString(displayContent) ? (
+                      {messageText ? (
+                        !isUser && isJsonString(messageText) ? (
                           <pre className="font-mono text-xs overflow-x-auto text-indigo-300 p-1">
-                            {formatJson(displayContent)}
+                            {formatJson(messageText)}
                           </pre>
                         ) : (
-                          displayContent
+                          messageText
                         )
                       ) : null}
+                      {messageForm && (
+                        <FormCard
+                          form={messageForm}
+                          disabled={isStreaming || msgIndex < messages.length - 1}
+                          onSubmit={(text) => onSendMessage(text)}
+                        />
+                      )}
                     </div>
 
                     {/* Badge de coût en tokens ou statut interrompu */}
@@ -564,7 +575,10 @@ export function ChatView({
                 <div className="p-3.5 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap break-words bg-neutral-900 border border-indigo-900/40 text-neutral-100 rounded-bl-xs shadow-md">
                   {streamingText ? (
                     <>
-                      {streamingText}
+                      {stripFormBlock(streamingText).text}
+                      {stripFormBlock(streamingText).formPending && (
+                        <span className="block text-xs text-neutral-400 italic">Préparation du formulaire…</span>
+                      )}
                       <span className="inline-block w-1.5 h-4 ml-0.5 bg-indigo-400 animate-pulse align-middle" />
                     </>
                   ) : (
