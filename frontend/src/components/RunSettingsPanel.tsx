@@ -2,11 +2,11 @@ import { useState } from 'react'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
+import type { ToolInfo } from '../types'
 import {
   X,
   Cpu,
   Sparkles,
-  Plug,
   Coins,
   ChevronDown,
   Wrench,
@@ -18,6 +18,7 @@ interface RunSettingsPanelProps {
   model: string
   modelsList: string[]
   onModelChange: (model: string) => void
+  toolsList: ToolInfo[]
   activeTools: string[]
   onToggleTool: (toolId: string) => void
   systemInstruction: string
@@ -31,6 +32,7 @@ export function RunSettingsPanel({
   model,
   modelsList,
   onModelChange,
+  toolsList,
   activeTools,
   onToggleTool,
   systemInstruction,
@@ -155,27 +157,32 @@ export function RunSettingsPanel({
                 />
               </button>
 
-              {/* Tool 2 : MCP */}
-              <button
-                type="button"
-                onClick={() => onToggleTool('mcp_runner')}
-                className="w-full text-left p-3 rounded-xl border border-neutral-800 bg-neutral-950/40 hover:bg-neutral-900/60 transition-colors flex items-start justify-between gap-3 cursor-pointer"
-              >
-                <div className="space-y-1 min-w-0">
-                  <div className="text-xs font-medium text-neutral-200 flex items-center gap-1.5">
-                    <Plug className="w-3.5 h-3.5 text-sky-400 shrink-0" />
-                    <span>Intégrations MCP</span>
-                  </div>
-                  <div className="text-[10px] text-neutral-500">
-                    Source: <span className="text-neutral-400">shadcn / Composio</span>
-                  </div>
-                </div>
-                <Switch
-                  checked={activeTools.includes('mcp_runner')}
-                  tabIndex={-1}
-                  className="shrink-0 pointer-events-none"
-                />
-              </button>
+              {/* Outils du registre partagé avec le CLI (web_search, base des royaumes, RAG...) */}
+              {toolsList
+                .filter((tool) => tool.id !== 'structured_output')
+                .map((tool) => (
+                  <button
+                    type="button"
+                    key={tool.id}
+                    onClick={() => onToggleTool(tool.id)}
+                    className="w-full text-left p-3 rounded-xl border border-neutral-800 bg-neutral-950/40 hover:bg-neutral-900/60 transition-colors flex items-start justify-between gap-3 cursor-pointer"
+                  >
+                    <div className="space-y-1 min-w-0">
+                      <div className="text-xs font-medium text-neutral-200 flex items-center gap-1.5">
+                        <Wrench className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                        <span className="truncate">{tool.name}</span>
+                      </div>
+                      <div className="text-[10px] text-neutral-500">
+                        Source: <span className="text-neutral-400">{tool.category}</span>
+                      </div>
+                    </div>
+                    <Switch
+                      checked={activeTools.includes(tool.id)}
+                      tabIndex={-1}
+                      className="shrink-0 pointer-events-none"
+                    />
+                  </button>
+                ))}
             </div>
           )}
         </div>

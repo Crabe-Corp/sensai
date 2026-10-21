@@ -8,7 +8,19 @@ import { ModelsModal } from './components/ModelsModal'
 import { WorkInviteModal } from './components/WorkInviteModal'
 import { DeleteConversationModal } from './components/DeleteConversationModal'
 import { api, authStorage, UNAUTHORIZED_EVENT } from './lib/api'
-import type { Conversation, Message, User, AttachedFile } from './types'
+import type { Conversation, Message, User, AttachedFile, ToolInfo } from './types'
+
+// Ne garde que les outils connus du backend ; l'ancien 'mcp_runner' équivalait à « tous les outils »
+function normalizeTools(ids: string[], available: ToolInfo[]): string[] {
+  const known = new Set(available.map((t) => t.id))
+  const result = new Set<string>()
+  for (const id of ids) {
+    if (id === 'Structured Output') result.add('structured_output')
+    else if (id === 'mcp_runner') available.forEach((t) => t.id !== 'structured_output' && result.add(t.id))
+    else if (known.has(id)) result.add(id)
+  }
+  return [...result]
+}
 
 export function App() {
   const [user, setUser] = useState<User | null>(null)
@@ -34,6 +46,7 @@ export function App() {
   const [currentModel, setCurrentModel] = useState('qwen3:0.6b')
   const [modelsList, setModelsList] = useState<string[]>(['qwen3:0.6b'])
   const [activeTools, setActiveTools] = useState<string[]>(['structured_output'])
+  const [toolsList, setToolsList] = useState<ToolInfo[]>([])
   const [systemInstruction, setSystemInstruction] = useState('')
 
   // WebSocket pour la collaboration temps réel (Mode Work)
@@ -75,11 +88,13 @@ export function App() {
   // Chargement des conversations et configuration initiale
   const loadInitialData = async () => {
     try {
-      const [convs, cfg, modelsData] = await Promise.all([
+      const [convs, cfg, modelsData, toolsData] = await Promise.all([
         api.listConversations(),
         api.getModelConfig().catch(() => ({ model_name: 'qwen3:0.6b', temperature: 0.7, active_tools: ['structured_output'] })),
         api.getModels().catch(() => ({ models: ['qwen3:0.6b'], default: 'qwen3:0.6b' })),
+        api.getTools().catch(() => [] as ToolInfo[]),
       ])
+      setToolsList(toolsData)
       setConversations(convs)
       const availableModels: string[] = modelsData.models || ['qwen3:0.6b']
       // Le modèle sauvegardé peut ne plus être installé : on retombe sur un modèle disponible
@@ -88,9 +103,7 @@ export function App() {
         : modelsData.default || availableModels[0] || 'qwen3:0.6b'
       setModelsList(availableModels)
       setCurrentModel(initialModel)
-      const cleanTools = (cfg.active_tools || []).filter(
-        (t: string) => t === 'structured_output' || t === 'Structured Output' || t === 'mcp_runner'
-      )
+      const cleanTools = normalizeTools(cfg.active_tools || [], toolsData)
       setActiveTools(cleanTools.length > 0 ? cleanTools : ['structured_output'])
 
       // Vérifier si une URL spécifique contient un ID de conversation (?c=...)
@@ -99,7 +112,7 @@ export function App() {
       if (targetId) {
         const found = convs.find((c) => c.id === targetId)
         if (found) {
-          await selectConversation(targetId)
+          await selectConversation(targetId, toolsData)
           return
         }
       }
@@ -163,15 +176,12 @@ export function App() {
   }, [activeConversation?.id, activeConversation?.mode])
 
   // Sélection d'une conversation
-  const selectConversation = async (id: string) => {
+  const selectConversation = async (id: string, available: ToolInfo[] = toolsList) => {
     try {
       const fullConv = await api.getConversation(id)
       setActiveConversation(fullConv)
       setMessages(fullConv.messages || [])
-      const cleanConvTools = (fullConv.tools_enabled || []).filter(
-        (t: string) => t === 'structured_output' || t === 'Structured Output' || t === 'mcp_runner'
-      )
-      setActiveTools(cleanConvTools)
+      setActiveTools(normalizeTools(fullConv.tools_enabled || [], available))
       setCurrentModel(fullConv.model_name || 'qwen3:0.6b')
       window.history.replaceState(null, '', `?c=${id}`)
     } catch {
@@ -523,7 +533,7 @@ export function App() {
         activeId={activeConversation?.id || null}
         activeConversation={activeConversation}
         messages={messages}
-        onSelectConversation={selectConversation}
+        onSelectConversation={(id) => selectConversation(id)}
         onNewConversation={(mode) => handleNewConversation(mode)}
         onDeleteConversation={handleDeleteConversation}
         onOpenSettings={() => setSettingsOpen(true)}
@@ -539,6 +549,7 @@ export function App() {
           messages={messages}
           isStreaming={isStreaming}
           streamingText={streamingText}
+          toolsList={toolsList}
           activeTools={activeTools}
           onToggleTool={handleToggleTool}
           onSendMessage={handleSendMessage}
@@ -557,6 +568,7 @@ export function App() {
           model={currentModel}
           modelsList={modelsList}
           onModelChange={(m) => setCurrentModel(m)}
+          toolsList={toolsList}
           activeTools={activeTools}
           onToggleTool={handleToggleTool}
           systemInstruction={systemInstruction}

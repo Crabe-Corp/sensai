@@ -24,13 +24,12 @@ import {
   PanelRightClose,
   Paperclip,
   AlertCircle,
-  Plug,
   Square,
   Pencil,
   GitBranch,
   RotateCcw,
 } from 'lucide-react'
-import type { Conversation, Message, AttachedFile } from '../types'
+import type { Conversation, Message, AttachedFile, ToolInfo } from '../types'
 import { parseUserMessage } from '../lib/messageParser'
 
 const THINKING_PHRASES = [
@@ -53,6 +52,7 @@ interface ChatViewProps {
   messages: Message[]
   isStreaming: boolean
   streamingText: string
+  toolsList: ToolInfo[]
   activeTools: string[]
   onToggleTool: (toolId: string) => void
   onSendMessage: (text: string, files?: AttachedFile[]) => void
@@ -64,24 +64,14 @@ interface ChatViewProps {
   isRunSettingsOpen: boolean
 }
 
-const TOOL_DEFINITIONS = [
-  {
-    id: 'structured_output',
-    name: 'Structured Output',
-    shortName: 'Structured Output',
-    source: 'Format JSON',
-    description: 'Permet de générer des réponses au format JSON structuré.',
-    icon: <Sparkles className="w-3.5 h-3.5 text-indigo-400" />,
-  },
-  {
-    id: 'mcp_runner',
-    name: 'Intégrations MCP',
-    shortName: 'MCP',
-    source: 'shadcn / Composio',
-    description: 'Connecteurs et outils externes Model Context Protocol.',
-    icon: <Plug className="w-3.5 h-3.5 text-sky-400" />,
-  },
-]
+const STRUCTURED_OUTPUT_DEFINITION = {
+  id: 'structured_output',
+  name: 'Structured Output',
+  shortName: 'Structured Output',
+  source: 'Format JSON',
+  description: 'Permet de générer des réponses au format JSON structuré.',
+  icon: <Sparkles className="w-3.5 h-3.5 text-indigo-400" />,
+}
 
 const MAX_FILE_SIZE = 25 * 1024 * 1024 // 25 Mo
 const MAX_FILES_COUNT = 5 // 5 fichiers max
@@ -119,6 +109,7 @@ export function ChatView({
   messages,
   isStreaming,
   streamingText,
+  toolsList,
   activeTools,
   onToggleTool,
   onSendMessage,
@@ -129,6 +120,20 @@ export function ChatView({
   onToggleRunSettings,
   isRunSettingsOpen,
 }: ChatViewProps) {
+  // Structured Output (mode de réponse) + tous les outils du registre partagé avec le CLI
+  const TOOL_DEFINITIONS = [
+    STRUCTURED_OUTPUT_DEFINITION,
+    ...toolsList
+      .filter((t) => t.id !== 'structured_output')
+      .map((t) => ({
+        id: t.id,
+        name: t.name,
+        shortName: t.name,
+        source: t.category,
+        description: t.description,
+        icon: <Wrench className="w-3.5 h-3.5 text-sky-400" />,
+      })),
+  ]
   const [inputText, setInputText] = useState('')
   const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([])
   const [fileError, setFileError] = useState<string | null>(null)

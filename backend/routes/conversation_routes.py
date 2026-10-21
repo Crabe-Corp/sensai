@@ -15,7 +15,9 @@ from database import get_db
 from models import Conversation, ConversationMember, Message, User
 from realtime import manager
 from security import get_current_user
-from tools_registry import get_ollama_tools, list_tools, run_tool
+from tools_registry import ALL_TOOLS_ID, get_ollama_tools, list_tools, run_tool
+
+MAX_TOOL_ROUNDS = 4  # nombre maximal d'allers-retours modèle <-> outils par message
 
 router = APIRouter(prefix="/api/conversations", tags=["conversations"])
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://ia:11434")
@@ -87,7 +89,7 @@ def list_conversations(user: User = Depends(get_current_user), db: Session = Dep
     for c in sorted_convs:
         total_tokens = sum(m.total_tokens for m in c.messages)
         tools = json.loads(c.tools_enabled) if c.tools_enabled else []
-        valid_tool_ids = [t["id"] for t in list_tools()] + ["structured_output", "Structured Output", "mcp_runner"]
+        valid_tool_ids = [t["id"] for t in list_tools()] + ["Structured Output", ALL_TOOLS_ID]
         tools = [t for t in tools if t in valid_tool_ids]
         result.append({
             "id": c.id,
@@ -755,7 +757,7 @@ async def chat_stream(
         prompt_tokens_eval = user_tokens
         completion_tokens_eval = 0
 
-        use_mcp = "mcp_runner" in tools_to_use
+        ollama_tools = get_ollama_tools(tools_to_use)
         yield json.dumps({"type": "start", "user_message_id": user_msg_id}) + "\n"
 
         ollama_payload = {
@@ -765,46 +767,55 @@ async def chat_stream(
         }
         if is_structured:
             ollama_payload["format"] = "json"
-        if use_mcp:
-            ollama_payload["tools"] = get_ollama_tools()
+        if ollama_tools:
+            ollama_payload["tools"] = ollama_tools
 
         try:
             async with httpx.AsyncClient(timeout=120.0) as client:
                 try:
-                    tool_calls_to_process = []
-                    async with client.stream(
-                        "POST",
-                        f"{OLLAMA_BASE_URL}/api/chat",
-                        json=ollama_payload
-                    ) as response:
-                        async for raw_line in response.aiter_lines():
-                            if not raw_line:
-                                continue
-                            try:
-                                data = json.loads(raw_line)
-                                if data.get("error"):
-                                    err_msg = f"\n[Erreur du modèle {model_to_use} : {data['error']}]"
-                                    accumulated_text += err_msg
-                                    yield json.dumps({"type": "chunk", "content": err_msg}) + "\n"
+                    for round_idx in range(MAX_TOOL_ROUNDS + 1):
+                        round_payload = {**ollama_payload, "messages": history}
+                        if round_idx == MAX_TOOL_ROUNDS:
+                            round_payload.pop("tools", None)
+                        tool_calls_to_process = []
+                        round_text = ""
+                        async with client.stream(
+                            "POST",
+                            f"{OLLAMA_BASE_URL}/api/chat",
+                            json=round_payload
+                        ) as response:
+                            async for raw_line in response.aiter_lines():
+                                if not raw_line:
                                     continue
-                                msg_chunk = data.get("message", {}).get("content", "")
-                                if msg_chunk:
-                                    accumulated_text += msg_chunk
-                                    yield json.dumps({"type": "chunk", "content": msg_chunk}) + "\n"
+                                try:
+                                    data = json.loads(raw_line)
+                                    if data.get("error"):
+                                        err_msg = f"\n[Erreur du modèle {model_to_use} : {data['error']}]"
+                                        accumulated_text += err_msg
+                                        yield json.dumps({"type": "chunk", "content": err_msg}) + "\n"
+                                        continue
+                                    msg_chunk = data.get("message", {}).get("content", "")
+                                    if msg_chunk:
+                                        round_text += msg_chunk
+                                        accumulated_text += msg_chunk
+                                        yield json.dumps({"type": "chunk", "content": msg_chunk}) + "\n"
 
-                                tc_list = data.get("message", {}).get("tool_calls")
-                                if tc_list:
-                                    tool_calls_to_process.extend(tc_list)
+                                    tc_list = data.get("message", {}).get("tool_calls")
+                                    if tc_list:
+                                        tool_calls_to_process.extend(tc_list)
 
-                                if data.get("done"):
-                                    prompt_tokens_eval = data.get("prompt_eval_count") or user_tokens
-                                    completion_tokens_eval = data.get("eval_count") or estimate_tokens(accumulated_text)
-                            except Exception:
-                                continue
-                    if tool_calls_to_process:
+                                    if data.get("done"):
+                                        prompt_tokens_eval = data.get("prompt_eval_count") or user_tokens
+                                        completion_tokens_eval = data.get("eval_count") or estimate_tokens(accumulated_text)
+                                except Exception:
+                                    continue
+
+                        if not tool_calls_to_process:
+                            break
+
                         history.append({
                             "role": "assistant",
-                            "content": accumulated_text,
+                            "content": round_text,
                             "tool_calls": tool_calls_to_process,
                         })
 
@@ -818,37 +829,13 @@ async def chat_stream(
                                 except Exception:
                                     t_args = {}
 
-                            tool_output = run_tool(t_name, t_args)
+                            # Les outils sont synchrones (réseau, SQL, fichiers) : hors de la boucle d'événements
+                            tool_output = await asyncio.to_thread(run_tool, t_name, t_args)
                             info_text = f"\n\n*[Outil exécuté : {t_name}]*\n```json\n{tool_output}\n```\n\n"
                             accumulated_text += info_text
                             yield json.dumps({"type": "chunk", "content": info_text}) + "\n"
 
-                            history.append({"role": "tool", "content": tool_output})
-                        second_payload = {
-                            "model": model_to_use,
-                            "messages": history,
-                            "stream": True,
-                        }
-                        async with client.stream(
-                            "POST",
-                            f"{OLLAMA_BASE_URL}/api/chat",
-                            json=second_payload,
-                        ) as final_resp:
-                            async for raw_line in final_resp.aiter_lines():
-                                if not raw_line:
-                                    continue
-                                try:
-                                    data = json.loads(raw_line)
-                                    msg_chunk = data.get("message", {}).get("content", "")
-                                    if msg_chunk:
-                                        accumulated_text += msg_chunk
-                                        yield json.dumps({"type": "chunk", "content": msg_chunk}) + "\n"
-
-                                    if data.get("done"):
-                                        prompt_tokens_eval = data.get("prompt_eval_count") or user_tokens
-                                        completion_tokens_eval = data.get("eval_count") or estimate_tokens(accumulated_text)
-                                except Exception:
-                                    continue
+                            history.append({"role": "tool", "tool_name": t_name, "content": tool_output})
                 except asyncio.CancelledError:
                     raise
                 except Exception as e:
