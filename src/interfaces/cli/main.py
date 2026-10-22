@@ -16,6 +16,7 @@ if __package__ is None or __package__ == "":
 from src.core.db.database import init_database
 from src.core import memory_management as mem, singleton_token
 from src.core.sec.security import mask_pii, validate_input_with_llm
+from src.core import sementic_cache
 from src.core.engine import (
     ConversationEngine,
     EngineEvent,
@@ -44,6 +45,7 @@ from src.features.memory import (
 from src.features.tools import builtin, web_search
 from src.features.tools.mcp_client import MCPClient, MCPError
 from src.features.tools.registry import default_registry
+import requests
 
 DEFAULT_CONFIG_PATH = Path("config.json")
 DEFAULT_HOST = "http://localhost:11434"
@@ -85,6 +87,7 @@ def resolve_configuration(cli_args: argparse.Namespace) -> tuple[str, str]:
         or file_cfg.get("default_model")
         or DEFAULT_MODEL
     )
+
     return host, model
 
 
@@ -143,22 +146,18 @@ def parse_arguments(argv: list[str] | None = None) -> argparse.Namespace:
         help="Nom du profil utilisateur à charger (ex: default, historien).",
     )
     parser.add_argument(
-        "--max-tokens",
-        type=int,
-        default=2000,
-        help="Plafond maximal de tokens avant déclenchement de la compression sémantique.",
-    )
-    parser.add_argument(
         "--rag",
         action="store_true",
-        default=False,
+        default=True,
         help="Activer l'enrichissement documentaire automatique RAG.",
     )
+    
     return parser.parse_args(argv)
 
 
 def print_banner(
     model: str,
+    max_token : int,
     host: str,
     tools_enabled: bool = False,
     profile_name: str | None = None,
@@ -176,6 +175,7 @@ def print_banner(
     print("=" * 60)
     print(" SENSAI CLI — Chatbot Modulaire")
     print(f" Modèle actif : {model}")
+    print(f" Context      : {max_token}")
     print(f" Hôte Ollama  : {host}")
     print(f" Outils MCP   : {'Activés' if tools_enabled else 'Désactivés'}")
     if rag_enabled:
@@ -185,6 +185,7 @@ def print_banner(
     if session_id:
         print(f" Session ID   : {session_id}")
     print(" Tapez '/help' pour voir les commandes ou '/exit' pour quitter.")
+    print(" NB : Les textes historiques utilisés par le modèle provenant de traductions anciennes, certaines nuances peuvent être perdues. N'hésitez pas à vérifier les informations qui vous sembleraient incohérentes.")
     print("=" * 60)
 
 
@@ -226,7 +227,8 @@ def run_session(
     session_manager: SessionManager | None = None,
     profile_manager: ProfileManager | None = None,
     max_tokens: int = 2000,
-    rag_enabled: bool = False,
+    rag_enabled: bool = True,
+    cache_build: bool = False,
 ) -> None:
     """Gère la boucle interactive du chatbot CLI, l'historique et les commandes slash.
             PARAMS: - client - OLLAMACLIENT: instance active du client HTTP Ollama
@@ -283,6 +285,7 @@ def run_session(
 
     print_banner(
         model,
+        max_tokens,
         host,
         tools_enabled=tools_enabled,
         profile_name=current_profile.username if current_profile else None,
@@ -293,7 +296,9 @@ def run_session(
     engine = ConversationEngine(client=client, registry=default_registry)
 
     while True:
-        if singleton_token.budget_tokens >= max_tokens:
+        margin = (max_tokens * 15) / 100 # Retirer 15% du context legth afin de laisser du context au model pour la compression de l'historique
+        token_with_margin = max_tokens - margin
+        if singleton_token.budget_tokens >= token_with_margin:
             history = mem.enforce_token_budget(model, client, history, max_history_tokens=max_tokens)
             current_session.messages = list(history)
 
@@ -315,7 +320,13 @@ def run_session(
             print(f"[Info] Budget tokens : {singleton_token.budget_tokens} / {max_tokens} consommés.")
             continue
 
-        if user_input in ("/rag", "/rag on", "/rag off") or user_input.startswith("/rag "):
+        if user_input == "/clear-cache":
+            from src.core import sementic_cache
+            sementic_cache.clean_cache()
+            print("[Info] Cache vidé avec succès !")
+            continue
+
+        if user_input in ("/rag on", "/rag off"):
             parts = user_input.split(maxsplit=1)
             arg = parts[1].strip().lower() if len(parts) > 1 else None
             if arg in ("on", "true", "1", "enable"):
@@ -612,20 +623,42 @@ def run_session(
             continue
 
         augmented_input = safe_input
+
+        if cache_build:
+            try:
+                from src.core import sementic_cache
+                cache_result = sementic_cache.get_info_cache(prompt=safe_input)
+                if cache_result != None:
+                    print("[SEMENTIC CACHE] question already asked find")
+                    sys.stdout.write("\nAssistant > ")
+                    print(cache_result)
+                    history.append(ChatMessage(role="user", content=safe_input))
+                    history.append(ChatMessage(role="assistant", content=cache_result))
+                    continue
+            except Exception:
+                pass
+
         if rag_enabled:
             try:
                 from src.RAG.retriever import retrieve_rag_context
-                rag_ctx = retrieve_rag_context(safe_input)
+                rag_ctx = retrieve_rag_context(safe_input, ollama_url=host, ollama_model=model)
                 if rag_ctx:
                     print("[RAG] Contexte historique injecté depuis les chroniques.")
                     augmented_input = (
-                        f"Tu es un conseiller stratégique des 7 Royaumes Combattants. "
-                        f"Réponds en t'appuyant sur ce contexte historique :\n\n"
-                        f"{rag_ctx}\n\n"
-                        f"Question : {safe_input}"
+                        f"Tu es un conseiller stratégique expert des 7 Royaumes Combattants.\n\n"
+                        f"DOCUMENTS HISTORIQUES :\n"
+                        f"======================\n"
+                        f"{rag_ctx}\n"
+                        f"======================\n\n"
+                        f"INSTRUCTIONS STRICTES :\n"
+                        f"1. BASE DE RÉPONSE : Tu DOIS répondre EXCLUSIVEMENT en utilisant les faits présents dans les documents ci-dessus. Si l'information n'y figure pas, réponds 'Mes chroniques ne mentionnent pas cette information.'\n"
+                        f"2. CORRECTION DES ARMÉES : Les textes (Shiji et Zhan Guo Ce) sont de vieilles traductions. S'ils mentionnent des tailles d'armées chinoises en dizaines de milliers (ex: 20 000 ou 60 000), il s'agit d'une erreur de traduction du caractère 'Wan' (10 000). Multiplie toujours ces effectifs militaires par 10 (ex: 200 000) pour rétablir la vérité historique.\n"
+                        f"3. ANTI-FUSION : Les documents peuvent relater les histoires de plusieurs généraux différents (ex: Li Xin, Han Xin, Wang Jian). Ne mélange PAS leurs histoires. Ne réponds qu'avec les faits explicitement associés au nom demandé par le Seigneur.\n\n"
+                        f"Question du Seigneur : {safe_input}"
                     )
             except Exception:
                 pass
+
 
         user_msg = ChatMessage(role="user", content=augmented_input)
         history.append(user_msg)
@@ -697,6 +730,10 @@ def run_session(
                 history.append(ChatMessage(role="assistant", content=full_reply))
                 current_session.messages = list(history)
                 current_session.metadata.model = model
+                try:
+                    sementic_cache.add_to_cache(prompt=safe_input, llm_response=full_reply)
+                except Exception as e:
+                    print(f"[Erreur mise en cache] {e}")
                 session_manager.save_session(current_session)
 
         except OllamaConnectionError as exc:
@@ -729,13 +766,42 @@ def main(argv: list[str] | None = None) -> int:
             PARAMS: - argv - LIST[STR] | NONE: arguments de ligne de commande optionnels
             RETURN: code de retour entier (0 en cas de succès, 1 en cas d'erreur)"""
 
-    args = parse_arguments(argv)
+    args = parse_arguments(argv) # args correspond a un tableau de configuration de l'app (ex : Namespace(model=None, host=None, config='config.json', tools=False, mcp_server=None, session=None, profile=None, max_tokens=2000, rag=False))
     host, model = resolve_configuration(args)
+
+    try:
+        response = requests.post(host + "/api/show", json={"model": model})
+    
+        if response.status_code == 200:
+            show_data = response.json()
+            model_details = show_data.get("model_info", {})
+
+            for key, value in model_details.items():
+                if "context_length" in key:
+                    context_length = value
+                    break
+
+            print(f"[Info] Context length détecté pour {model} : {context_length}")
+        else:
+            print(f"[Avertissement] Modèle {model} introuvable ou erreur. Code: {response.status_code}")
+            
+    except Exception as e:
+        print(f"[Erreur dans la récupération du context length] {e}")
+        context_length = 2000
 
     try:
         init_database()
     except Exception as e:
         print(f"[Erreur dans l'initialisation de la BDD] {e}")
+        return 1
+
+    cache_build = False
+    try:
+        sementic_cache.create_cache()
+        cache_build = True
+    except Exception as e:
+        print("[Erreur dans la creation du cache] {e}")
+        cache_build = False
         return 1
 
     file_cfg = load_config_file(Path(args.config)) if args.config else {}
@@ -746,6 +812,7 @@ def main(argv: list[str] | None = None) -> int:
         or bool(file_cfg.get("tools"))
         or bool(file_cfg.get("tools_enabled"))
     )
+    
     profile_name = args.profile or "default"
     session_id = args.session
     timeout = float(os.getenv("SENSAI_TIMEOUT") or file_cfg.get("request_timeout") or 180.0)
@@ -760,11 +827,11 @@ def main(argv: list[str] | None = None) -> int:
             mcp_server_cmd=mcp_cmd,
             session_id=session_id,
             profile_name=profile_name,
-            max_tokens=args.max_tokens,
+            max_tokens = context_length,
             rag_enabled=args.rag,
+            cache_build=cache_build
         )
     return 0
-
 
 if __name__ == "__main__":
     sys.exit(main())

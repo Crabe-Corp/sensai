@@ -3,6 +3,7 @@ from collections.abc import Iterator
 from typing import Any, List, Literal, TypeVar, Union
 import httpx
 from pydantic import BaseModel
+from src.core import sementic_cache
 
 from src.features.structured_output import (
     StructuredOutputError,
@@ -158,10 +159,12 @@ class OllamaClient:
                     raise OllamaAPIError(
                         f"Erreur HTTP {response.status_code} d'Ollama: {response.text}"
                     )
+
                 for line in response.iter_lines():
                     if not line.strip():
                         continue
                     data = json.loads(line)
+
                     if data.get("done") is True:
                         self._track_token_usage(data)
                     if "error" in data:
