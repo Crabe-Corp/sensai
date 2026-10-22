@@ -12,34 +12,7 @@ from src.features.tools.artifact_tool import (ARTIFACT_SYSTEM_INSTRUCTION, get_a
 from src.features.tools.mcp_client import MCPClient
 from src.features.tools.registry import default_registry
 
-COMMANDS_LIST: list[str] = [
-    "/help",
-    "/clear",
-    "/history",
-    "/budget",
-    "/exit",
-    "/quit",
-    "/rag",
-    "/mcp",
-    "/session",
-    "/sessions",
-    "/profile",
-    "/persona",
-    "/personas",
-    "/prompt",
-    "/prompts",
-    "/models",
-    "/model",
-    "/tools",
-    "/structured-output",
-    "/structured_output",
-    "/artifact",
-    "/artifacts",
-    "/kingdom",
-    "/kingdoms",
-    "/figure",
-    "/figures",
-]
+COMMANDS_LIST: list[str] = ["/help", "/clear", "/history", "/budget", "/exit", "/quit", "/rag", "/mcp", "/session", "/sessions", "/profile", "/persona","/personas","/prompt","/prompts","/models","/model","/tools","/structured-output","/structured_output","/artifact","/artifacts", "/kingdom", "/kingdoms", "/figure", "/figures",]
 
 
 class Commands:
@@ -689,111 +662,6 @@ class Commands:
                 PARAMS: - user_prompt - STR: arguments optionnels
                 RETURN: None"""
         print("Fermeture de SENSAI.")
-
-
-def print_help(user_prompt: str = "") -> None:
-    """Affiche dans la console l'ensemble des commandes spéciales disponibles dans la session.
-            PARAMS: - user_prompt - STR: arguments optionnels de la commande
-            RETURN: None"""
-    Commands().print_help(user_prompt)
-
-
-def clear_screen(user_prompt: str = "") -> None:
-    """Réinitialise l'historique de la session en mémoire et sur le disque.
-            PARAMS: - user_prompt - STR: arguments optionnels de la commande
-            RETURN: None"""
-    Commands().clear_screen(user_prompt)
-
-
-def switch_rag(user_prompt: str = "") -> None:
-    """Active ou désactive l'enrichissement documentaire contextuel RAG.
-            PARAMS: - user_prompt - STR: argument d'état optionnel ('on' ou 'off')
-            RETURN: None"""
-    Commands().switch_rag(user_prompt)
-
-
-def switch_mcp(user_prompt: str = "") -> None:
-    """Gère le statut ou la connexion au serveur MCP externe.
-            PARAMS: - user_prompt - STR: sous-commande MCP ('status', 'connect <cmd>', 'disconnect')
-            RETURN: None"""
-    Commands().switch_mcp(user_prompt)
-
-
-def manage_session(user_prompt: str = "") -> None:
-    """Point d'entrée pour la gestion, la persistance et le rechargement de sessions.
-            PARAMS: - user_prompt - STR: sous-commande session
-            RETURN: None"""
-    Commands().manage_session(user_prompt)
-
-
-def manage_profile(user_prompt: str = "") -> None:
-    """Point d'entrée pour l'affichage et la sélection de profils utilisateurs.
-            PARAMS: - user_prompt - STR: sous-commande profil
-            RETURN: None"""
-    Commands().manage_profile(user_prompt)
-
-
-def manage_persona(user_prompt: str = "") -> None:
-    """Point d'entrée pour le listage et l'activation de personas dynamiques.
-            PARAMS: - user_prompt - STR: sous-commande persona
-            RETURN: None"""
-    Commands().manage_persona(user_prompt)
-
-
-def manage_prompt(user_prompt: str = "") -> None:
-    """Point d'entrée pour l'historique, la comparaison et la restauration de prompts.
-            PARAMS: - user_prompt - STR: sous-commande prompt
-            RETURN: None"""
-    Commands().manage_prompt(user_prompt)
-
-
-def print_models(user_prompt: str = "") -> None:
-    """Point d'entrée pour lister les modèles Ollama accessibles.
-            PARAMS: - user_prompt - STR: arguments optionnels
-            RETURN: None"""
-    Commands().print_models(user_prompt)
-
-
-def switch_model(user_prompt: str = "") -> None:
-    """Point d'entrée pour modifier le modèle Ollama actif en cours d'exécution.
-            PARAMS: - user_prompt - STR: nom du nouveau modèle
-            RETURN: None"""
-    Commands().switch_model(user_prompt)
-
-
-def print_tools(user_prompt: str = "") -> None:
-    """Point d'entrée pour afficher ou basculer l'état des outils MCP.
-            PARAMS: - user_prompt - STR: option d'activation ('on' ou 'off')
-            RETURN: None"""
-    Commands().print_tools(user_prompt)
-
-
-def enable_structured_output(user_prompt: str = "") -> None:
-    """Point d'entrée pour activer le mode structuré ou soumettre une requête JSON.
-            PARAMS: - user_prompt - STR: requête utilisateur ou statut
-            RETURN: None"""
-    Commands().enable_structured_output(user_prompt)
-
-
-def manage_artifact(user_prompt: str = "") -> None:
-    """Point d'entrée pour consulter, effacer ou exporter l'artefact de session.
-            PARAMS: - user_prompt - STR: sous-commande de livrable
-            RETURN: None"""
-    Commands().manage_artifact(user_prompt)
-
-
-def manage_kingdom(user_prompt: str = "") -> None:
-    """Point d'entrée pour générer les données structurées d'un royaume.
-            PARAMS: - user_prompt - STR: nom du royaume
-            RETURN: None"""
-    Commands().manage_kingdom(user_prompt)
-
-
-def manage_figure(user_prompt: str = "") -> None:
-    """Point d'entrée pour générer les données structurées d'un personnage historique.
-            PARAMS: - user_prompt - STR: nom du personnage
-            RETURN: None"""
-    Commands().manage_figure(user_prompt)
 
 
 Command = Commands

@@ -65,7 +65,6 @@ def chat_structured_flow(client_chat_fn: Any, model: str, messages: list[Any], r
         raw_content = response_data.get("message", {}).get("content", "")
         last_raw_content = raw_content
         try:
-            # return validate_structured_json(raw_content, response_format)
             return response_format.model_validate_json(raw_content)
         except (ValidationError, ValueError, json.JSONDecodeError) as exc:
             last_error = exc

@@ -23,7 +23,7 @@ from src.features.tools.artifact_tool import (ARTIFACT_SYSTEM_INSTRUCTION, get_a
 from src.features.tools.mcp_client import MCPClient, MCPError
 from src.features.tools.registry import default_registry
 import requests
-from src.interfaces.cli.commands.commands import Command, Commands, command, print_help
+from src.interfaces.cli.commands.commands import Command, Commands, command
 
 DEFAULT_CONFIG_PATH = Path("config.json")
 DEFAULT_HOST = "http://localhost:11434"
@@ -541,7 +541,6 @@ __all__ = [
     "main",
     "parse_arguments",
     "print_banner",
-    "print_help",
     "resolve_configuration",
     "run_session",
 ]
