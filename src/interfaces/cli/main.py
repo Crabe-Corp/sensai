@@ -290,7 +290,6 @@ def run_session(
         if not user_input:
             print("[Info] Veuillez saisir un message non vide.")
             continue
-
         cmd_name = command_handler.check_command(user_input)
         if cmd_name:
             should_continue = command_handler.execute_command(cmd_name, user_input)
