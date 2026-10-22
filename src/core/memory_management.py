@@ -7,7 +7,7 @@ def consommer_tokens(montant: int) -> None:
             PARAMS: - montant - INT: quantité de tokens consommés par l'appel
             RETURN: None"""
 
-    singleton_token.budget_tokens += montant
+    singleton_token.budget_tokens = montant
 
 
 def enforce_token_budget(model: str, client: Any, messages: list[Any], max_history_tokens: int = 2000,) -> list[Any]:
@@ -45,7 +45,7 @@ def enforce_token_budget(model: str, client: Any, messages: list[Any], max_histo
 
     from src.core.ollama_client import ChatMessage
 
-    msg_prompt = ChatMessage(role="user", content=resume_prompt)
+    msg_prompt = ChatMessage(role="agent", content=resume_prompt)
 
     try:
         raw_res = client.call_model(model, [msg_prompt])
