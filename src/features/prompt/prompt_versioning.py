@@ -30,23 +30,36 @@ class PromptVersioningEngine:
         storage_dir: Path | str = "storage/prompt_versions",
         personas_dir: Path | str = "personnalites",
     ) -> None:
+        """Initialise le moteur de versioning avec les dossiers de stockage et de personas.
+                PARAMS: - storage_dir - PATH | STR: répertoire de sauvegarde des versions
+                        - personas_dir - PATH | STR: répertoire des définitions actives de personas
+                RETURN: None"""
         self.storage_dir = Path(storage_dir)
         self.storage_dir.mkdir(parents=True, exist_ok=True)
         self.personas_dir = Path(personas_dir)
         self.personas_dir.mkdir(parents=True, exist_ok=True)
 
     def _sanitize_name(self, name: str) -> str:
+        """Nettoie le nom de la persona pour sécuriser la création de répertoires.
+                PARAMS: - name - STR: nom brut de la persona
+                RETURN: nom nettoyé et sécurisé"""
         clean = Path(name).stem.lower().strip()
         clean = re.sub(r"[^\w\-.]", "_", clean)
         return clean or "default"
 
     def _get_persona_dir(self, persona_name: str) -> Path:
+        """Retourne le répertoire de versions associé à une persona en le créant si besoin.
+                PARAMS: - persona_name - STR: nom de la persona
+                RETURN: objet Path pointant vers le dossier des versions"""
         clean = self._sanitize_name(persona_name)
         directory = self.storage_dir / clean
         directory.mkdir(parents=True, exist_ok=True)
         return directory
 
     def _parse_version_number(self, target: int | str) -> int:
+        """Convertit un numéro de version sous forme textuelle ou numérique en entier strict.
+                PARAMS: - target - INT | STR: version brute (ex: 'v2', 2, '2')
+                RETURN: numéro de version sous forme d'entier"""
         if isinstance(target, int):
             return target
         clean_str = str(target).strip().lower()
@@ -64,7 +77,12 @@ class PromptVersioningEngine:
         author: str = "user",
         message: str = "",
     ) -> PromptVersion:
-        """Enregistre une nouvelle version du prompt si le contenu a changé."""
+        """Enregistre une nouvelle version du prompt si son empreinte a changé.
+                PARAMS: - persona_name - STR: nom de la persona concernée
+                        - content - STR: contenu textuel du prompt à historiser
+                        - author - STR: auteur de la modification
+                        - message - STR: message descriptif de la révision
+                RETURN: instance PromptVersion de la version enregistrée ou courante"""
         clean_name = self._sanitize_name(persona_name)
         target_dir = self._get_persona_dir(clean_name)
         content_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
@@ -95,7 +113,9 @@ class PromptVersioningEngine:
         return prompt_version
 
     def get_history(self, persona_name: str) -> list[PromptVersion]:
-        """Retourne l'ensemble des révisions enregistrées pour une persona, triées par version."""
+        """Retourne l'ensemble des révisions enregistrées pour une persona, triées par version.
+                PARAMS: - persona_name - STR: nom de la persona ciblée
+                RETURN: liste triée des révisions PromptVersion"""
         clean_name = self._sanitize_name(persona_name)
         target_dir = self.storage_dir / clean_name
         if not target_dir.is_dir():
@@ -116,7 +136,10 @@ class PromptVersioningEngine:
         return versions
 
     def get_version(self, persona_name: str, target_version: int | str) -> PromptVersion:
-        """Récupère une version spécifique d'un prompt par son identifiant numérique."""
+        """Récupère une version spécifique d'un prompt par son identifiant numérique.
+                PARAMS: - persona_name - STR: nom de la persona ciblée
+                        - target_version - INT | STR: identifiant de version souhaité
+                RETURN: instance PromptVersion correspondante"""
         ver_num = self._parse_version_number(target_version)
         history = self.get_history(persona_name)
         for item in history:
@@ -126,7 +149,11 @@ class PromptVersioningEngine:
         raise ValueError(f"Version v{ver_num} introuvable pour la persona '{clean_name}'.")
 
     def get_diff(self, persona_name: str, v_from: int | str, v_to: int | str) -> str:
-        """Calcule un diff unifié entre deux versions d'une même persona."""
+        """Calcule un diff unifié entre deux versions d'une même persona.
+                PARAMS: - persona_name - STR: nom de la persona ciblée
+                        - v_from - INT | STR: version de départ
+                        - v_to - INT | STR: version d'arrivée
+                RETURN: chaîne représentant le différentiel unifié"""
         clean_name = self._sanitize_name(persona_name)
         ver_from = self.get_version(clean_name, v_from)
         ver_to = self.get_version(clean_name, v_to)
@@ -143,6 +170,9 @@ class PromptVersioningEngine:
         return "".join(diff_gen)
 
     def _resolve_active_file(self, persona_name: str) -> Path:
+        """Résout le chemin absolu du fichier source actif associé à la persona.
+                PARAMS: - persona_name - STR: nom de la persona
+                RETURN: objet Path du fichier source actif"""
         clean = self._sanitize_name(persona_name)
         exact_path = self.personas_dir / persona_name
         if exact_path.is_file():
@@ -160,7 +190,10 @@ class PromptVersioningEngine:
         return self.personas_dir / f"{clean}.md"
 
     def rollback(self, persona_name: str, target_version: int | str) -> str:
-        """Restaure une version passée dans le fichier actif de personnalites/ et journalise l'opération."""
+        """Restaure une version passée dans le fichier actif et journalise l'opération.
+                PARAMS: - persona_name - STR: nom de la persona à restaurer
+                        - target_version - INT | STR: version cible à rétablir
+                RETURN: contenu textuel restauré"""
         clean_name = self._sanitize_name(persona_name)
         target = self.get_version(clean_name, target_version)
         active_path = self._resolve_active_file(clean_name)
@@ -189,16 +222,34 @@ def save_version(
     author: str = "user",
     message: str = "",
 ) -> PromptVersion:
+    """Enregistre une nouvelle révision via le moteur de versioning par défaut.
+            PARAMS: - persona_name - STR: nom de la persona
+                    - content - STR: contenu textuel du prompt
+                    - author - STR: auteur de la modification
+                    - message - STR: message descriptif
+            RETURN: instance PromptVersion de la révision"""
     return default_versioning_engine.save_version(persona_name, content, author=author, message=message)
 
 
 def get_history(persona_name: str) -> list[PromptVersion]:
+    """Récupère l'historique complet des versions via le moteur par défaut.
+            PARAMS: - persona_name - STR: nom de la persona
+            RETURN: liste triée des révisions PromptVersion"""
     return default_versioning_engine.get_history(persona_name)
 
 
 def get_diff(persona_name: str, v_from: int | str, v_to: int | str) -> str:
+    """Calcule le diff entre deux révisions via le moteur par défaut.
+            PARAMS: - persona_name - STR: nom de la persona
+                    - v_from - INT | STR: version initiale
+                    - v_to - INT | STR: version finale
+            RETURN: chaîne du différentiel unifié"""
     return default_versioning_engine.get_diff(persona_name, v_from, v_to)
 
 
 def rollback(persona_name: str, target_version: int | str) -> str:
+    """Restaure une révision antérieure via le moteur par défaut.
+            PARAMS: - persona_name - STR: nom de la persona à restaurer
+                    - target_version - INT | STR: version cible
+            RETURN: contenu textuel restauré"""
     return default_versioning_engine.rollback(persona_name, target_version)

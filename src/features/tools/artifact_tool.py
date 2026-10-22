@@ -20,6 +20,11 @@ def set_active_artifact(
     session_id: str | None = None,
     manager: ArtifactManager | None = None,
 ) -> None:
+    """Définit le document d'état actif, son identifiant de session et son gestionnaire.
+            PARAMS: - document - ARTIFACTDOCUMENT | NONE: instance de l'artefact actif
+                    - session_id - STR | NONE: identifiant de la session courante
+                    - manager - ARTIFACTMANAGER | NONE: gestionnaire d'artefacts associé
+            RETURN: None"""
     global _active_artifact, _active_session_id, _active_manager
     _active_artifact = document
     _active_session_id = session_id
@@ -27,6 +32,9 @@ def set_active_artifact(
 
 
 def get_active_artifact() -> ArtifactDocument:
+    """Récupère l'artefact actif en cours ou en instancie un nouveau par défaut.
+            PARAMS: Aucun
+            RETURN: instance active du document d'artefact"""
     global _active_artifact
     if _active_artifact is None:
         _active_artifact = ArtifactDocument(title="Document d'État & Livrable")
@@ -34,6 +42,9 @@ def get_active_artifact() -> ArtifactDocument:
 
 
 def reset_active_artifact() -> None:
+    """Réinitialise l'artefact actif et ses références globales de session à None.
+            PARAMS: Aucun
+            RETURN: None"""
     set_active_artifact(None, None, None)
 
 
@@ -44,11 +55,10 @@ def update_artifact(
     content: str = "",
 ) -> str:
     """Met à jour le document vivant d'état et livrable (artefact) de manière incrémentale.
-
-    :param action: Type de modification ('update' pour créer/écraser, 'append' pour ajouter, 'delete' pour supprimer).
-    :param section: Nom de la section ciblée dans le document.
-    :param content: Contenu textuel à écrire ou ajouter dans la section.
-    """
+            PARAMS: - action - LITERAL: type de modification ('update', 'append', 'delete')
+                    - section - STR: nom de la section ciblée dans le document
+                    - content - STR: contenu textuel à écrire ou ajouter dans la section
+            RETURN: message confirmant ou détaillant l'issue de l'opération"""
     doc = get_active_artifact()
     sec_name = section.strip()
     if not sec_name:

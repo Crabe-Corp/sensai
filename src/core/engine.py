@@ -3,7 +3,6 @@ from collections.abc import Iterator
 from typing import Any, Literal
 from unittest.mock import MagicMock
 from pydantic import BaseModel, Field
-
 from src.core.ollama_client import ChatMessage, OllamaClient
 from src.features.tools.executor import ToolExecutionResult, ToolExecutor
 from src.features.tools.registry import ToolRegistry, default_registry

@@ -41,22 +41,37 @@ class KingdomInfo(BaseModel):
 
     @property
     def name(self) -> str:
+        """Retourne le nom du royaume.
+                PARAMS: Aucun
+                RETURN: nom du royaume"""
         return self.nom
 
     @property
     def capital(self) -> str:
+        """Retourne la capitale du royaume.
+                PARAMS: Aucun
+                RETURN: capitale du royaume"""
         return self.capitale
 
     @property
     def ruler(self) -> str:
+        """Retourne le souverain du royaume.
+                PARAMS: Aucun
+                RETURN: souverain du royaume"""
         return self.souverain
 
     @property
     def military_power(self) -> int:
+        """Retourne la puissance militaire du royaume.
+                PARAMS: Aucun
+                RETURN: puissance militaire sous forme d'entier"""
         return self.puissance_militaire
 
     @property
     def strategic_specialty(self) -> str:
+        """Retourne la spécialité stratégique du royaume.
+                PARAMS: Aucun
+                RETURN: spécialité stratégique"""
         return self.specialite_strategique
 
 
@@ -109,18 +124,30 @@ class HistoricalFigure(BaseModel):
 
     @property
     def name(self) -> str:
+        """Retourne le nom du personnage historique.
+                PARAMS: Aucun
+                RETURN: nom du personnage"""
         return self.nom
 
     @property
     def origin_kingdom(self) -> str:
+        """Retourne le royaume d'origine du personnage.
+                PARAMS: Aucun
+                RETURN: royaume d'origine"""
         return self.royaume_origine
 
     @property
     def facts(self) -> list[str]:
+        """Retourne la liste des faits marquants.
+                PARAMS: Aucun
+                RETURN: liste des faits marquants"""
         return self.faits_marquants
 
     @property
     def notable_facts(self) -> list[str]:
+        """Retourne la liste des faits notables.
+                PARAMS: Aucun
+                RETURN: liste des faits notables"""
         return self.faits_marquants
 
 class StructuredResponse(BaseModel):

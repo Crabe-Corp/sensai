@@ -174,22 +174,11 @@ def print_banner(
     print(" Tapez '/help' pour voir les commandes ou '/exit' pour quitter.")
     print("=" * 60)
 
-def run_session(
-    client: OllamaClient,
-    model: str,
-    host: str,
-    tools: Any = None,
-    mcp_server_cmd: str | None = None,
-    session_id: str | None = None,
-    profile_name: str | None = None,
-    persona_name: str | None = None,
-    session_manager: SessionManager | None = None,
-    profile_manager: ProfileManager | None = None,
-    artifact_manager: ArtifactManager | None = None,
-    persona_manager: PersonaManager | None = None,
-    versioning_engine: PromptVersioningEngine | None = None,
-    max_tokens: int = 2000,
-    rag_enabled: bool = True,
+def run_session(client: OllamaClient, model: str, host: str, tools: Any = None, mcp_server_cmd: str | None = None,
+                session_id: str | None = None, profile_name: str | None = None, persona_name: str | None = None,
+                session_manager: SessionManager | None = None, profile_manager: ProfileManager | None = None,
+                artifact_manager: ArtifactManager | None = None, persona_manager: PersonaManager | None = None,
+                versioning_engine: PromptVersioningEngine | None = None, max_tokens: int = 2000, rag_enabled: bool = True,
 ) -> None:
     """Gère la boucle interactive du chatbot CLI, l'historique et les commandes slash.
             PARAMS: - client - OLLAMACLIENT: instance active du client HTTP Ollama
@@ -207,16 +196,11 @@ def run_session(
                     - versioning_engine - PROMPTVERSIONINGENGINE | NONE: moteur de versioning de prompts
             RETURN: None"""
 
-    if session_manager is None:
-        session_manager = SessionManager()
-    if profile_manager is None:
-        profile_manager = ProfileManager()
-    if artifact_manager is None:
-        artifact_manager = ArtifactManager()
-    if versioning_engine is None:
-        versioning_engine = default_versioning_engine
-    if persona_manager is None:
-        persona_manager = PersonaManager(versioning_engine=versioning_engine)
+    session_manager = session_manager or SessionManager()
+    profile_manager = profile_manager or ProfileManager()
+    artifact_manager = artifact_manager or ArtifactManager()
+    versioning_engine = versioning_engine or default_versioning_engine
+    persona_manager = persona_manager or PersonaManager(versioning_engine=versioning_engine)
 
     current_profile: UserProfile | None = None
     if profile_name:
@@ -489,29 +473,24 @@ def main(argv: list[str] | None = None) -> int:
             PARAMS: - argv - LIST[STR] | NONE: arguments de ligne de commande optionnels
             RETURN: code de retour entier (0 en cas de succès, 1 en cas d'erreur)"""
 
-    args = parse_arguments(argv) # args correspond a un tableau de configuration de l'app (ex : Namespace(model=None, host=None, config='config.json', tools=False, mcp_server=None, session=None, profile=None, max_tokens=2000, rag=False))
+    args = parse_arguments(argv)
     host, model = resolve_configuration(args)
 
     try:
         response = requests.post(host + "/api/show", json={"model": model})
-    
         if response.status_code == 200:
             show_data = response.json()
             model_details = show_data.get("model_info", {})
-
             for key, value in model_details.items():
                 if "context_length" in key:
                     context_length = value
                     break
-
             print(f"[Info] Context length détecté pour {model} : {context_length}")
         else:
             print(f"[Avertissement] Modèle {model} introuvable ou erreur. Code: {response.status_code}")
-            
     except Exception as e:
         print(f"[Erreur dans la récupération du context length] {e}")
         context_length = 2000
-
     try:
         init_database()
     except Exception as e:

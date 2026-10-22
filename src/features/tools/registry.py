@@ -275,10 +275,17 @@ def tool(
     target_registry = registry or default_registry
 
     def decorator(fn: Callable[..., Any]) -> Callable[..., Any]:
+        """Décore une fonction cible et l'enregistre auprès du registre d'outils.
+                PARAMS: - fn - CALLABLE: fonction à transformer en outil
+                RETURN: fonction emballée disposant des attributs d'outil"""
         tool_def = target_registry.register(fn, name=name, description=description)
 
         @functools.wraps(fn)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
+            """Exécute la fonction originale sous-jacente avec ses arguments.
+                    PARAMS: - args - ANY: arguments positionnels
+                            - kwargs - ANY: arguments par mot-clé
+                    RETURN: valeur de retour de la fonction décorée"""
             return fn(*args, **kwargs)
 
         wrapper.tool_definition = tool_def

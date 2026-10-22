@@ -69,6 +69,10 @@ class PersonaManager:
         personas_dir: Path | str = "personnalites",
         versioning_engine: PromptVersioningEngine | None = None,
     ) -> None:
+        """Initialise le gestionnaire de personas avec répertoire cible et moteur de versioning.
+                PARAMS: - personas_dir - PATH | STR: répertoire de stockage des personas
+                        - versioning_engine - PROMPTVERSIONINGENGINE | NONE: moteur de versioning associé
+                RETURN: None"""
         self.personas_dir = Path(personas_dir)
         self.personas_dir.mkdir(parents=True, exist_ok=True)
         self.versioning_engine = (
@@ -78,7 +82,9 @@ class PersonaManager:
         )
 
     def ensure_default_personas(self) -> None:
-        """Initialise manuellement les personas d'exemple des Royaumes Combattants si demandé."""
+        """Initialise les personas par défaut des Royaumes Combattants si elles sont absentes.
+                PARAMS: Aucun
+                RETURN: None"""
         defaults: dict[str, str] = {
             "scribe_qin.md": DEFAULT_SCRIBE_QIN_MD.strip() + "\n",
             "erudit_zhao.md": DEFAULT_ERUDIT_ZHAO_MD.strip() + "\n",
@@ -97,6 +103,9 @@ class PersonaManager:
                 )
 
     def _parse_frontmatter(self, raw_text: str) -> tuple[dict[str, str], str]:
+        """Extrait les métadonnées YAML d'en-tête (frontmatter) et le corps d'un texte Markdown.
+                PARAMS: - raw_text - STR: texte brut à décomposer
+                RETURN: tuple composé du dictionnaire de métadonnées et du corps de texte"""
         metadata: dict[str, str] = {}
         body = raw_text
 
@@ -119,6 +128,13 @@ class PersonaManager:
         scope: str,
         body: str,
     ) -> str:
+        """Construit le prompt système complet à partir des métadonnées et du corps.
+                PARAMS: - name - STR: nom de la persona
+                        - role - STR: fonction ou titre de la persona
+                        - tone - STR: tonalité et style d'élocution
+                        - scope - STR: périmètre d'expertise ou de réponse
+                        - body - STR: corps du texte ou instructions spécifiques
+                RETURN: chaîne du prompt système assemblé"""
         parts: list[str] = []
         if body:
             parts.append(body)
@@ -132,6 +148,9 @@ class PersonaManager:
         return "\n\n".join(parts) if parts else f"Tu incarnes la persona {name}."
 
     def _parse_file(self, path: Path) -> Persona:
+        """Parse un fichier Markdown ou JSON et l'enregistre dans le moteur de versioning.
+                PARAMS: - path - PATH: chemin vers le fichier de la persona
+                RETURN: instance Persona instanciée et versionnée"""
         with open(path, "r", encoding="utf-8") as f:
             raw_content = f.read()
 
@@ -190,6 +209,9 @@ class PersonaManager:
         )
 
     def _resolve_persona_path(self, name_or_filename: str) -> Path | None:
+        """Localise le fichier d'une persona par son nom, son nom de fichier ou son chemin.
+                PARAMS: - name_or_filename - STR: identifiant, nom ou chemin de la persona
+                RETURN: objet Path pointant vers le fichier ou None si introuvable"""
         target = Path(name_or_filename)
         if target.is_file():
             return target
@@ -211,7 +233,9 @@ class PersonaManager:
         return None
 
     def load_persona(self, name_or_filename: str) -> Persona:
-        """Charge dynamiquement une persona depuis le dossier personnalites/ sans redémarrage."""
+        """Charge dynamiquement une persona depuis le répertoire dédié sans redémarrage.
+                PARAMS: - name_or_filename - STR: nom ou identifiant de la persona à charger
+                RETURN: instance Persona chargée"""
         path = self._resolve_persona_path(name_or_filename)
         if path is None or not path.is_file():
             available = self.list_personas()
@@ -222,7 +246,9 @@ class PersonaManager:
         return self._parse_file(path)
 
     def list_personas(self) -> list[str]:
-        """Scanne le dossier et liste tous les profils de personas disponibles."""
+        """Scanne le dossier et liste tous les identifiants de personas disponibles.
+                PARAMS: Aucun
+                RETURN: liste triée des noms de personas trouvées"""
         valid_extensions = {".md", ".json", ".txt"}
         found: set[str] = set()
         for f in self.personas_dir.iterdir():
