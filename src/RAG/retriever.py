@@ -106,15 +106,43 @@ def retrieve_rag_context(query: str, top_k: int = 5, qdrant_host: str = "localho
                 query=FusionQuery(fusion=Fusion.RRF),
                 limit=top_k,
             )
+        
         except Exception:
             reponse_qdrant = client.query_points(
                 collection_name=COLLECTION_NAME,
                 query=vecteur_dense,
+                using="dense",
                 query_filter=qdrant_filter,
                 limit=top_k,
             )
 
         points = getattr(reponse_qdrant, "points", [])
+
+        if not points and qdrant_filter is not None:
+            print(f"[RAG] Filtre strict bloquant. Recherche globale pour le texte...")
+            try:
+                reponse_qdrant = client.query_points(
+                    collection_name=COLLECTION_NAME,
+                    query_filter=None, # ON ENLÈVE LE FILTRE
+                    prefetch=[
+                        Prefetch(query=vecteur_dense, using="dense", limit=20),
+                        Prefetch(query=sparse_vector.as_object(), using="sparse", limit=20),
+                    ],
+                    query=FusionQuery(fusion=Fusion.RRF),
+                    limit=top_k,
+                )
+            
+            except Exception:
+                reponse_qdrant = client.query_points(
+                    collection_name=COLLECTION_NAME,
+                    query=vecteur_dense,
+                    using="dense",
+                    query_filter=None,
+                    limit=top_k,
+                )
+            points = getattr(reponse_qdrant, "points", [])
+
+
         if not points:
             return None
 

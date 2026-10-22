@@ -11,6 +11,14 @@ except ImportError:
     QdrantClient = None
     Distance = VectorParams = PointStruct = SparseVectorParams = None
 
+_qdrant_client = None
+
+def get_qdrant_client():
+    """Crée le client s'il n'existe pas encore, ou retourne celui déjà existant."""
+    global _qdrant_client
+    if _qdrant_client is None:
+        _qdrant_client = create_cache()
+    return _qdrant_client
 
 def create_cache(collection : str = "SEMENTIC_CACHE", host: str = "localhost", port=6333):
     if QdrantClient is None:
@@ -28,8 +36,10 @@ def create_cache(collection : str = "SEMENTIC_CACHE", host: str = "localhost", p
     return client
 
 
-def add_to_cache(client, prompt: str, llm_response: str, collection: str = "SEMENTIC_CACHE"):
-    
+def add_to_cache(prompt: str, llm_response: str, collection: str = "SEMENTIC_CACHE"):
+
+    client = get_qdrant_client()
+
     response = requests.post("http://localhost:11434/api/embeddings", json={
         "model": "nomic-embed-text",
         "prompt": prompt
@@ -61,8 +71,10 @@ def add_to_cache(client, prompt: str, llm_response: str, collection: str = "SEME
     print("Mise en cache réussie !")
     return True
 
-def get_info_cache(client, prompt: str, collection: str = "SEMENTIC_CACHE", seuil: float = 0.85) -> str | None:
-    
+def get_info_cache(prompt: str, collection: str = "SEMENTIC_CACHE", seuil: float = 0.85) -> str | None:
+
+    client = get_qdrant_client()
+
     response = requests.post("http://localhost:11434/api/embeddings", json={
         "model": "nomic-embed-text",
         "prompt": prompt
@@ -74,16 +86,19 @@ def get_info_cache(client, prompt: str, collection: str = "SEMENTIC_CACHE", seui
         return None
         
     vecteur_dense = data["embedding"]
-
+        
     try:
-        resultats = client.search(
+        reponse_qdrant = client.query_points(
             collection_name=collection,
-            query_vector=("dense", vecteur_dense),
+            query=vecteur_dense,
+            using="dense",
             limit=1
         )
         
-        if resultats:
-            meilleur_match = resultats[0]
+        points = getattr(reponse_qdrant, "points", [])
+        
+        if points:
+            meilleur_match = points[0]
             score = meilleur_match.score
             
             print(f"[Cache] Question la plus proche : '{meilleur_match.payload.get('prompt')}' (Score: {score:.2f})")
@@ -98,8 +113,14 @@ def get_info_cache(client, prompt: str, collection: str = "SEMENTIC_CACHE", seui
     except Exception as exc:
         print(f"[Erreur Cache] Impossible de lire Qdrant : {exc}")
         return None
-        
+
     return None
 
-def clean_cache():
-    return 0
+def clean_cache(collection: str = "SEMENTIC_CACHE"):
+    client = get_qdrant_client()
+    
+    if client.collection_exists(collection):
+        client.delete_collection(collection_name=collection)
+        print("[Cache] Base de données nettoyée avec succès.")
+    
+    create_cache(collection)

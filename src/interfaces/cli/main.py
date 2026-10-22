@@ -317,6 +317,12 @@ def run_session(
             print(f"[Info] Budget tokens : {singleton_token.budget_tokens} / {max_tokens} consommés.")
             continue
 
+        if user_input == "/clear-cache":
+            from src.core import sementic_cache
+            sementic_cache.clean_cache()
+            print("[Info] Cache vidé avec succès !")
+            continue
+
         if user_input in ("/rag on", "/rag off"):
             parts = user_input.split(maxsplit=1)
             arg = parts[1].strip().lower() if len(parts) > 1 else None
@@ -614,11 +620,29 @@ def run_session(
             continue
 
         augmented_input = safe_input
+
+        if cache_build:
+            try:
+                from src.core import sementic_cache
+                cache_result = sementic_cache.get_info_cache(prompt=safe_input)
+                if cache_result != None:
+                    print("[SEMENTIC CACHE] question already asked find")
+                    sys.stdout.write("\nAssistant > ")
+                    print(cache_result)
+                    history.append(ChatMessage(role="user", content=safe_input))
+                    history.append(ChatMessage(role="assistant", content=cache_result))
+                    continue
+            except Exception:
+                pass
+
         if rag_enabled:
             try:
                 from src.RAG.retriever import retrieve_rag_context
                 rag_ctx = retrieve_rag_context(safe_input, ollama_url=host, ollama_model=model)
                 if rag_ctx:
+                    print("\n--- DEBUG RAG : Ce que Qdrant a trouvé ---")
+                    print(rag_ctx)
+                    print("------------------------------------------\n")
                     print("[RAG] Contexte historique injecté depuis les chroniques.")
                     augmented_input = (
                         f"Tu es un conseiller stratégique des 7 Royaumes Combattants. "
@@ -629,19 +653,6 @@ def run_session(
             except Exception:
                 pass
 
-        if cache_build:
-            try:
-                from src.core import sementic_cache
-                cache_result = sementic_cache.get_info_cache(prompt=safe_input)
-                if cache_result:
-                    print("[SEMENTIC CACHE] question already asked find")
-                    sys.stdout.write("\nAssistant > ")
-                    print(cache_result)
-                    history.append(ChatMessage(role="user", content=safe_input))
-                    history.append(ChatMessage(role="assistant", content=cache_result))
-                    return 0
-            except Exception:
-                pass
 
         user_msg = ChatMessage(role="user", content=augmented_input)
         history.append(user_msg)
@@ -713,6 +724,10 @@ def run_session(
                 history.append(ChatMessage(role="assistant", content=full_reply))
                 current_session.messages = list(history)
                 current_session.metadata.model = model
+                try:
+                    sementic_cache.add_to_cache(prompt=safe_input, llm_response=full_reply)
+                except Exception as e:
+                    print(f"[Erreur mise en cache] {e}")
                 session_manager.save_session(current_session)
 
         except OllamaConnectionError as exc:
