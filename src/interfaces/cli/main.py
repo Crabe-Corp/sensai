@@ -17,6 +17,7 @@ from src.core.engine import (ConversationEngine, EngineEvent, ErrorEvent, TokenC
 from src.core.ollama_client import (ChatMessage, OllamaAPIError, OllamaClient, OllamaConnectionError, OllamaError, OllamaModelNotFoundError, OllamaStructuredOutputError,)
 from src.core.schemas import HistoricalFigure, KingdomInfo, StructuredResponse
 from src.features.memory import (ArtifactDocument, ArtifactManager, ChatSession, ProfileManager, SessionManager, SessionMetadata, UserProfile,)
+from src.features.prompt import (Persona, PersonaManager, PromptVersion, PromptVersioningEngine, default_versioning_engine,)
 from src.features.tools import artifact_tool, builtin, web_search
 from src.features.tools.artifact_tool import (ARTIFACT_SYSTEM_INSTRUCTION, get_active_artifact, set_active_artifact,)
 from src.features.tools.mcp_client import MCPClient, MCPError
@@ -122,6 +123,12 @@ def parse_arguments(argv: list[str] | None = None) -> argparse.Namespace:
         help="Nom du profil utilisateur à charger (ex: default, historien).",
     )
     parser.add_argument(
+        "--persona",
+        type=str,
+        default=None,
+        help="Nom ou fichier de la persona à charger (ex: scribe_qin, erudit_zhao).",
+    )
+    parser.add_argument(
         "--rag",
         action="store_true",
         default=True,
@@ -137,6 +144,7 @@ def print_banner(
     host: str,
     tools_enabled: bool = False,
     profile_name: str | None = None,
+    persona_name: str | None = None,
     session_id: str | None = None,
     rag_enabled: bool = False,
 ) -> None:
@@ -145,6 +153,7 @@ def print_banner(
                     - host - STR: URL du serveur Ollama
                     - tools_enabled - BOOL: indicateur d'activation du support des outils
                     - profile_name - STR | NONE: nom du profil utilisateur actif
+                    - persona_name - STR | NONE: nom de la persona active
                     - session_id - STR | NONE: identifiant de la session courante
             RETURN: None"""
 
@@ -158,6 +167,8 @@ def print_banner(
         print(" RAG vectoriel: Activé")
     if profile_name:
         print(f" Profil       : {profile_name}")
+    if persona_name:
+        print(f" Persona      : {persona_name}")
     if session_id:
         print(f" Session ID   : {session_id}")
     print(" Tapez '/help' pour voir les commandes ou '/exit' pour quitter.")
@@ -171,9 +182,12 @@ def run_session(
     mcp_server_cmd: str | None = None,
     session_id: str | None = None,
     profile_name: str | None = None,
+    persona_name: str | None = None,
     session_manager: SessionManager | None = None,
     profile_manager: ProfileManager | None = None,
     artifact_manager: ArtifactManager | None = None,
+    persona_manager: PersonaManager | None = None,
+    versioning_engine: PromptVersioningEngine | None = None,
     max_tokens: int = 2000,
     rag_enabled: bool = True,
 ) -> None:
@@ -185,9 +199,12 @@ def run_session(
                     - mcp_server_cmd - STR | NONE: commande de démarrage d'un serveur MCP externe
                     - session_id - STR | NONE: identifiant d'une session à restaurer
                     - profile_name - STR | NONE: nom du profil utilisateur à charger
+                    - persona_name - STR | NONE: nom ou fichier de la persona à charger
                     - session_manager - SESSIONMANAGER | NONE: gestionnaire de sessions persistant
                     - profile_manager - PROFILEMANAGER | NONE: gestionnaire de profils utilisateur
                     - artifact_manager - ARTIFACTMANAGER | NONE: gestionnaire de livrables d'état
+                    - persona_manager - PERSONAMANAGER | NONE: gestionnaire de personas
+                    - versioning_engine - PROMPTVERSIONINGENGINE | NONE: moteur de versioning de prompts
             RETURN: None"""
 
     if session_manager is None:
@@ -196,10 +213,21 @@ def run_session(
         profile_manager = ProfileManager()
     if artifact_manager is None:
         artifact_manager = ArtifactManager()
+    if versioning_engine is None:
+        versioning_engine = default_versioning_engine
+    if persona_manager is None:
+        persona_manager = PersonaManager(versioning_engine=versioning_engine)
 
     current_profile: UserProfile | None = None
     if profile_name:
         current_profile = profile_manager.get_or_create_profile(profile_name)
+
+    current_persona: Persona | None = None
+    if persona_name:
+        try:
+            current_persona = persona_manager.load_persona(persona_name)
+        except Exception as exc:
+            print(f"[Avertissement Persona] {exc}")
 
     current_session: ChatSession
     if session_id:
@@ -222,7 +250,15 @@ def run_session(
     active_tools = tools
     tools_enabled = active_tools is not None
 
-    if tools_enabled:
+    if current_persona:
+        p_content = current_persona.system_prompt
+        if tools_enabled and "update_artifact" not in p_content:
+            p_content = f"{p_content}\n\n{ARTIFACT_SYSTEM_INSTRUCTION}"
+        if history and history[0].role == "system":
+            history[0].content = p_content
+        else:
+            history.insert(0, ChatMessage(role="system", content=p_content))
+    elif tools_enabled:
         if not history:
             history.append(ChatMessage(role="system", content=ARTIFACT_SYSTEM_INSTRUCTION))
         elif history[0].role == "system":
@@ -251,6 +287,7 @@ def run_session(
         host,
         tools_enabled=tools_enabled,
         profile_name=current_profile.username if current_profile else None,
+        persona_name=current_persona.name if current_persona else None,
         session_id=current_session.metadata.session_id,
         rag_enabled=rag_enabled,
     )
@@ -266,6 +303,9 @@ def run_session(
         session_manager=session_manager,
         profile_manager=profile_manager,
         artifact_manager=artifact_manager,
+        current_persona=current_persona,
+        persona_manager=persona_manager,
+        versioning_engine=versioning_engine,
         max_tokens=max_tokens,
         rag_enabled=rag_enabled,
         structured_mode=structured_mode,
@@ -488,6 +528,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     
     profile_name = args.profile or "default"
+    persona_name = args.persona or os.getenv("SENSAI_PERSONA") or file_cfg.get("persona")
     session_id = args.session
     timeout = float(os.getenv("SENSAI_TIMEOUT") or file_cfg.get("request_timeout") or 180.0)
 
@@ -501,6 +542,7 @@ def main(argv: list[str] | None = None) -> int:
             mcp_server_cmd=mcp_cmd,
             session_id=session_id,
             profile_name=profile_name,
+            persona_name=persona_name,
             max_tokens = context_length,
             rag_enabled=args.rag,
         )
