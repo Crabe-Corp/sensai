@@ -185,6 +185,7 @@ def print_banner(
     if session_id:
         print(f" Session ID   : {session_id}")
     print(" Tapez '/help' pour voir les commandes ou '/exit' pour quitter.")
+    print(" NB : Les textes historiques utilisés par le modèle provenant de traductions anciennes, certaines nuances peuvent être perdues. N'hésitez pas à vérifier les informations qui vous sembleraient incohérentes.")
     print("=" * 60)
 
 
@@ -295,7 +296,9 @@ def run_session(
     engine = ConversationEngine(client=client, registry=default_registry)
 
     while True:
-        if singleton_token.budget_tokens >= max_tokens:
+        margin = (max_tokens * 15) / 100 # Retirer 15% du context legth afin de laisser du context au model pour la compression de l'historique
+        token_with_margin = max_tokens - margin
+        if singleton_token.budget_tokens >= token_with_margin:
             history = mem.enforce_token_budget(model, client, history, max_history_tokens=max_tokens)
             current_session.messages = list(history)
 
@@ -640,15 +643,18 @@ def run_session(
                 from src.RAG.retriever import retrieve_rag_context
                 rag_ctx = retrieve_rag_context(safe_input, ollama_url=host, ollama_model=model)
                 if rag_ctx:
-                    print("\n--- DEBUG RAG : Ce que Qdrant a trouvé ---")
-                    print(rag_ctx)
-                    print("------------------------------------------\n")
                     print("[RAG] Contexte historique injecté depuis les chroniques.")
                     augmented_input = (
-                        f"Tu es un conseiller stratégique des 7 Royaumes Combattants. "
-                        f"Réponds en t'appuyant sur ce contexte historique :\n\n"
-                        f"{rag_ctx}\n\n"
-                        f"Question : {safe_input}"
+                        f"Tu es un conseiller stratégique expert des 7 Royaumes Combattants.\n\n"
+                        f"DOCUMENTS HISTORIQUES :\n"
+                        f"======================\n"
+                        f"{rag_ctx}\n"
+                        f"======================\n\n"
+                        f"INSTRUCTIONS STRICTES :\n"
+                        f"1. BASE DE RÉPONSE : Tu DOIS répondre EXCLUSIVEMENT en utilisant les faits présents dans les documents ci-dessus. Si l'information n'y figure pas, réponds 'Mes chroniques ne mentionnent pas cette information.'\n"
+                        f"2. CORRECTION DES ARMÉES : Les textes (Shiji et Zhan Guo Ce) sont de vieilles traductions. S'ils mentionnent des tailles d'armées chinoises en dizaines de milliers (ex: 20 000 ou 60 000), il s'agit d'une erreur de traduction du caractère 'Wan' (10 000). Multiplie toujours ces effectifs militaires par 10 (ex: 200 000) pour rétablir la vérité historique.\n"
+                        f"3. ANTI-FUSION : Les documents peuvent relater les histoires de plusieurs généraux différents (ex: Li Xin, Han Xin, Wang Jian). Ne mélange PAS leurs histoires. Ne réponds qu'avec les faits explicitement associés au nom demandé par le Seigneur.\n\n"
+                        f"Question du Seigneur : {safe_input}"
                     )
             except Exception:
                 pass
