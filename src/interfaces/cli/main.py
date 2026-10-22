@@ -10,12 +10,11 @@ if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8")
 if __package__ is None or __package__ == "":
     sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
-from src.core.db.database import init_database
 from src.core import memory_management as mem, singleton_token
-from src.core.sec.security import mask_pii, validate_input_with_llm
 from src.core.engine import (ConversationEngine, EngineEvent, ErrorEvent, TokenChunkEvent, ToolCallEvent, ToolResultEvent,)
 from src.core.ollama_client import (ChatMessage, OllamaAPIError, OllamaClient, OllamaConnectionError, OllamaError, OllamaModelNotFoundError, OllamaStructuredOutputError,)
 from src.core.schemas import HistoricalFigure, KingdomInfo, StructuredResponse
+from src.features.sec.security import mask_pii, validate_input_with_llm
 from src.features.memory import (ArtifactDocument, ArtifactManager, ChatSession, ProfileManager, SessionManager, SessionMetadata, UserProfile,)
 from src.features.tools import artifact_tool, builtin, web_search
 from src.features.tools.artifact_tool import (ARTIFACT_SYSTEM_INSTRUCTION, get_active_artifact, set_active_artifact,)
@@ -254,7 +253,6 @@ def run_session(
         session_id=current_session.metadata.session_id,
         rag_enabled=rag_enabled,
     )
-    init_database()
     engine = ConversationEngine(client=client, registry=default_registry)
     command_handler = Commands(
         client=client,
@@ -471,12 +469,6 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as e:
         print(f"[Erreur dans la récupération du context length] {e}")
         context_length = 2000
-
-    try:
-        init_database()
-    except Exception as e:
-        print(f"[Erreur dans l'initialisation de la BDD] {e}")
-        return 1
 
     file_cfg = load_config_file(Path(args.config)) if args.config else {}
     mcp_cmd = args.mcp_server or os.getenv("SENSAI_MCP_SERVER") or file_cfg.get("mcp_server")
