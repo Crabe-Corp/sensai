@@ -9,7 +9,6 @@ from .seed import GENERALS, KINGDOMS
 
 DB_PATH = PROJECT_ROOT / "simulation.db"
 
-# Les valeurs sont (min, max) pour un entier, ou un set pour un enum.
 WHITELIST = {
     "sim_kingdoms": ("id", {"troops": (0, 2_000_000), "morale": (0, 100),
                             "gold": (0, 20_000_000), "status": {"independent", "annexed"}}),
@@ -82,12 +81,12 @@ class Simulation:
             self.conn.execute("INSERT INTO sim_log(turn, kind, detail) VALUES (?,?,?)", (self.turn, kind, detail))
 
     def apply(self, changes: list[Change]) -> int:
-        for c in changes:  # on valide tout avant d'écrire quoi que ce soit
+        for c in changes:
             if (err := validate(c)):
                 raise ValueError(err)
-        with self.conn:  # transaction atomique
+        with self.conn:
             for c in changes:
-                key_col, _ = WHITELIST[c.table]  # noms de table/colonne issus de la whitelist, jamais du LLM
+                key_col, _ = WHITELIST[c.table]
                 self.conn.execute(f"UPDATE {c.table} SET {c.field} = ? WHERE {key_col} = ?", (c.new, c.key))
                 self.conn.execute("INSERT INTO sim_log(turn, kind, detail) VALUES (?, 'change', ?)",
                                   (self.turn, c.render()))
