@@ -20,6 +20,8 @@ from src.features.tools import artifact_tool, builtin, web_search
 from src.features.tools.artifact_tool import (ARTIFACT_SYSTEM_INSTRUCTION, get_active_artifact, set_active_artifact,)
 from src.features.tools.mcp_client import MCPClient, MCPError
 from src.features.tools.registry import default_registry
+from src.features.simulation.human_verif import confirm_simple
+from src.features.simulation.modes import MODES, AgentMode
 from src.interfaces.cli.commands.commands import Command, Commands, command, print_help
 import requests
 
@@ -159,8 +161,21 @@ def print_banner(
         print(f" Profil       : {profile_name}")
     if session_id:
         print(f" Session ID   : {session_id}")
+    print(" Modes        : /simulation [seed] | /encyclopedia")
     print(" Tapez '/help' pour voir les commandes ou '/exit' pour quitter.")
     print("=" * 60)
+
+
+def build_call_messages(mode: AgentMode, history: list[ChatMessage]) -> list[ChatMessage]:
+    """Construit la liste de messages envoyée au modèle pour le mode courant.
+            PARAMS: - mode - AGENTMODE: mode d'agent actif
+                    - history - LIST[CHATMESSAGE]: historique de la session
+            RETURN: liste de messages (le prompt système du mode remplace les autres messages système)"""
+
+    if not mode.system_prompt:
+        return list(history)
+    return [ChatMessage(role="system", content=mode.system_prompt)] + [m for m in history if m.role != "system"]
+
 
 def run_session(
     client: OllamaClient,
@@ -253,7 +268,11 @@ def run_session(
         session_id=current_session.metadata.session_id,
         rag_enabled=rag_enabled,
     )
-    engine = ConversationEngine(client=client, registry=default_registry)
+    engines = {
+        name: ConversationEngine(client=client, registry=m.registry, max_tool_iterations=m.max_tool_iterations)
+        for name, m in MODES.items()
+    }
+    current_mode: AgentMode = MODES["encyclopedia"]
     command_handler = Commands(
         client=client,
         model=model,
@@ -279,8 +298,9 @@ def run_session(
             current_session.messages = list(history)
             command_handler.history = history
 
+        prompt = "\nYou > " if current_mode.name == "encyclopedia" else f"\nYou [{current_mode.name}] > "
         try:
-            user_input = input("\nYou > ").strip()
+            user_input = input(prompt).strip()
         except (KeyboardInterrupt, EOFError):
             print("\n\nSession interrompue.")
             break
@@ -288,6 +308,27 @@ def run_session(
         if not user_input:
             print("[Info] Veuillez saisir un message non vide.")
             continue
+
+        mode_cmd, *mode_args = user_input.split()
+        if mode_cmd in ("/simulation", "/encyclopedia"):
+            target = MODES[mode_cmd.lstrip("/")]
+            if target is current_mode and target.name == "encyclopedia":
+                print("[Info] Déjà en mode encyclopédie.")
+                continue
+            if target is current_mode and not confirm_simple("Une simulation est déjà en cours. La remplacer par une nouvelle partie ?"):
+                continue
+            if current_mode.on_exit and target is not current_mode:
+                current_mode.on_exit()
+            current_mode = target
+            if current_mode.on_enter:
+                print(current_mode.on_enter(mode_args))
+                print("[Info] RAG automatique et sortie structurée désactivés dans ce mode.")
+                if any(tag in model for tag in (":0.5b", ":1.5b")):
+                    print(f"[Astuce] {model} appelle mal les outils : essaie '/model qwen2.5:7b' si ça se passe mal.")
+            else:
+                print("[Info] Mode encyclopédie activé. La simulation en cours est fermée.")
+            continue
+
         cmd_name = command_handler.check_command(user_input)
         if cmd_name:
             should_continue = command_handler.execute_command(cmd_name, user_input)
@@ -307,13 +348,14 @@ def run_session(
 
         safe_input, _has_confidential_data = mask_pii(user_input)
 
-        is_valid, error_message = validate_input_with_llm(safe_input, client, model)
-        if not is_valid:
-            print(f"\nAssistant > {error_message}")
-            continue
+        if current_mode.free_chat:
+            is_valid, error_message = validate_input_with_llm(safe_input, client, model)
+            if not is_valid:
+                print(f"\nAssistant > {error_message}")
+                continue
 
         augmented_input = safe_input
-        if rag_enabled:
+        if rag_enabled and current_mode.free_chat:
             try:
                 from src.RAG.retriever import retrieve_rag_context
                 rag_ctx = retrieve_rag_context(safe_input, ollama_url=host, ollama_model=model)
@@ -331,7 +373,7 @@ def run_session(
         user_msg = ChatMessage(role="user", content=augmented_input)
         history.append(user_msg)
 
-        if structured_mode:
+        if structured_mode and current_mode.free_chat:
             sys.stdout.write("\nAssistant > ")
             sys.stdout.flush()
             try:
@@ -362,12 +404,16 @@ def run_session(
         sys.stdout.write("\nAssistant > ")
         sys.stdout.flush()
 
+        engine = engines[current_mode.name]
+        mode_tools = current_mode.registry if current_mode.force_tools else active_tools
+        call_messages = build_call_messages(current_mode, history)
+
         response_chunks: list[str] = []
         try:
             for event in engine.run_stream(
-                messages=list(history),
+                messages=call_messages,
                 model=model,
-                tools=active_tools,
+                tools=mode_tools,
             ):
                 if isinstance(event, TokenChunkEvent):
                     sys.stdout.write(event.token)
@@ -419,6 +465,9 @@ def run_session(
                 session_manager.save_session(current_session)
                 artifact_manager.save_artifact(current_session.metadata.session_id, get_active_artifact())
 
+    if current_mode.on_exit:
+        current_mode.on_exit()
+
     current_session = command_handler.current_session
     mcp_client = command_handler.mcp_client
     mcp_tool_names = command_handler.mcp_tool_names
@@ -450,6 +499,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_arguments(argv) # args correspond a un tableau de configuration de l'app (ex : Namespace(model=None, host=None, config='config.json', tools=False, mcp_server=None, session=None, profile=None, max_tokens=2000, rag=False))
     host, model = resolve_configuration(args)
 
+    context_length = 2000
     try:
         response = requests.post(host + "/api/show", json={"model": model})
     
