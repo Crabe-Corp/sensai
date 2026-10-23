@@ -3,7 +3,7 @@ from typing import Any
 
 from src.features.sec.permissions import safe_read, safe_write
 from src.features.tools.registry import ToolRegistry, tool
-from .human_verif import Change, confirm_simple, review_changes
+from .human_verif import confirm_simple, review_changes
 from .kingdom_fight import resolve_battle
 from .report import build_report
 from .store import Simulation
@@ -11,7 +11,6 @@ from .store import Simulation
 simulation_registry = ToolRegistry()
 _sim: Simulation | None = None
 NO_SIM = {"error": "Aucune simulation active. L'utilisateur doit taper /simulation."}
-EVENT_LIMITS = {"troops": 0.25, "gold": 0.30, "morale": 30}
 
 def start(seed: int | None = None) -> Simulation:
     global _sim
@@ -46,7 +45,7 @@ def get_kingdom_state(kingdom: str) -> dict[str, Any]:
 
 @tool(registry=simulation_registry)
 def simulate_battle(attacker: str, defender: str) -> dict[str, Any]:
-    """Lance une bataille entre deux royaumes. Les chiffres sont calculés par le code, puis validés par l'utilisateur.
+    """Lance une bataille entre deux royaumes. À appeler dès que l'utilisateur parle d'attaque, de combat, de bataille ou de guerre.
             PARAMS: - attacker - STR: nom du royaume attaquant
                     - defender - STR: nom du royaume défenseur
             RETURN: résumé de la bataille (vainqueur, pertes, général tombé) ou statut rejected"""
@@ -68,35 +67,13 @@ def simulate_battle(attacker: str, defender: str) -> dict[str, Any]:
     _sim.apply(accepted)
     _sim.log("battle", json.dumps(summary, ensure_ascii=False))
     _sim.turn += 1
-    return {"status": "applied", "applied": len(accepted), "rejected": len(changes) - len(accepted), "summary": summary}
+    pertes = ", ".join(f"{k} {v:,}" for k, v in summary["casualties"].items())
+    fell = f"Le général {summary['general_fallen']} est tombé." if summary["general_fallen"] else "Aucun général tombé."
+    faits = (f"{summary['winner']} a battu {summary['loser']}. Pertes : {pertes}. {fell} "
+             f"{len(accepted)} changement(s) appliqué(s) sur {len(changes)}.")
+    return {"status": "applied", "applied": len(accepted), "rejected": len(changes) - len(accepted),
+            "summary": summary, "faits": faits}
 
-@tool(registry=simulation_registry)
-def propose_event(kingdom: str, field: str, delta: int, reason: str) -> dict[str, Any]:
-    """Propose un événement hors bataille (famine, trahison, réforme) modifiant un royaume.
-            PARAMS: - kingdom - STR: nom du royaume touché
-                    - field - STR: champ modifié, parmi troops, morale ou gold
-                    - delta - INT: variation à appliquer, négative pour une perte
-                    - reason - STR: cause narrative de l'événement
-            RETURN: statut de l'application ou motif du refus"""
-    if not _sim:
-        return NO_SIM
-    k = _sim.get_kingdom(kingdom)
-    if not k:
-        return {"error": f"Royaume inconnu. Disponibles : {_sim.names()}"}
-    if field not in EVENT_LIMITS:
-        return {"error": f"Champ invalide. Choisir parmi {list(EVENT_LIMITS)}."}
-    max_abs = EVENT_LIMITS[field] if field == "morale" else int(k[field] * EVENT_LIMITS[field])
-    if abs(delta) > max_abs:
-        return {"error": f"delta trop grand : maximum ±{max_abs} pour {field} de {k['name']}."}
-    new = k[field] + delta
-    new = max(0, min(100, new)) if field == "morale" else max(0, new)
-    accepted = review_changes(f"Événement : {reason}", [Change("sim_kingdoms", k["id"], field, k[field], new, reason)])
-    if not accepted:
-        return {"status": "rejected", "message": "L'utilisateur a refusé l'événement."}
-    _sim.apply(accepted)
-    _sim.log("event", f"{k['name']} {field} {delta:+d} : {reason}")
-    _sim.turn += 1
-    return {"status": "applied", "kingdom": k["name"], field: new}
 
 @tool(registry=simulation_registry)
 def get_simulation_facts() -> dict[str, Any]:
@@ -109,12 +86,21 @@ def get_simulation_facts() -> dict[str, Any]:
 def write_battle_report(path: str, analysis: str) -> dict[str, Any]:
     """Écrit le rapport de fin de simulation dans le dossier autorisé. Le bilan chiffré est ajouté automatiquement.
             PARAMS: - path - STR: chemin du rapport, sous rapports_batailles/ (ex. rapports_batailles/changping.md)
-                    - analysis - STR: analyse tactique rédigée par l'agent en markdown
+                    - analysis - STR: analyse tactique rédigée par l'agent en markdown, uniquement à partir de get_simulation_facts
             RETURN: statut de l'écriture ou raison du refus"""
     if not _sim:
         return NO_SIM
-    content = build_report(_sim.facts(), analysis)
-    return safe_write(path, content, confirm_overwrite=lambda: confirm_simple(f"Écraser {path} ?"))
+    facts = _sim.facts()
+    if facts["turns"] == 0:
+        return {"status": "error", "reason": "Aucune bataille n'a eu lieu : lance d'abord simulate_battle."}
+    content = build_report(facts, analysis)
+
+    def confirm(exists: bool) -> bool:
+        print(f"\n[APERÇU DU RAPPORT → {path}]\n{content}")
+        return confirm_simple(f"Écraser {path} ?" if exists else f"Enregistrer {path} ?")
+
+    return safe_write(path, content, confirm=confirm)
+
 
 @tool(registry=simulation_registry)
 def read_battle_report(path: str) -> dict[str, Any]:
