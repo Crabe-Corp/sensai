@@ -56,14 +56,14 @@ def safe_read(path: str) -> dict:
         return {"status": "error", "reason": f"{path} n'existe pas."}
     return {"status": "success", "content": target.read_text(encoding="utf-8")}
 
-def safe_write(path: str, content: str, confirm_overwrite: Callable[[], bool] | None = None) -> dict:
-    """Écrit un fichier après vérification des permissions (et confirmation si écrasement)."""
+def safe_write(path: str, content: str, confirm: Callable[[bool], bool] | None = None) -> dict:
+    """Écrit un fichier après vérification des permissions. confirm est appelé une fois les permissions validées, juste avant l'écriture."""
     ok, reason = check(path, "write", size=len(content.encode()))
     if not ok:
         return {"status": "denied", "reason": reason}
     target = (PROJECT_ROOT / path).resolve()
-    if target.exists() and confirm_overwrite and not confirm_overwrite():
-        return {"status": "aborted", "message": "L'utilisateur a refusé l'écrasement."}
+    if confirm and not confirm(target.exists()):
+        return {"status": "aborted", "message": "L'utilisateur a refusé l'enregistrement."}
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(content, encoding="utf-8")
     return {"status": "success", "path": path}
