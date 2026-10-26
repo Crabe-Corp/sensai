@@ -46,6 +46,7 @@ from src.features.tools import builtin, web_search
 from src.features.tools.mcp_client import MCPClient, MCPError
 from src.features.tools.registry import default_registry
 import requests
+from src.core import auto_evaluation
 
 DEFAULT_CONFIG_PATH = Path("config.json")
 DEFAULT_HOST = "http://localhost:11434"
@@ -627,7 +628,7 @@ def run_session(
         if cache_build:
             try:
                 from src.core import sementic_cache
-                cache_result = sementic_cache.get_info_cache(prompt=safe_input)
+                cache_result = sementic_cache.get_info_cache(prompt=safe_input, ollama_url=host, model=model)
                 if cache_result != None:
                     print("[SEMENTIC CACHE] question already asked find")
                     sys.stdout.write("\nAssistant > ")
@@ -638,10 +639,13 @@ def run_session(
             except Exception:
                 pass
 
+        rag_ctx = None
+
         if rag_enabled:
             try:
                 from src.RAG.retriever import retrieve_rag_context
                 rag_ctx = retrieve_rag_context(safe_input, ollama_url=host, ollama_model=model)
+                print(rag_ctx)
                 if rag_ctx:
                     print("[RAG] Contexte historique injecté depuis les chroniques.")
                     augmented_input = (
@@ -650,10 +654,12 @@ def run_session(
                         f"======================\n"
                         f"{rag_ctx}\n"
                         f"======================\n\n"
-                        f"INSTRUCTIONS STRICTES :\n"
-                        f"1. BASE DE RÉPONSE : Tu DOIS répondre EXCLUSIVEMENT en utilisant les faits présents dans les documents ci-dessus. Si l'information n'y figure pas, réponds 'Mes chroniques ne mentionnent pas cette information.'\n"
-                        f"2. CORRECTION DES ARMÉES : Les textes (Shiji et Zhan Guo Ce) sont de vieilles traductions. S'ils mentionnent des tailles d'armées chinoises en dizaines de milliers (ex: 20 000 ou 60 000), il s'agit d'une erreur de traduction du caractère 'Wan' (10 000). Multiplie toujours ces effectifs militaires par 10 (ex: 200 000) pour rétablir la vérité historique.\n"
-                        f"3. ANTI-FUSION : Les documents peuvent relater les histoires de plusieurs généraux différents (ex: Li Xin, Han Xin, Wang Jian). Ne mélange PAS leurs histoires. Ne réponds qu'avec les faits explicitement associés au nom demandé par le Seigneur.\n\n"
+                        f"INSTRUCTIONS DE RÉPONSE :\n"
+                        f"1. EXPLOITATION DU CONTEXTE : Synthétise et réponds directement en t'appuyant sur les faits historiques attestés dans les documents ci-dessus pour éclairer le Seigneur.\n"
+                        f"2. GESTION DU MANQUE D'INFORMATION : Si et seulement si les documents ci-dessus ne contiennent absolument AUCUN élément permettant de répondre à la question, réponds uniquement 'Mes chroniques ne mentionnent pas cette information.' Ne prononce JAMAIS cette phrase si tu donnes des éléments de réponse dans ton message.\n"
+                        f"3. CORRECTION DES ARMÉES : Les textes (Shiji et Zhan Guo Ce) sont de vieilles traductions. S'ils mentionnent des tailles d'armées chinoises en dizaines de milliers (ex: 20 000 ou 60 000), il s'agit d'une erreur de traduction du caractère 'Wan' (10 000). Multiplie toujours ces effectifs militaires par 10 (ex: 200 000) pour rétablir la vérité historique.\n"
+                        f"4. ANTI-FUSION : Les documents peuvent relater les histoires de plusieurs généraux différents (ex: Li Xin, Han Xin, Wang Jian). Ne mélange PAS leurs histoires. Ne réponds qu'avec les faits explicitement associés au sujet demandé par le Seigneur.\n"
+                        f"5. LANGUE : Réponds dans la même langue que la question posée par le Seigneur.\n\n"
                         f"Question du Seigneur : {safe_input}"
                     )
             except Exception:
@@ -672,6 +678,31 @@ def run_session(
                     messages=list(history),
                     response_format=StructuredResponse,
                 )
+                eval_res = auto_evaluation.evaluer_reponse_ia(
+                    client=client,
+                    model=model,
+                    question_user=safe_input,
+                    rag_context=rag_ctx,
+                    reponse_assistant=result.response,
+                )
+                if auto_evaluation.interprete_result(eval_res):
+                    print("[Auto-Évaluation] Note < 3 ou hallucination détectée ! Retravail de la réponse...")
+                    result = auto_evaluation.retravailler_reponse_structuree(
+                        client=client,
+                        model=model,
+                        question_user=safe_input,
+                        rag_context=rag_ctx,
+                        reponse_assistant=result.response,
+                        evaluation=eval_res,
+                        response_format=StructuredResponse,
+                    )
+                    auto_evaluation.evaluer_reponse_ia(
+                        client=client,
+                        model=model,
+                        question_user=safe_input,
+                        rag_context=rag_ctx,
+                        reponse_assistant=result.response,
+                    )
                 print(json.dumps(result.model_dump(), ensure_ascii=False))
                 history.append(ChatMessage(role="assistant", content=result.response))
                 current_session.messages = list(history)
@@ -682,7 +713,7 @@ def run_session(
             except OllamaModelNotFoundError as exc:
                 print(f"\n[Modèle introuvable] {exc}")
                 print(f"[Astuce] Exécutez 'ollama pull {model}' pour installer ce modèle.")
-            except OllamaStructuredOutputError as exc:
+            except OllamaStructuremdOutputError as exc:
                 print(f"\n[Erreur Sortie Structurée] {exc}")
             except OllamaAPIError as exc:
                 print(f"\n[Erreur API Ollama] {exc}")
@@ -727,11 +758,50 @@ def run_session(
             print()
             full_reply = "".join(response_chunks).strip()
             if full_reply:
+                eval_res = auto_evaluation.evaluer_reponse_ia(
+                    client=client,
+                    model=model,
+                    question_user=safe_input,
+                    rag_context=rag_ctx,
+                    reponse_assistant=full_reply,
+                )
+                if auto_evaluation.interprete_result(eval_res):
+                    print("[Auto-Évaluation] Note < 3 ou hallucination détectée !")
+                    print("[Auto-Évaluation] Retravail de la réponse en cours avec les remarques du juge...")
+                    sys.stdout.write("\nAssistant (corrigé) > ")
+                    sys.stdout.flush()
+                    reworked_chunks: list[str] = []
+                    try:
+                        for chunk in auto_evaluation.retravailler_reponse_stream(
+                            client=client,
+                            model=model,
+                            question_user=safe_input,
+                            rag_context=rag_ctx,
+                            reponse_assistant=full_reply,
+                            evaluation=eval_res,
+                        ):
+                            sys.stdout.write(chunk)
+                            sys.stdout.flush()
+                            reworked_chunks.append(chunk)
+                        print()
+                        if reworked_chunks:
+                            full_reply = "".join(reworked_chunks).strip()
+                            auto_evaluation.evaluer_reponse_ia(
+                                client=client,
+                                model=model,
+                                question_user=safe_input,
+                                rag_context=rag_ctx,
+                                reponse_assistant=full_reply,
+                            )
+                    except Exception as err:
+                        print(f"\n[Auto-Évaluation] Erreur lors du retravail de la réponse : {err}")
+
+            if full_reply:
                 history.append(ChatMessage(role="assistant", content=full_reply))
                 current_session.messages = list(history)
                 current_session.metadata.model = model
                 try:
-                    sementic_cache.add_to_cache(prompt=safe_input, llm_response=full_reply)
+                    sementic_cache.add_to_cache(prompt=safe_input, llm_response=full_reply, ollama_url=host)
                 except Exception as e:
                     print(f"[Erreur mise en cache] {e}")
                 session_manager.save_session(current_session)
@@ -812,10 +882,10 @@ def main(argv: list[str] | None = None) -> int:
         or bool(file_cfg.get("tools"))
         or bool(file_cfg.get("tools_enabled"))
     )
-    
+
     profile_name = args.profile or "default"
     session_id = args.session
-    timeout = float(os.getenv("SENSAI_TIMEOUT") or file_cfg.get("request_timeout") or 180.0)
+    timeout = float(os.getenv("SENSAI_TIMEOUT") or file_cfg.get("request_timeout") or 300.0)
 
     with OllamaClient(base_url=host, timeout=timeout) as client:
         active_tools = default_registry if (tools_flag or mcp_cmd) else None

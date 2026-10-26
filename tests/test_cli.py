@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.cli.main import (
+from src.interfaces.cli.main import (
     load_config_file,
     parse_arguments,
     resolve_configuration,
@@ -206,7 +206,7 @@ if __name__ == "__main__":
 
 
 
-@pytest.mark.parametrize("script", ["src/cli/main.py", "src/interfaces/cli/main.py"])
+@pytest.mark.parametrize("script", ["src/interfaces/cli/main.py"])
 def test_cli_launches_as_script_without_pythonpath(script, tmp_path):
     import os
     import subprocess
