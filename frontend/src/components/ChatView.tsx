@@ -32,6 +32,7 @@ import {
 import type { Conversation, Message, AttachedFile, ToolInfo } from '../types'
 import { parseUserMessage, parseFormMessage, stripFormBlock } from '../lib/messageParser'
 import { FormCard } from './FormCard'
+import { ToolIcon } from './ToolIcon'
 
 const THINKING_PHRASES = [
   "Réfléchit...",
@@ -121,18 +122,17 @@ export function ChatView({
   onToggleRunSettings,
   isRunSettingsOpen,
 }: ChatViewProps) {
-  // Structured Output (mode de réponse) + tous les outils du registre partagé avec le CLI
   const TOOL_DEFINITIONS = [
     STRUCTURED_OUTPUT_DEFINITION,
     ...toolsList
-      .filter((t) => t.id !== 'structured_output')
+      .filter((t) => t.id !== 'structured_output' && t.visible !== false)
       .map((t) => ({
         id: t.id,
         name: t.name,
         shortName: t.name,
         source: t.category,
         description: t.description,
-        icon: <Wrench className="w-3.5 h-3.5 text-sky-400" />,
+        icon: <ToolIcon name={t.icon} className="w-3.5 h-3.5 shrink-0" />,
       })),
   ]
   const [inputText, setInputText] = useState('')
@@ -795,7 +795,7 @@ export function ChatView({
                       </span>
                     )}
                   </PopoverTrigger>
-                  <PopoverContent className="w-80 p-3 bg-neutral-900 border-neutral-800 text-neutral-100 shadow-2xl rounded-xl space-y-3 z-50">
+                  <PopoverContent className="w-96 sm:w-[26rem] max-w-[calc(100vw-2rem)] p-3 bg-neutral-900 border-neutral-800 text-neutral-100 shadow-2xl rounded-xl space-y-3 z-50">
                     <div className="flex items-center justify-between pb-2 border-b border-neutral-800">
                       <div className="text-xs font-semibold flex items-center gap-1.5">
                         <Wrench className="w-3.5 h-3.5 text-indigo-400" />
@@ -806,7 +806,7 @@ export function ChatView({
                       </span>
                     </div>
 
-                    <div className="space-y-2">
+                    <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
                       {TOOL_DEFINITIONS.map((tool) => {
                         const isActive =
                           activeTools.includes(tool.id) ||
@@ -816,21 +816,22 @@ export function ChatView({
                             type="button"
                             key={tool.id}
                             onClick={() => onToggleTool(tool.id)}
-                            className={`w-full p-2.5 rounded-lg border text-xs flex items-center justify-between gap-2.5 cursor-pointer transition-colors text-left ${
+                            className={`w-full p-2.5 rounded-lg border text-xs flex items-start justify-between gap-2.5 cursor-pointer transition-colors text-left ${
                               isActive
                                 ? 'bg-neutral-800/90 border-indigo-500/50 text-white'
                                 : 'bg-neutral-950/60 border-neutral-800 text-neutral-400 hover:text-neutral-200 hover:border-neutral-700'
                             }`}
                           >
-                            <div className="flex items-center gap-2 min-w-0">
-                              <div className="p-1.5 rounded-md bg-neutral-900 border border-neutral-800 shrink-0">
+                            <div className="flex items-start gap-2.5 min-w-0 flex-1">
+                              <div className="p-1.5 rounded-md bg-neutral-900 border border-neutral-800 shrink-0 mt-0.5">
                                 {tool.icon}
                               </div>
-                              <div className="min-w-0">
-                                <div className="font-medium text-xs truncate text-neutral-200">
-                                  {tool.name}
+                              <div className="min-w-0 flex-1">
+                                <div className="font-medium text-xs text-neutral-200 flex items-center gap-1.5">
+                                  <span>{tool.name}</span>
+                                  <span className="text-[10px] text-neutral-500 font-normal">({tool.source})</span>
                                 </div>
-                                <div className="text-[10px] text-neutral-400 truncate">
+                                <div className="text-[11px] text-neutral-400 leading-snug break-words mt-0.5">
                                   {tool.description}
                                 </div>
                               </div>
@@ -838,7 +839,7 @@ export function ChatView({
                             <Switch
                               checked={isActive}
                               tabIndex={-1}
-                              className="shrink-0 pointer-events-none"
+                              className="shrink-0 pointer-events-none mt-0.5"
                             />
                           </button>
                         )

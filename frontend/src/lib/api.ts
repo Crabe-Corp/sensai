@@ -187,6 +187,12 @@ export const api = {
     })
   },
 
+  async deleteMcpServer(serverId: string): Promise<{ success: boolean; message?: string }> {
+    return apiFetch<{ success: boolean; message?: string }>(`/api/mcp/servers/${serverId}`, {
+      method: 'DELETE',
+    })
+  },
+
   async branchConversation(
     conversationId: string,
     messageId: string,

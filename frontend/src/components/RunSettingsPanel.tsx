@@ -3,6 +3,7 @@ import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import type { ToolInfo } from '../types'
+import { ToolIcon } from './ToolIcon'
 import {
   X,
   Cpu,
@@ -141,10 +142,13 @@ export function RunSettingsPanel({
                 onClick={() => onToggleTool('structured_output')}
                 className="w-full text-left p-3 rounded-xl border border-neutral-800 bg-neutral-950/40 hover:bg-neutral-900/60 transition-colors flex items-start justify-between gap-3 cursor-pointer"
               >
-                <div className="space-y-1 min-w-0">
+                <div className="space-y-1 min-w-0 flex-1">
                   <div className="text-xs font-medium text-neutral-200 flex items-center gap-1.5">
                     <Sparkles className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
                     <span>Structured Output</span>
+                  </div>
+                  <div className="text-[11px] text-neutral-400 leading-relaxed break-words">
+                    Formate et génère une sortie au format JSON structuré strict.
                   </div>
                   <div className="text-[10px] text-neutral-500">
                     Source: <span className="text-neutral-400">Sortie JSON structurée</span>
@@ -153,13 +157,13 @@ export function RunSettingsPanel({
                 <Switch
                   checked={activeTools.includes('structured_output') || activeTools.includes('Structured Output')}
                   tabIndex={-1}
-                  className="shrink-0 pointer-events-none"
+                  className="shrink-0 pointer-events-none mt-0.5"
                 />
               </button>
 
               {/* Outils du registre partagé avec le CLI (web_search, base des royaumes, RAG...) */}
               {toolsList
-                .filter((tool) => tool.id !== 'structured_output')
+                .filter((tool) => tool.id !== 'structured_output' && tool.visible !== false)
                 .map((tool) => (
                   <button
                     type="button"
@@ -167,11 +171,16 @@ export function RunSettingsPanel({
                     onClick={() => onToggleTool(tool.id)}
                     className="w-full text-left p-3 rounded-xl border border-neutral-800 bg-neutral-950/40 hover:bg-neutral-900/60 transition-colors flex items-start justify-between gap-3 cursor-pointer"
                   >
-                    <div className="space-y-1 min-w-0">
+                    <div className="space-y-1 min-w-0 flex-1">
                       <div className="text-xs font-medium text-neutral-200 flex items-center gap-1.5">
-                        <Wrench className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                        <ToolIcon name={tool.icon} className="w-3.5 h-3.5 shrink-0" />
                         <span className="truncate">{tool.name}</span>
                       </div>
+                      {tool.description && (
+                        <div className="text-[11px] text-neutral-400 leading-relaxed break-words">
+                          {tool.description}
+                        </div>
+                      )}
                       <div className="text-[10px] text-neutral-500">
                         Source: <span className="text-neutral-400">{tool.category}</span>
                       </div>
@@ -179,7 +188,7 @@ export function RunSettingsPanel({
                     <Switch
                       checked={activeTools.includes(tool.id)}
                       tabIndex={-1}
-                      className="shrink-0 pointer-events-none"
+                      className="shrink-0 pointer-events-none mt-0.5"
                     />
                   </button>
                 ))}

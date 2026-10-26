@@ -24,6 +24,8 @@ ALL_TOOLS_ID = "mcp_runner"
 # Outil interactif : sur le web, l'appel n'est pas exécuté, il devient un formulaire affiché à l'utilisateur
 FORM_TOOL_NAME = "ask_user_form"
 FORM_BLOCK_LANG = "sensai-form"
+# Outils internes actifs par défaut pour l'IA, masqués dans les contrôles utilisateur
+INTERNAL_TOOLS = {FORM_TOOL_NAME}
 
 _executor = ToolExecutor(registry=default_registry)
 
@@ -31,11 +33,11 @@ _executor = ToolExecutor(registry=default_registry)
 _TOOL_UI = {
     "web_search": ("Globe", "Web"),
     "search_historical_archives": ("BookOpen", "Histoire de Chine"),
-    "get_kingdom_info": ("Database", "Histoire de Chine"),
+    "get_kingdom_info": ("Landmark", "Histoire de Chine"),
     "query_kingdom_database": ("Database", "Base de données"),
-    "update_kingdom_database": ("Database", "Base de données"),
+    "update_kingdom_database": ("DatabaseZap", "Base de données"),
     "read_manuscript_file": ("FileText", "Manuscrits"),
-    "write_manuscript_file": ("FileText", "Manuscrits"),
+    "write_manuscript_file": ("FilePen", "Manuscrits"),
     "ask_user_form": ("ListChecks", "Interaction"),
 }
 
@@ -50,9 +52,10 @@ _STRUCTURED_OUTPUT_INFO = {
 
 
 def list_tools() -> List[Dict[str, Any]]:
-    tools = [dict(_STRUCTURED_OUTPUT_INFO)]
+    tools = [dict(_STRUCTURED_OUTPUT_INFO, visible=True)]
     for tool_def in default_registry.list_tools():
         icon, category = _TOOL_UI.get(tool_def.name, ("Wrench", "Outils"))
+        is_visible = tool_def.name not in INTERNAL_TOOLS
         tools.append({
             "id": tool_def.name,
             "name": tool_def.name.replace("_", " ").capitalize(),
@@ -60,6 +63,7 @@ def list_tools() -> List[Dict[str, Any]]:
             "parameters": tool_def.parameters.get("properties", {}),
             "icon": icon,
             "category": category,
+            "visible": is_visible,
         })
     return tools
 
@@ -69,7 +73,11 @@ def selected_tool_names(enabled_ids: List[str]) -> List[str]:
     registry_names = [t.name for t in default_registry.list_tools()]
     if ALL_TOOLS_ID in enabled_ids:
         return registry_names
-    return [name for name in registry_names if name in enabled_ids]
+    selected = [name for name in registry_names if name in enabled_ids]
+    for internal_name in INTERNAL_TOOLS:
+        if internal_name in registry_names and internal_name not in selected:
+            selected.append(internal_name)
+    return selected
 
 
 def get_ollama_tools(enabled_ids: List[str]) -> List[Dict[str, Any]]:

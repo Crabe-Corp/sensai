@@ -61,6 +61,7 @@ export interface ToolInfo {
   parameters?: Record<string, any>
   icon: string
   category: string
+  visible?: boolean
 }
 
 export interface McpServer {

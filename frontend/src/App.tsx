@@ -10,13 +10,14 @@ import { DeleteConversationModal } from './components/DeleteConversationModal'
 import { api, authStorage, UNAUTHORIZED_EVENT } from './lib/api'
 import type { Conversation, Message, User, AttachedFile, ToolInfo } from './types'
 
-// Ne garde que les outils connus du backend ; l'ancien 'mcp_runner' équivalait à « tous les outils »
+// Ne garde que les outils connus et visibles du backend ; l'ancien 'mcp_runner' équivalait à « tous les outils »
 function normalizeTools(ids: string[], available: ToolInfo[]): string[] {
-  const known = new Set(available.map((t) => t.id))
+  const visible = available.filter((t) => t.visible !== false)
+  const known = new Set(visible.map((t) => t.id))
   const result = new Set<string>()
   for (const id of ids) {
     if (id === 'Structured Output') result.add('structured_output')
-    else if (id === 'mcp_runner') available.forEach((t) => t.id !== 'structured_output' && result.add(t.id))
+    else if (id === 'mcp_runner') visible.forEach((t) => t.id !== 'structured_output' && result.add(t.id))
     else if (known.has(id)) result.add(id)
   }
   return [...result]
@@ -29,6 +30,7 @@ export function App() {
   // Navigation & Modales
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [settingsTab, setSettingsTab] = useState<'profile' | 'mcp'>('profile')
   const [modelsOpen, setModelsOpen] = useState(false)
   const [inviteModalOpen, setInviteModalOpen] = useState(false)
   const [runSettingsOpen, setRunSettingsOpen] = useState(false)
@@ -536,9 +538,15 @@ export function App() {
         onSelectConversation={(id) => selectConversation(id)}
         onNewConversation={(mode) => handleNewConversation(mode)}
         onDeleteConversation={handleDeleteConversation}
-        onOpenSettings={() => setSettingsOpen(true)}
+        onOpenSettings={() => {
+          setSettingsTab('profile')
+          setSettingsOpen(true)
+        }}
         onOpenModels={() => setModelsOpen(true)}
-        onOpenMcp={() => setSettingsOpen(true)}
+        onOpenMcp={() => {
+          setSettingsTab('mcp')
+          setSettingsOpen(true)
+        }}
         onLogout={handleLogout}
       />
 
@@ -580,6 +588,7 @@ export function App() {
       {/* Modal Paramètres & MCP */}
       <SettingsModal
         isOpen={settingsOpen}
+        initialTab={settingsTab}
         onClose={() => setSettingsOpen(false)}
         user={user}
         onUserUpdated={(updated) => setUser(updated)}

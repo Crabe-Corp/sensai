@@ -1,5 +1,5 @@
 from typing import List, Optional
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from security import get_current_user
 
@@ -59,4 +59,14 @@ def add_mcp_server(server: McpServerCreate, user=Depends(get_current_user)):
     }
     DEFAULT_MCP_SERVERS.append(new_s)
     return {"success": True, "server": new_s}
+
+
+@router.delete("/servers/{server_id}")
+def delete_mcp_server(server_id: str, user=Depends(get_current_user)):
+    global DEFAULT_MCP_SERVERS
+    initial_len = len(DEFAULT_MCP_SERVERS)
+    DEFAULT_MCP_SERVERS = [s for s in DEFAULT_MCP_SERVERS if s["id"] != server_id]
+    if len(DEFAULT_MCP_SERVERS) == initial_len:
+        raise HTTPException(status_code=404, detail="Serveur MCP introuvable")
+    return {"success": True, "message": "Serveur MCP supprimé avec succès"}
 
