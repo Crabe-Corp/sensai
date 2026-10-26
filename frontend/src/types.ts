@@ -61,6 +61,7 @@ export interface ToolInfo {
   parameters?: Record<string, any>
   icon: string
   category: string
+  visible?: boolean
 }
 
 export interface McpServer {
@@ -72,3 +73,16 @@ export interface McpServer {
   tools_count: number
 }
 
+
+export interface FormQuestion {
+  id: string
+  label: string
+  type: 'text' | 'number' | 'boolean' | 'choice'
+  required: boolean
+  options?: string[]
+}
+
+export interface FormSpec {
+  title: string
+  questions: FormQuestion[]
+}
