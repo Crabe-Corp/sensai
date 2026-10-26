@@ -339,21 +339,65 @@ def run_session(client: OllamaClient, model: str, host: str, tools: Any = None, 
             continue
 
         augmented_input = safe_input
+        rag_found = False
         if rag_enabled:
             try:
                 from src.RAG.retriever import retrieve_rag_context
-                rag_ctx = retrieve_rag_context(safe_input, ollama_url=host, ollama_model=model)
+                rag_res = retrieve_rag_context(
+                    safe_input,
+                    ollama_url=host,
+                    ollama_model=model,
+                    fallback_web=(active_tools is not None),
+                    return_count=True,
+                )
+                if isinstance(rag_res, tuple):
+                    rag_ctx, source_count = rag_res
+                else:
+                    rag_ctx = rag_res
+                    source_count = rag_ctx.count("[Source :") if rag_ctx else 0
+
                 if rag_ctx:
-                    print("[RAG] Contexte historique injecté depuis les chroniques.")
-                    augmented_input = (
-                        f"Tu es un conseiller stratégique des 7 Royaumes Combattants. "
-                        f"Réponds en t'appuyant sur ce contexte historique :\n\n"
-                        f"{rag_ctx}\n\n"
-                        f"Question : {safe_input}"
-                    )
+                    rag_found = True
+                    if source_count >= 2:
+                        print(f"[RAG] Contexte historique suffisant ({source_count} sources trouvées dans les chroniques locales).")
+                        augmented_input = (
+                            f"Tu es un conseiller stratégique des 7 Royaumes Combattants.\n\n"
+                            f"### CONSIGNES DE RECHERCHE STRICTES :\n"
+                            f"1. Réponds en priorité absolue en t'appuyant sur les archives locales fournies ci-dessous ({source_count} sources trouvées).\n"
+                            f"2. Les archives locales sont suffisantes. N'appelle l'outil 'web_search' que si un détail extérieur spécifique manque.\n"
+                            f"3. Fournis une analyse détaillée et argumentée.\n\n"
+                            f"### ARCHIVES LOCALES (RAG) :\n{rag_ctx}\n\n"
+                            f"Question : {safe_input}"
+                        )
+                    elif source_count == 1:
+                        print("[RAG] Sources locales parcellaires (1 seule source). Complément automatique via recherche Web...")
+                        augmented_input = (
+                            f"Tu es un conseiller stratégique des 7 Royaumes Combattants.\n\n"
+                            f"### CONSIGNES DE RECHERCHE STRICTES :\n"
+                            f"1. Les archives locales ne contiennent qu'une seule source très partielle. Ne te limite pas à une réponse courte de 3 lignes !\n"
+                            f"2. Utilise les extraits d'archives locales et les informations complémentaires fournies ci-dessous (ou l'outil 'web_search') pour enrichir et développer ta réponse.\n"
+                            f"3. Fournis une réponse complète, détaillée et bien structurée.\n\n"
+                            f"### ARCHIVES ET SOURCES COMPLÉMENTAIRES :\n{rag_ctx}\n\n"
+                            f"Question : {safe_input}"
+                        )
+                    else:
+                        print("[RAG] Aucune archive locale trouvée. Bascule automatique sur la recherche Web...")
+                        augmented_input = (
+                            f"Tu es un conseiller stratégique des 7 Royaumes Combattants.\n\n"
+                            f"### CONSIGNES DE RECHERCHE :\n"
+                            f"Aucune archive locale n'a été trouvée pour cette question. Utilise les informations issues du Web ci-dessous (ou l'outil 'web_search') pour formuler une réponse complète et documentée.\n\n"
+                            f"### INFORMATIONS WEB :\n{rag_ctx}\n\n"
+                            f"Question : {safe_input}"
+                        )
             except Exception:
                 pass
 
+        if not rag_found and active_tools is not None:
+            augmented_input = (
+                f"{safe_input}\n\n"
+                f"[Système : Aucune archive locale n'a été trouvée dans les chroniques historiques pour cette question. "
+                f"Utilise l'outil 'web_search' pour rechercher les informations manquantes si nécessaire.]"
+            )
         user_msg = ChatMessage(role="user", content=augmented_input)
         history.append(user_msg)
 
