@@ -5,3 +5,4 @@ pytest-mock>=3.12.0
 qdrant-client>=1.11.0
 requests>=2.31.0
 fastembed>=0.9.0
+pypdf>=6.0.0

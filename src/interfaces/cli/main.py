@@ -464,6 +464,17 @@ def run_session(
 
         safe_input, _has_confidential_data = mask_pii(user_input)
 
+        from src.features.pdf import build_pdf_historical_veracity_prompt, detect_and_prepare_pdf_audit
+
+        pdf_audit = detect_and_prepare_pdf_audit(safe_input)
+        if pdf_audit is not None:
+            _pdf_path, pdf_instruction, pdf_info = pdf_audit
+            print(
+                f"[PDF Détecté] '{pdf_info.file_name}' ({pdf_info.extracted_pages}/{pdf_info.total_pages} page(s), "
+                f"{len(pdf_info.content)} car.) — Audit de la véracité historique..."
+            )
+            safe_input = build_pdf_historical_veracity_prompt(pdf_info, pdf_instruction)
+
         if current_mode.free_chat:
             is_valid, error_message = validate_input_with_llm(safe_input, client, model)
             if not is_valid:
@@ -473,7 +484,7 @@ def run_session(
         augmented_input = safe_input
         rag_found = False
 
-        if cache_build and current_mode.free_chat:
+        if cache_build and current_mode.free_chat and pdf_audit is None:
             try:
                 cache_result = sementic_cache.get_info_cache(prompt=safe_input, ollama_url=host, model=model)
                 if cache_result is not None and is_french_text(cache_result):
@@ -495,8 +506,13 @@ def run_session(
         if rag_enabled and current_mode.free_chat:
             try:
                 from src.RAG.retriever import retrieve_rag_context
+                rag_query = (
+                    f"{pdf_audit[1]} {pdf_audit[2].file_name} {pdf_audit[2].content[:250]}".strip()
+                    if pdf_audit is not None
+                    else safe_input
+                )
                 rag_res = retrieve_rag_context(
-                    safe_input,
+                    rag_query,
                     ollama_url=host,
                     ollama_model=model,
                     fallback_web=(active_tools is not None),
@@ -511,53 +527,52 @@ def run_session(
                 if rag_ctx:
                     rag_found = True
                     if source_count >= 2:
-                        print(f"[RAG] Contexte historique suffisant ({source_count} sources trouvées dans les chroniques locales).")
+                        debug_print(f"[RAG] Historical context sufficient ({source_count} sources found in chronicles).")
                         augmented_input = (
-                            f"Tu es un conseiller stratégique des 7 Royaumes Combattants.\n\n"
-                            f"### CONSIGNES DE RECHERCHE STRICTES :\n"
-                            f"1. Réponds en priorité absolue en t'appuyant sur les archives locales fournies ci-dessous ({source_count} sources trouvées).\n"
-                            f"2. Les archives locales sont suffisantes. N'appelle l'outil 'web_search' que si un détail extérieur spécifique manque.\n"
-                            f"3. Fournis une analyse détaillée et argumentée.\n\n"
-                            f"### ARCHIVES LOCALES (RAG) :\n{rag_ctx}\n\n"
-                            f"Question : {safe_input}"
+                            f"You are an expert strategic advisor on the 7 Warring States of Ancient China.\n\n"
+                            f"HISTORICAL DOCUMENTS (archives locales fournies ci-dessous ({source_count} sources trouvées)):\n"
+                            f"======================\n"
+                            f"{rag_ctx}\n"
+                            f"======================\n\n"
+                            f"RESPONSE INSTRUCTIONS:\n"
+                            f"1. CONTEXT USAGE: Synthesize and respond directly by relying on the historical facts attested in the documents above to enlighten the Lord. N'appelle l'outil 'web_search' que si un détail extérieur spécifique manque.\n"
+                            f"2. HANDLING MISSING INFORMATION: If and only if the documents above contain absolutely NO information to answer the question, respond only with 'My chronicles do not mention this information.' NEVER use this phrase if you provide any relevant facts or partial answers in your response.\n"
+                            f"3. ARMY SIZE CORRECTION: The ancient texts (Shiji and Zhan Guo Ce) contain classical translation conventions. If they mention Chinese army sizes in tens of thousands (e.g., 20,000 or 60,000), it stems from the Chinese numeral unit 'Wan' (10,000). Always multiply these military counts by 10 (e.g., 200,000) to reflect historical reality.\n"
+                            f"4. ANTI-CONFUSION: The documents may relate stories of multiple different generals (e.g., Li Xin, Han Xin, Wang Jian). Do NOT mix their accounts. Only answer with facts explicitly associated with the topic requested by the Lord.\n"
+                            f"5. LANGUAGE: You must ALWAYS formulate your entire response in English.\n\n"
+                            f"Lord's Question: {safe_input}"
                         )
                     elif source_count == 1:
-                        print("[RAG] Sources locales parcellaires (1 seule source). Complément automatique via recherche Web...")
+                        debug_print("[RAG] Sources locales parcellaires (1 seule source). Complément automatique via recherche Web...")
                         augmented_input = (
-                            f"Tu es un conseiller stratégique des 7 Royaumes Combattants.\n\n"
-                            f"### CONSIGNES DE RECHERCHE STRICTES :\n"
-                            f"1. Les archives locales ne contiennent qu'une seule source très partielle. Ne te limite pas à une réponse courte de 3 lignes !\n"
-                            f"2. Utilise les extraits d'archives locales et les informations complémentaires fournies ci-dessous (ou l'outil 'web_search') pour enrichir et développer ta réponse.\n"
-                            f"3. Fournis une réponse complète, détaillée et bien structurée.\n\n"
-                            f"### ARCHIVES ET SOURCES COMPLÉMENTAIRES :\n{rag_ctx}\n\n"
-                            f"Question : {safe_input}"
+                            f"You are an expert strategic advisor on the 7 Warring States of Ancient China.\n\n"
+                            f"### ARCHIVES ET SOURCES COMPLÉMENTAIRES :\n"
+                            f"======================\n"
+                            f"{rag_ctx}\n"
+                            f"======================\n\n"
+                            f"RESPONSE INSTRUCTIONS:\n"
+                            f"1. CONTEXT USAGE: Les archives locales ne contiennent qu'une seule source très partielle. Ne te limite pas à une réponse courte de 3 lignes ! Utilize both local chronicle excerpts and Web search findings to develop a rich, structured answer.\n"
+                            f"2. HANDLING MISSING INFORMATION: If and only if the documents above contain absolutely NO information to answer the question, respond only with 'My chronicles do not mention this information.' NEVER use this phrase if you provide any relevant facts or partial answers in your response.\n"
+                            f"3. ARMY SIZE CORRECTION: The ancient texts (Shiji and Zhan Guo Ce) contain classical translation conventions. If they mention Chinese army sizes in tens of thousands (e.g., 20,000 or 60,000), it stems from the Chinese numeral unit 'Wan' (10,000). Always multiply these military counts by 10 (e.g., 200,000) to reflect historical reality.\n"
+                            f"4. ANTI-CONFUSION: The documents may relate stories of multiple different generals (e.g., Li Xin, Han Xin, Wang Jian). Do NOT mix their accounts. Only answer with facts explicitly associated with the topic requested by the Lord.\n"
+                            f"5. LANGUAGE: You must ALWAYS formulate your entire response in English.\n\n"
+                            f"Lord's Question: {safe_input}"
                         )
                     else:
-                        print("[RAG] Aucune archive locale trouvée. Bascule automatique sur la recherche Web...")
+                        debug_print("[RAG] Aucune archive locale trouvée. Bascule automatique sur la recherche Web...")
                         augmented_input = (
-                            f"Tu es un conseiller stratégique des 7 Royaumes Combattants.\n\n"
-                            f"### CONSIGNES DE RECHERCHE :\n"
-                            f"Aucune archive locale n'a été trouvée pour cette question. Utilise les informations issues du Web ci-dessous (ou l'outil 'web_search') pour formuler une réponse complète et documentée.\n\n"
-                            f"### INFORMATIONS WEB :\n{rag_ctx}\n\n"
-                            f"Question : {safe_input}"
+                            f"You are an expert strategic advisor on the 7 Warring States of Ancient China.\n\n"
+                            f"### INFORMATIONS WEB :\n"
+                            f"======================\n"
+                            f"{rag_ctx}\n"
+                            f"======================\n\n"
+                            f"RESPONSE INSTRUCTIONS:\n"
+                            f"1. CONTEXT USAGE: Aucune archive locale n'a été trouvée pour cette question. Rely on the Web search findings above to formulate a complete and documented answer.\n"
+                            f"2. ARMY SIZE CORRECTION: If army sizes are mentioned in tens of thousands, remember the classical Chinese numeral unit 'Wan' (10,000) and multiply by 10 (e.g., 200,000) to reflect historical reality.\n"
+                            f"3. ANTI-CONFUSION: Do not mix stories of different historical figures. Only answer with facts explicitly associated with the requested topic.\n"
+                            f"4. LANGUAGE: You must ALWAYS formulate your entire response in English.\n\n"
+                            f"Lord's Question: {safe_input}"
                         )
-                rag_ctx = retrieve_rag_context(safe_input, ollama_url=host, ollama_model=model)
-                if rag_ctx:
-                    debug_print("[RAG] Historical context injected from chronicles.")
-                    augmented_input = (
-                        f"You are an expert strategic advisor on the 7 Warring States of Ancient China.\n\n"
-                        f"HISTORICAL DOCUMENTS:\n"
-                        f"======================\n"
-                        f"{rag_ctx}\n"
-                        f"======================\n\n"
-                        f"RESPONSE INSTRUCTIONS:\n"
-                        f"1. CONTEXT USAGE: Synthesize and respond directly by relying on the historical facts attested in the documents above to enlighten the Lord.\n"
-                        f"2. HANDLING MISSING INFORMATION: If and only if the documents above contain absolutely NO information to answer the question, respond only with 'My chronicles do not mention this information.' NEVER use this phrase if you provide any relevant facts or partial answers in your response.\n"
-                        f"3. ARMY SIZE CORRECTION: The ancient texts (Shiji and Zhan Guo Ce) contain classical translation conventions. If they mention Chinese army sizes in tens of thousands (e.g., 20,000 or 60,000), it stems from the Chinese numeral unit 'Wan' (10,000). Always multiply these military counts by 10 (e.g., 200,000) to reflect historical reality.\n"
-                        f"4. ANTI-CONFUSION: The documents may relate stories of multiple different generals (e.g., Li Xin, Han Xin, Wang Jian). Do NOT mix their accounts. Only answer with facts explicitly associated with the topic requested by the Lord.\n"
-                        f"5. LANGUAGE: You must ALWAYS formulate your entire response in English.\n\n"
-                        f"Lord's Question: {safe_input}"
-                    )
             except Exception:
                 pass
 
