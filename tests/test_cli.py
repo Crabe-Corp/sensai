@@ -13,6 +13,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from src.interfaces.cli.main import (
+    DEFAULT_CONFIG_PATH,
+    DEFAULT_HOST,
+    DEFAULT_MODEL,
     load_config_file,
     parse_arguments,
     resolve_configuration,
