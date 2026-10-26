@@ -10,20 +10,57 @@ if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8")
 if __package__ is None or __package__ == "":
     sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+from src.core.db.database import init_database
 from src.core import memory_management as mem, singleton_token
-from src.core.engine import (ConversationEngine, EngineEvent, ErrorEvent, TokenChunkEvent, ToolCallEvent, ToolResultEvent,)
-from src.core.ollama_client import (ChatMessage, OllamaAPIError, OllamaClient, OllamaConnectionError, OllamaError, OllamaModelNotFoundError, OllamaStructuredOutputError,)
+from src.core import sementic_cache
+from src.core.engine import (
+    ConversationEngine,
+    EngineEvent,
+    ErrorEvent,
+    TokenChunkEvent,
+    ToolCallEvent,
+    ToolResultEvent,
+)
+from src.core.ollama_client import (
+    ChatMessage,
+    OllamaAPIError,
+    OllamaClient,
+    OllamaConnectionError,
+    OllamaError,
+    OllamaModelNotFoundError,
+    OllamaStructuredOutputError,
+)
 from src.core.schemas import HistoricalFigure, KingdomInfo, StructuredResponse
 from src.features.sec.security import mask_pii, validate_input_with_llm
-from src.features.memory import (ArtifactDocument, ArtifactManager, ChatSession, ProfileManager, SessionManager, SessionMetadata, UserProfile,)
-from src.features.tools import artifact_tool, builtin, web_search
-from src.features.tools.artifact_tool import (ARTIFACT_SYSTEM_INSTRUCTION, get_active_artifact, set_active_artifact,)
+from src.features.memory import (
+    ArtifactDocument,
+    ArtifactManager,
+    ChatSession,
+    ProfileManager,
+    SessionManager,
+    SessionMetadata,
+    UserProfile,
+)
+from src.features.prompt import (
+    Persona,
+    PersonaManager,
+    PromptVersion,
+    PromptVersioningEngine,
+    default_versioning_engine,
+)
+from src.features.tools import artifact_tool, builtin, forms, web_search
+from src.features.tools.artifact_tool import (
+    ARTIFACT_SYSTEM_INSTRUCTION,
+    get_active_artifact,
+    set_active_artifact,
+)
 from src.features.tools.mcp_client import MCPClient, MCPError
 from src.features.tools.registry import default_registry
 from src.features.simulation.human_verif import confirm_simple
 from src.features.simulation.modes import MODES, AgentMode
-from src.interfaces.cli.commands.commands import Command, Commands, command, print_help
 import requests
+from src.core import auto_evaluation
+from src.interfaces.cli.commands.commands import Command, Commands, command
 
 DEFAULT_CONFIG_PATH = Path("config.json")
 DEFAULT_HOST = "http://localhost:11434"
@@ -123,6 +160,12 @@ def parse_arguments(argv: list[str] | None = None) -> argparse.Namespace:
         help="Nom du profil utilisateur à charger (ex: default, historien).",
     )
     parser.add_argument(
+        "--persona",
+        type=str,
+        default=None,
+        help="Nom ou fichier de la persona à charger (ex: scribe_qin, erudit_zhao).",
+    )
+    parser.add_argument(
         "--rag",
         action="store_true",
         default=True,
@@ -138,6 +181,7 @@ def print_banner(
     host: str,
     tools_enabled: bool = False,
     profile_name: str | None = None,
+    persona_name: str | None = None,
     session_id: str | None = None,
     rag_enabled: bool = False,
 ) -> None:
@@ -146,6 +190,7 @@ def print_banner(
                     - host - STR: URL du serveur Ollama
                     - tools_enabled - BOOL: indicateur d'activation du support des outils
                     - profile_name - STR | NONE: nom du profil utilisateur actif
+                    - persona_name - STR | NONE: nom de la persona active
                     - session_id - STR | NONE: identifiant de la session courante
             RETURN: None"""
 
@@ -159,12 +204,14 @@ def print_banner(
         print(" RAG vectoriel: Activé")
     if profile_name:
         print(f" Profil       : {profile_name}")
+    if persona_name:
+        print(f" Persona      : {persona_name}")
     if session_id:
         print(f" Session ID   : {session_id}")
     print(" Modes        : /simulation [seed] | /encyclopedia")
     print(" Tapez '/help' pour voir les commandes ou '/exit' pour quitter.")
+    print(" NB : Les textes historiques utilisés par le modèle provenant de traductions anciennes, certaines nuances peuvent être perdues. N'hésitez pas à vérifier les informations qui vous sembleraient incohérentes.")
     print("=" * 60)
-
 
 def build_call_messages(mode: AgentMode, history: list[ChatMessage]) -> list[ChatMessage]:
     """Construit la liste de messages envoyée au modèle pour le mode courant.
@@ -185,11 +232,15 @@ def run_session(
     mcp_server_cmd: str | None = None,
     session_id: str | None = None,
     profile_name: str | None = None,
+    persona_name: str | None = None,
     session_manager: SessionManager | None = None,
     profile_manager: ProfileManager | None = None,
     artifact_manager: ArtifactManager | None = None,
+    persona_manager: PersonaManager | None = None,
+    versioning_engine: PromptVersioningEngine | None = None,
     max_tokens: int = 2000,
     rag_enabled: bool = True,
+    cache_build: bool = False,
 ) -> None:
     """Gère la boucle interactive du chatbot CLI, l'historique et les commandes slash.
             PARAMS: - client - OLLAMACLIENT: instance active du client HTTP Ollama
@@ -199,21 +250,31 @@ def run_session(
                     - mcp_server_cmd - STR | NONE: commande de démarrage d'un serveur MCP externe
                     - session_id - STR | NONE: identifiant d'une session à restaurer
                     - profile_name - STR | NONE: nom du profil utilisateur à charger
+                    - persona_name - STR | NONE: nom ou fichier de la persona à charger
                     - session_manager - SESSIONMANAGER | NONE: gestionnaire de sessions persistant
                     - profile_manager - PROFILEMANAGER | NONE: gestionnaire de profils utilisateur
                     - artifact_manager - ARTIFACTMANAGER | NONE: gestionnaire de livrables d'état
+                    - persona_manager - PERSONAMANAGER | NONE: gestionnaire de personas
+                    - versioning_engine - PROMPTVERSIONINGENGINE | NONE: moteur de versioning de prompts
+                    - cache_build - BOOL: indicateur d'activation du cache sémantique
             RETURN: None"""
 
-    if session_manager is None:
-        session_manager = SessionManager()
-    if profile_manager is None:
-        profile_manager = ProfileManager()
-    if artifact_manager is None:
-        artifact_manager = ArtifactManager()
+    session_manager = session_manager or SessionManager()
+    profile_manager = profile_manager or ProfileManager()
+    artifact_manager = artifact_manager or ArtifactManager()
+    versioning_engine = versioning_engine or default_versioning_engine
+    persona_manager = persona_manager or PersonaManager(versioning_engine=versioning_engine)
 
     current_profile: UserProfile | None = None
     if profile_name:
         current_profile = profile_manager.get_or_create_profile(profile_name)
+
+    current_persona: Persona | None = None
+    if persona_name:
+        try:
+            current_persona = persona_manager.load_persona(persona_name)
+        except Exception as exc:
+            print(f"[Avertissement Persona] {exc}")
 
     current_session: ChatSession
     if session_id:
@@ -236,7 +297,15 @@ def run_session(
     active_tools = tools
     tools_enabled = active_tools is not None
 
-    if tools_enabled:
+    if current_persona:
+        p_content = current_persona.system_prompt
+        if tools_enabled and "update_artifact" not in p_content:
+            p_content = f"{p_content}\n\n{ARTIFACT_SYSTEM_INSTRUCTION}"
+        if history and history[0].role == "system":
+            history[0].content = p_content
+        else:
+            history.insert(0, ChatMessage(role="system", content=p_content))
+    elif tools_enabled:
         if not history:
             history.append(ChatMessage(role="system", content=ARTIFACT_SYSTEM_INSTRUCTION))
         elif history[0].role == "system":
@@ -265,9 +334,11 @@ def run_session(
         host,
         tools_enabled=tools_enabled,
         profile_name=current_profile.username if current_profile else None,
+        persona_name=current_persona.name if current_persona else None,
         session_id=current_session.metadata.session_id,
         rag_enabled=rag_enabled,
     )
+    init_database()
     engines = {
         name: ConversationEngine(client=client, registry=m.registry, max_tool_iterations=m.max_tool_iterations)
         for name, m in MODES.items()
@@ -283,6 +354,9 @@ def run_session(
         session_manager=session_manager,
         profile_manager=profile_manager,
         artifact_manager=artifact_manager,
+        current_persona=current_persona,
+        persona_manager=persona_manager,
+        versioning_engine=versioning_engine,
         max_tokens=max_tokens,
         rag_enabled=rag_enabled,
         structured_mode=structured_mode,
@@ -293,7 +367,9 @@ def run_session(
     )
 
     while True:
-        if singleton_token.budget_tokens >= max_tokens:
+        margin = (max_tokens * 15) / 100 # Retirer 15% du context legth afin de laisser du context au model pour la compression de l'historique
+        token_with_margin = max_tokens - margin
+        if singleton_token.budget_tokens >= token_with_margin:
             history = mem.enforce_token_budget(model, client, history, max_history_tokens=max_tokens)
             current_session.messages = list(history)
             command_handler.history = history
@@ -307,6 +383,11 @@ def run_session(
 
         if not user_input:
             print("[Info] Veuillez saisir un message non vide.")
+            continue
+        if user_input == "/clear-cache":
+            from src.core import sementic_cache
+            sementic_cache.clean_cache()
+            print("[Info] Cache vidé avec succès !")
             continue
 
         mode_cmd, *mode_args = user_input.split()
@@ -355,20 +436,46 @@ def run_session(
                 continue
 
         augmented_input = safe_input
+        if cache_build and current_mode.free_chat:
+            try:
+                from src.core import sementic_cache
+                cache_result = sementic_cache.get_info_cache(prompt=safe_input, ollama_url=host, model=model)
+                if cache_result is not None:
+                    print("[SEMENTIC CACHE] question already asked find")
+                    sys.stdout.write("\nAssistant > ")
+                    print(cache_result)
+                    history.append(ChatMessage(role="user", content=safe_input))
+                    history.append(ChatMessage(role="assistant", content=cache_result))
+                    continue
+            except Exception:
+                pass
+
+        rag_ctx = None
+
         if rag_enabled and current_mode.free_chat:
             try:
                 from src.RAG.retriever import retrieve_rag_context
                 rag_ctx = retrieve_rag_context(safe_input, ollama_url=host, ollama_model=model)
+                print(rag_ctx)
                 if rag_ctx:
                     print("[RAG] Contexte historique injecté depuis les chroniques.")
                     augmented_input = (
-                        f"Tu es un conseiller stratégique des 7 Royaumes Combattants. "
-                        f"Réponds en t'appuyant sur ce contexte historique :\n\n"
-                        f"{rag_ctx}\n\n"
-                        f"Question : {safe_input}"
+                        f"Tu es un conseiller stratégique expert des 7 Royaumes Combattants.\n\n"
+                        f"DOCUMENTS HISTORIQUES :\n"
+                        f"======================\n"
+                        f"{rag_ctx}\n"
+                        f"======================\n\n"
+                        f"INSTRUCTIONS DE RÉPONSE :\n"
+                        f"1. EXPLOITATION DU CONTEXTE : Synthétise et réponds directement en t'appuyant sur les faits historiques attestés dans les documents ci-dessus pour éclairer le Seigneur.\n"
+                        f"2. GESTION DU MANQUE D'INFORMATION : Si et seulement si les documents ci-dessus ne contiennent absolument AUCUN élément permettant de répondre à la question, réponds uniquement 'Mes chroniques ne mentionnent pas cette information.' Ne prononce JAMAIS cette phrase si tu donnes des éléments de réponse dans ton message.\n"
+                        f"3. CORRECTION DES ARMÉES : Les textes (Shiji et Zhan Guo Ce) sont de vieilles traductions. S'ils mentionnent des tailles d'armées chinoises en dizaines de milliers (ex: 20 000 ou 60 000), il s'agit d'une erreur de traduction du caractère 'Wan' (10 000). Multiplie toujours ces effectifs militaires par 10 (ex: 200 000) pour rétablir la vérité historique.\n"
+                        f"4. ANTI-FUSION : Les documents peuvent relater les histoires de plusieurs généraux différents (ex: Li Xin, Han Xin, Wang Jian). Ne mélange PAS leurs histoires. Ne réponds qu'avec les faits explicitement associés au sujet demandé par le Seigneur.\n"
+                        f"5. LANGUE : Réponds dans la même langue que la question posée par le Seigneur.\n\n"
+                        f"Question du Seigneur : {safe_input}"
                     )
             except Exception:
                 pass
+
 
         user_msg = ChatMessage(role="user", content=augmented_input)
         history.append(user_msg)
@@ -382,6 +489,31 @@ def run_session(
                     messages=list(history),
                     response_format=StructuredResponse,
                 )
+                eval_res = auto_evaluation.evaluer_reponse_ia(
+                    client=client,
+                    model=model,
+                    question_user=safe_input,
+                    rag_context=rag_ctx,
+                    reponse_assistant=result.response,
+                )
+                if auto_evaluation.interprete_result(eval_res):
+                    print("[Auto-Évaluation] Note < 3 ou hallucination détectée ! Retravail de la réponse...")
+                    result = auto_evaluation.retravailler_reponse_structuree(
+                        client=client,
+                        model=model,
+                        question_user=safe_input,
+                        rag_context=rag_ctx,
+                        reponse_assistant=result.response,
+                        evaluation=eval_res,
+                        response_format=StructuredResponse,
+                    )
+                    auto_evaluation.evaluer_reponse_ia(
+                        client=client,
+                        model=model,
+                        question_user=safe_input,
+                        rag_context=rag_ctx,
+                        reponse_assistant=result.response,
+                    )
                 print(json.dumps(result.model_dump(), ensure_ascii=False))
                 history.append(ChatMessage(role="assistant", content=result.response))
                 current_session.messages = list(history)
@@ -441,10 +573,54 @@ def run_session(
 
             print()
             full_reply = "".join(response_chunks).strip()
+            if full_reply and current_mode.free_chat:
+                eval_res = auto_evaluation.evaluer_reponse_ia(
+                    client=client,
+                    model=model,
+                    question_user=safe_input,
+                    rag_context=rag_ctx,
+                    reponse_assistant=full_reply,
+                )
+                if auto_evaluation.interprete_result(eval_res):
+                    print("[Auto-Évaluation] Note < 3 ou hallucination détectée !")
+                    print("[Auto-Évaluation] Retravail de la réponse en cours avec les remarques du juge...")
+                    sys.stdout.write("\nAssistant (corrigé) > ")
+                    sys.stdout.flush()
+                    reworked_chunks: list[str] = []
+                    try:
+                        for chunk in auto_evaluation.retravailler_reponse_stream(
+                            client=client,
+                            model=model,
+                            question_user=safe_input,
+                            rag_context=rag_ctx,
+                            reponse_assistant=full_reply,
+                            evaluation=eval_res,
+                        ):
+                            sys.stdout.write(chunk)
+                            sys.stdout.flush()
+                            reworked_chunks.append(chunk)
+                        print()
+                        if reworked_chunks:
+                            full_reply = "".join(reworked_chunks).strip()
+                            auto_evaluation.evaluer_reponse_ia(
+                                client=client,
+                                model=model,
+                                question_user=safe_input,
+                                rag_context=rag_ctx,
+                                reponse_assistant=full_reply,
+                            )
+                    except Exception as err:
+                        print(f"\n[Auto-Évaluation] Erreur lors du retravail de la réponse : {err}")
+
             if full_reply:
                 history.append(ChatMessage(role="assistant", content=full_reply))
                 current_session.messages = list(history)
                 current_session.metadata.model = model
+                if cache_build and current_mode.free_chat:
+                    try:
+                        sementic_cache.add_to_cache(prompt=safe_input, llm_response=full_reply, ollama_url=host)
+                    except Exception as e:
+                        print(f"[Erreur mise en cache] {e}")
                 session_manager.save_session(current_session)
                 artifact_manager.save_artifact(current_session.metadata.session_id, get_active_artifact())
 
@@ -496,29 +672,39 @@ def main(argv: list[str] | None = None) -> int:
             PARAMS: - argv - LIST[STR] | NONE: arguments de ligne de commande optionnels
             RETURN: code de retour entier (0 en cas de succès, 1 en cas d'erreur)"""
 
-    args = parse_arguments(argv) # args correspond a un tableau de configuration de l'app (ex : Namespace(model=None, host=None, config='config.json', tools=False, mcp_server=None, session=None, profile=None, max_tokens=2000, rag=False))
+    args = parse_arguments(argv)
     host, model = resolve_configuration(args)
 
     context_length = 2000
     try:
         response = requests.post(host + "/api/show", json={"model": model})
-    
         if response.status_code == 200:
             show_data = response.json()
             model_details = show_data.get("model_info", {})
-
             for key, value in model_details.items():
                 if "context_length" in key:
                     context_length = value
                     break
-
             print(f"[Info] Context length détecté pour {model} : {context_length}")
         else:
             print(f"[Avertissement] Modèle {model} introuvable ou erreur. Code: {response.status_code}")
-            
     except Exception as e:
         print(f"[Erreur dans la récupération du context length] {e}")
         context_length = 2000
+    try:
+        init_database()
+    except Exception as e:
+        print(f"[Erreur dans l'initialisation de la BDD] {e}")
+        return 1
+
+    cache_build = False
+    try:
+        sementic_cache.create_cache()
+        cache_build = True
+    except Exception as e:
+        print(f"[Erreur dans la creation du cache] {e}")
+        cache_build = False
+        return 1
 
     file_cfg = load_config_file(Path(args.config)) if args.config else {}
     mcp_cmd = args.mcp_server or os.getenv("SENSAI_MCP_SERVER") or file_cfg.get("mcp_server")
@@ -528,10 +714,11 @@ def main(argv: list[str] | None = None) -> int:
         or bool(file_cfg.get("tools"))
         or bool(file_cfg.get("tools_enabled"))
     )
-    
+
     profile_name = args.profile or "default"
+    persona_name = args.persona or os.getenv("SENSAI_PERSONA") or file_cfg.get("persona")
     session_id = args.session
-    timeout = float(os.getenv("SENSAI_TIMEOUT") or file_cfg.get("request_timeout") or 180.0)
+    timeout = float(os.getenv("SENSAI_TIMEOUT") or file_cfg.get("request_timeout") or 300.0)
 
     with OllamaClient(base_url=host, timeout=timeout) as client:
         active_tools = default_registry if (tools_flag or mcp_cmd) else None
@@ -543,8 +730,10 @@ def main(argv: list[str] | None = None) -> int:
             mcp_server_cmd=mcp_cmd,
             session_id=session_id,
             profile_name=profile_name,
+            persona_name=persona_name,
             max_tokens = context_length,
             rag_enabled=args.rag,
+            cache_build=cache_build
         )
     return 0
 
@@ -562,7 +751,6 @@ __all__ = [
     "main",
     "parse_arguments",
     "print_banner",
-    "print_help",
     "resolve_configuration",
     "run_session",
 ]

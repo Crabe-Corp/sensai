@@ -112,7 +112,7 @@ jobs:
       - name: Build Backend Docker Image
         uses: docker/build-push-action@v6
         with:
-          context: ./backend
+          context: .
           file: ./backend/Dockerfile
           push: false
           tags: sensai-backend:ci

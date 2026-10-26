@@ -24,14 +24,15 @@ import {
   PanelRightClose,
   Paperclip,
   AlertCircle,
-  Plug,
   Square,
   Pencil,
   GitBranch,
   RotateCcw,
 } from 'lucide-react'
-import type { Conversation, Message, AttachedFile } from '../types'
-import { parseUserMessage } from '../lib/messageParser'
+import type { Conversation, Message, AttachedFile, ToolInfo } from '../types'
+import { parseUserMessage, parseFormMessage, stripFormBlock } from '../lib/messageParser'
+import { FormCard } from './FormCard'
+import { ToolIcon } from './ToolIcon'
 
 const THINKING_PHRASES = [
   "Réfléchit...",
@@ -53,6 +54,7 @@ interface ChatViewProps {
   messages: Message[]
   isStreaming: boolean
   streamingText: string
+  toolsList: ToolInfo[]
   activeTools: string[]
   onToggleTool: (toolId: string) => void
   onSendMessage: (text: string, files?: AttachedFile[]) => void
@@ -64,24 +66,14 @@ interface ChatViewProps {
   isRunSettingsOpen: boolean
 }
 
-const TOOL_DEFINITIONS = [
-  {
-    id: 'structured_output',
-    name: 'Structured Output',
-    shortName: 'Structured Output',
-    source: 'Format JSON',
-    description: 'Permet de générer des réponses au format JSON structuré.',
-    icon: <Sparkles className="w-3.5 h-3.5 text-indigo-400" />,
-  },
-  {
-    id: 'mcp_runner',
-    name: 'Intégrations MCP',
-    shortName: 'MCP',
-    source: 'shadcn / Composio',
-    description: 'Connecteurs et outils externes Model Context Protocol.',
-    icon: <Plug className="w-3.5 h-3.5 text-sky-400" />,
-  },
-]
+const STRUCTURED_OUTPUT_DEFINITION = {
+  id: 'structured_output',
+  name: 'Structured Output',
+  shortName: 'Structured Output',
+  source: 'Format JSON',
+  description: 'Permet de générer des réponses au format JSON structuré.',
+  icon: <Sparkles className="w-3.5 h-3.5 text-indigo-400" />,
+}
 
 const MAX_FILE_SIZE = 25 * 1024 * 1024 // 25 Mo
 const MAX_FILES_COUNT = 5 // 5 fichiers max
@@ -119,6 +111,7 @@ export function ChatView({
   messages,
   isStreaming,
   streamingText,
+  toolsList,
   activeTools,
   onToggleTool,
   onSendMessage,
@@ -129,6 +122,19 @@ export function ChatView({
   onToggleRunSettings,
   isRunSettingsOpen,
 }: ChatViewProps) {
+  const TOOL_DEFINITIONS = [
+    STRUCTURED_OUTPUT_DEFINITION,
+    ...toolsList
+      .filter((t) => t.id !== 'structured_output' && t.visible !== false)
+      .map((t) => ({
+        id: t.id,
+        name: t.name,
+        shortName: t.name,
+        source: t.category,
+        description: t.description,
+        icon: <ToolIcon name={t.icon} className="w-3.5 h-3.5 shrink-0" />,
+      })),
+  ]
   const [inputText, setInputText] = useState('')
   const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([])
   const [fileError, setFileError] = useState<string | null>(null)
@@ -416,11 +422,14 @@ export function ChatView({
               </div>
             </div>
           ) : (
-            messages.map((msg) => {
+            messages.map((msg, msgIndex) => {
               const isUser = msg.role === 'user'
               const { cleanContent: displayContent, attachments: displayAttachments } = isUser
                 ? parseUserMessage(msg.content, msg.attachments)
                 : { cleanContent: msg.content, attachments: msg.attachments || [] }
+              const { text: messageText, form: messageForm } = isUser
+                ? { text: displayContent, form: null }
+                : parseFormMessage(displayContent)
 
               return (
                 <div
@@ -471,15 +480,22 @@ export function ChatView({
                         </div>
                       )}
 
-                      {displayContent ? (
-                        !isUser && isJsonString(displayContent) ? (
+                      {messageText ? (
+                        !isUser && isJsonString(messageText) ? (
                           <pre className="font-mono text-xs overflow-x-auto text-indigo-300 p-1">
-                            {formatJson(displayContent)}
+                            {formatJson(messageText)}
                           </pre>
                         ) : (
-                          displayContent
+                          messageText
                         )
                       ) : null}
+                      {messageForm && (
+                        <FormCard
+                          form={messageForm}
+                          disabled={isStreaming || msgIndex < messages.length - 1}
+                          onSubmit={(text) => onSendMessage(text)}
+                        />
+                      )}
                     </div>
 
                     {/* Badge de coût en tokens ou statut interrompu */}
@@ -559,7 +575,10 @@ export function ChatView({
                 <div className="p-3.5 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap break-words bg-neutral-900 border border-indigo-900/40 text-neutral-100 rounded-bl-xs shadow-md">
                   {streamingText ? (
                     <>
-                      {streamingText}
+                      {stripFormBlock(streamingText).text}
+                      {stripFormBlock(streamingText).formPending && (
+                        <span className="block text-xs text-neutral-400 italic">Préparation du formulaire…</span>
+                      )}
                       <span className="inline-block w-1.5 h-4 ml-0.5 bg-indigo-400 animate-pulse align-middle" />
                     </>
                   ) : (
@@ -776,7 +795,7 @@ export function ChatView({
                       </span>
                     )}
                   </PopoverTrigger>
-                  <PopoverContent className="w-80 p-3 bg-neutral-900 border-neutral-800 text-neutral-100 shadow-2xl rounded-xl space-y-3 z-50">
+                  <PopoverContent className="w-96 sm:w-[26rem] max-w-[calc(100vw-2rem)] p-3 bg-neutral-900 border-neutral-800 text-neutral-100 shadow-2xl rounded-xl space-y-3 z-50">
                     <div className="flex items-center justify-between pb-2 border-b border-neutral-800">
                       <div className="text-xs font-semibold flex items-center gap-1.5">
                         <Wrench className="w-3.5 h-3.5 text-indigo-400" />
@@ -787,7 +806,7 @@ export function ChatView({
                       </span>
                     </div>
 
-                    <div className="space-y-2">
+                    <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
                       {TOOL_DEFINITIONS.map((tool) => {
                         const isActive =
                           activeTools.includes(tool.id) ||
@@ -797,21 +816,22 @@ export function ChatView({
                             type="button"
                             key={tool.id}
                             onClick={() => onToggleTool(tool.id)}
-                            className={`w-full p-2.5 rounded-lg border text-xs flex items-center justify-between gap-2.5 cursor-pointer transition-colors text-left ${
+                            className={`w-full p-2.5 rounded-lg border text-xs flex items-start justify-between gap-2.5 cursor-pointer transition-colors text-left ${
                               isActive
                                 ? 'bg-neutral-800/90 border-indigo-500/50 text-white'
                                 : 'bg-neutral-950/60 border-neutral-800 text-neutral-400 hover:text-neutral-200 hover:border-neutral-700'
                             }`}
                           >
-                            <div className="flex items-center gap-2 min-w-0">
-                              <div className="p-1.5 rounded-md bg-neutral-900 border border-neutral-800 shrink-0">
+                            <div className="flex items-start gap-2.5 min-w-0 flex-1">
+                              <div className="p-1.5 rounded-md bg-neutral-900 border border-neutral-800 shrink-0 mt-0.5">
                                 {tool.icon}
                               </div>
-                              <div className="min-w-0">
-                                <div className="font-medium text-xs truncate text-neutral-200">
-                                  {tool.name}
+                              <div className="min-w-0 flex-1">
+                                <div className="font-medium text-xs text-neutral-200 flex items-center gap-1.5">
+                                  <span>{tool.name}</span>
+                                  <span className="text-[10px] text-neutral-500 font-normal">({tool.source})</span>
                                 </div>
-                                <div className="text-[10px] text-neutral-400 truncate">
+                                <div className="text-[11px] text-neutral-400 leading-snug break-words mt-0.5">
                                   {tool.description}
                                 </div>
                               </div>
@@ -819,7 +839,7 @@ export function ChatView({
                             <Switch
                               checked={isActive}
                               tabIndex={-1}
-                              className="shrink-0 pointer-events-none"
+                              className="shrink-0 pointer-events-none mt-0.5"
                             />
                           </button>
                         )

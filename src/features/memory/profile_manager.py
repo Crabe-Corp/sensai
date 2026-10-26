@@ -40,10 +40,16 @@ class ProfileManager:
         self.storage_dir.mkdir(parents=True, exist_ok=True)
 
     def _sanitize_username(self, username: str) -> str:
+        """Nettoie le nom d'utilisateur pour sécuriser le nom de fichier sur le disque.
+                PARAMS: - username - STR: nom d'utilisateur brut
+                RETURN: nom d'utilisateur nettoyé et sécurisé"""
         sanitized = re.sub(r"[^\w\-.]", "_", username.strip())
         return sanitized or "default"
 
     def _get_profile_path(self, username: str) -> Path:
+        """Construit le chemin d'accès au fichier JSON associé au profil utilisateur.
+                PARAMS: - username - STR: nom d'utilisateur recherché
+                RETURN: chemin Path vers le fichier JSON du profil"""
         clean_name = self._sanitize_username(username)
         return self.storage_dir / f"{clean_name}.json"
 

@@ -7,39 +7,40 @@ from src.core import singleton_token
 from src.core.ollama_client import (ChatMessage, OllamaClient, OllamaError, OllamaStructuredOutputError,)
 from src.core.schemas import HistoricalFigure, KingdomInfo, StructuredResponse
 from src.features.memory import (ArtifactManager, ChatSession, ProfileManager, SessionManager, UserProfile,)
-from src.features.tools.artifact_tool import get_active_artifact, set_active_artifact
+from src.features.prompt import (Persona, PersonaManager, PromptVersion, PromptVersioningEngine, default_versioning_engine,)
+from src.features.tools.artifact_tool import (ARTIFACT_SYSTEM_INSTRUCTION, get_active_artifact, set_active_artifact,)
 from src.features.tools.mcp_client import MCPClient
 from src.features.tools.registry import default_registry
 
-COMMANDS_LIST: list[str] = [
-    "/help",
-    "/clear",
-    "/history",
-    "/budget",
-    "/exit",
-    "/quit",
-    "/rag",
-    "/mcp",
-    "/session",
-    "/sessions",
-    "/profile",
-    "/models",
-    "/model",
-    "/tools",
-    "/structured-output",
-    "/structured_output",
-    "/artifact",
-    "/artifacts",
-    "/kingdom",
-    "/kingdoms",
-    "/figure",
-    "/figures",
-]
+COMMANDS_LIST: list[str] = ["/help", "/clear", "/history", "/budget", "/exit", "/quit", "/rag", "/mcp", "/session", "/sessions", "/profile", "/persona","/personas","/prompt","/prompts","/models","/model","/tools","/structured-output","/structured_output","/artifact","/artifacts", "/kingdom", "/kingdoms", "/figure", "/figures",]
 
 
 class Commands:
     """Gestionnaire centralisé des commandes interactives de la CLI SENSAI."""
-    def __init__(self, command: str | None = None, user_prompt: str | None = None, *, client: OllamaClient | None = None, model: str = "qwen2.5:1.5b", host: str = "http://localhost:11434",history: list[ChatMessage] | None = None, current_session: ChatSession | None = None, current_profile: UserProfile | None = None, session_manager: SessionManager | None = None, profile_manager: ProfileManager | None = None, artifact_manager: ArtifactManager | None = None, max_tokens: int = 2000, rag_enabled: bool = False, structured_mode: bool = False, active_tools: Any = None, tools_enabled: bool = False, mcp_client: MCPClient | None = None, mcp_tool_names: list[str] | None = None,) -> None:
+    def __init__(self, command: str | None = None, user_prompt: str | None = None, *, client: OllamaClient | None = None, model: str = "qwen2.5:1.5b", host: str = "http://localhost:11434",history: list[ChatMessage] | None = None, current_session: ChatSession | None = None, current_profile: UserProfile | None = None, session_manager: SessionManager | None = None, profile_manager: ProfileManager | None = None, artifact_manager: ArtifactManager | None = None, current_persona: Persona | None = None, persona_manager: PersonaManager | None = None, versioning_engine: PromptVersioningEngine | None = None, max_tokens: int = 2000, rag_enabled: bool = False, structured_mode: bool = False, active_tools: Any = None, tools_enabled: bool = False, mcp_client: MCPClient | None = None, mcp_tool_names: list[str] | None = None,) -> None:
+        """Initialise le routeur de commandes interactives avec le contexte d'exécution.
+                PARAMS: - command - STR | NONE: nom de la commande invoquée
+                        - user_prompt - STR | NONE: ligne de commande utilisateur complète
+                        - client - OLLAMACLIENT | NONE: client HTTP Ollama actif
+                        - model - STR: nom du modèle Ollama
+                        - host - STR: URL du serveur Ollama
+                        - history - LIST[CHATMESSAGE] | NONE: historique des messages en cours
+                        - current_session - CHATSESSION | NONE: session courante
+                        - current_profile - USERPROFILE | NONE: profil utilisateur actif
+                        - session_manager - SESSIONMANAGER | NONE: gestionnaire de sessions
+                        - profile_manager - PROFILEMANAGER | NONE: gestionnaire de profils
+                        - artifact_manager - ARTIFACTMANAGER | NONE: gestionnaire de livrables
+                        - current_persona - PERSONA | NONE: persona active
+                        - persona_manager - PERSONAMANAGER | NONE: gestionnaire de personas
+                        - versioning_engine - PROMPTVERSIONINGENGINE | NONE: moteur de versioning
+                        - max_tokens - INT: budget maximal de jetons de contexte
+                        - rag_enabled - BOOL: activation de l'enrichissement RAG
+                        - structured_mode - BOOL: activation du mode JSON structuré
+                        - active_tools - ANY: registre d'outils actif
+                        - tools_enabled - BOOL: activation du support des outils
+                        - mcp_client - MCPCLIENT | NONE: client MCP connecté
+                        - mcp_tool_names - LIST[STR] | NONE: liste des noms d'outils MCP enregistrés
+                RETURN: None"""
         self.command: str = command or ""
         self.user_prompt: str = user_prompt or ""
         self.client = client
@@ -51,6 +52,9 @@ class Commands:
         self.session_manager = session_manager
         self.profile_manager = profile_manager
         self.artifact_manager = artifact_manager
+        self.versioning_engine = versioning_engine if versioning_engine is not None else default_versioning_engine
+        self.persona_manager = persona_manager if persona_manager is not None else PersonaManager(versioning_engine=self.versioning_engine)
+        self.current_persona = current_persona
         self.max_tokens = max_tokens
         self.rag_enabled = rag_enabled
         self.structured_mode = structured_mode
@@ -61,6 +65,9 @@ class Commands:
 
     @property
     def commands_dict(self) -> dict[str, Callable[[str], None]]:
+        """Retourne la table de correspondance associant chaque slash-commande à sa méthode exécutable.
+                PARAMS: Aucun
+                RETURN: dictionnaire associant commandes et callbacks exécutables"""
         return {
             k: (lambda prompt="", f=fn: f(self, prompt))
             for k, fn in COMMANDS_DICT.items()
@@ -68,7 +75,9 @@ class Commands:
 
     @classmethod
     def check_command(cls, user_prompt: str) -> str | None:
-        """Détecte si l'entrée utilisateur correspond à une commande répertoriée."""
+        """Détecte si l'entrée utilisateur correspond à une commande répertoriée.
+                PARAMS: - user_prompt - STR: texte saisi par l'utilisateur
+                RETURN: nom de la commande reconnue ou None"""
         if not user_prompt:
             return None
         cmd = user_prompt.split(maxsplit=1)[0].lower()
@@ -77,7 +86,10 @@ class Commands:
         return None
 
     def execute_command(self, command: str, user_prompt: str | None = None) -> bool:
-        """Route et exécute la commande correspondante. Renvoie False pour /exit ou /quit."""
+        """Route et exécute la commande correspondante.
+                PARAMS: - command - STR: nom ou identifiant de la commande
+                        - user_prompt - STR | NONE: invite complète saisie par l'utilisateur
+                RETURN: False si l'application doit quitter, True sinon"""
         if user_prompt is None:
             user_prompt = command
         cmd_key = command.lower()
@@ -94,7 +106,9 @@ class Commands:
         return True
 
     def print_help(self, user_prompt: str = "") -> None:
-        """Affiche dans la console l'ensemble des commandes spéciales disponibles dans la session."""
+        """Affiche dans la console l'ensemble des commandes spéciales disponibles dans la session.
+                PARAMS: - user_prompt - STR: arguments textuels optionnels de la commande
+                RETURN: None"""
         print("\nCommandes disponibles :")
         print("  /help                     : Affiche ce message d'aide")
         print("  /clear                    : Réinitialise l'historique de la session")
@@ -107,6 +121,10 @@ class Commands:
         print("  /session delete <id>      : Supprime une session existante")
         print("  /profile show             : Affiche les détails du profil utilisateur actif")
         print("  /profile load <nom>       : Bascule sur un autre profil utilisateur")
+        print("  /persona [list|<nom>]     : Liste ou active une persona sans effacer l'historique")
+        print("  /prompt versions <nom>    : Affiche l'historique des versions d'une persona")
+        print("  /prompt diff <nom> <v1> <v2> : Compare deux versions d'un prompt")
+        print("  /prompt rollback <nom> <v>   : Restaure une version antérieure d'une persona")
         print("  /models                   : Liste les modèles installés sur le serveur Ollama")
         print("  /model [nom]              : Affiche ou change le modèle actif sans redémarrer")
         print("  /tools [on|off]           : Liste les outils disponibles ou active/désactive les outils")
@@ -117,10 +135,32 @@ class Commands:
         print("  /artifact [reset|save [path]] : Affiche, réinitialise ou exporte le livrable de la session")
         print("  /exit | /quit             : Quitte l'application\n")
 
+    def _apply_persona_to_history(self, persona: Persona) -> None:
+        """Met à jour le prompt système dans l'historique sans effacer les messages échangés.
+                PARAMS: - persona - PERSONA: persona dont les consignes doivent être injectées
+                RETURN: None"""
+        new_system_content = persona.system_prompt
+        if self.tools_enabled and "update_artifact" not in new_system_content:
+            new_system_content = f"{new_system_content}\n\n{ARTIFACT_SYSTEM_INSTRUCTION}"
+
+        if self.history and self.history[0].role == "system":
+            self.history[0] = ChatMessage(role="system", content=new_system_content)
+        else:
+            self.history.insert(0, ChatMessage(role="system", content=new_system_content))
+
+        if self.current_session:
+            self.current_session.messages = list(self.history)
+            if self.session_manager:
+                self.session_manager.save_session(self.current_session)
+
     def clear_screen(self, user_prompt: str = "") -> None:
-        """Réinitialise l'historique de la session en mémoire et sur disque."""
+        """Réinitialise l'historique de la session en mémoire et sur disque.
+                PARAMS: - user_prompt - STR: arguments optionnels de la commande
+                RETURN: None"""
         self.history.clear()
-        if self.current_profile:
+        if self.current_persona:
+            self._apply_persona_to_history(self.current_persona)
+        elif self.current_profile:
             self.history.append(ChatMessage(role="system", content=self.current_profile.format_system_prompt()))
         if self.current_session:
             self.current_session.messages = list(self.history)
@@ -129,16 +169,22 @@ class Commands:
         print("[Info] Historique de session réinitialisé.")
 
     def print_history(self, user_prompt: str = "") -> None:
-        """Affiche le nombre de messages stockés dans l'historique de la session."""
+        """Affiche le nombre de messages stockés dans l'historique de la session.
+                PARAMS: - user_prompt - STR: arguments optionnels de la commande
+                RETURN: None"""
         sess_id = self.current_session.metadata.session_id if self.current_session else "N/A"
         print(f"[Info] Historique actuel : {len(self.history)} message(s) en mémoire (Session: {sess_id}).")
 
     def print_budget(self, user_prompt: str = "") -> None:
-        """Affiche le nombre de tokens consommés par rapport au budget alloué."""
+        """Affiche le nombre de tokens consommés par rapport au budget alloué.
+                PARAMS: - user_prompt - STR: arguments optionnels de la commande
+                RETURN: None"""
         print(f"[Info] Budget tokens : {singleton_token.budget_tokens} / {self.max_tokens} consommés.")
 
     def switch_rag(self, user_prompt: str = "") -> None:
-        """Active, désactive ou bascule l'enrichissement documentaire RAG."""
+        """Active, désactive ou bascule l'enrichissement documentaire RAG.
+                PARAMS: - user_prompt - STR: argument d'état optionnel ('on' ou 'off')
+                RETURN: None"""
         parts = user_prompt.split(maxsplit=1)
         arg = parts[1].strip().lower() if len(parts) > 1 else None
         if arg in ("on", "true", "1", "enable"):
@@ -153,7 +199,9 @@ class Commands:
             print(f"[Info] Enrichissement RAG vectoriel {status}.")
 
     def switch_mcp(self, user_prompt: str = "") -> None:
-        """Gère le cycle de vie de la connexion à un serveur MCP externe."""
+        """Gère le cycle de vie de la connexion à un serveur MCP externe.
+                PARAMS: - user_prompt - STR: sous-commande MCP ('status', 'connect <cmd>', 'disconnect')
+                RETURN: None"""
         parts = user_prompt.split(maxsplit=2)
         subcmd = parts[1].strip().lower() if len(parts) > 1 else "status"
         if subcmd == "status":
@@ -193,7 +241,9 @@ class Commands:
             print("[Info] Sous-commandes /mcp disponibles : status, connect <cmd>, disconnect")
 
     def manage_session(self, user_prompt: str = "") -> None:
-        """Gère la création, le listage, le rechargement et la suppression des sessions."""
+        """Gère la création, le listage, le rechargement et la suppression des sessions.
+                PARAMS: - user_prompt - STR: sous-commande ('list', 'load <id>', 'new [titre]', 'delete <id>')
+                RETURN: None"""
         if self.session_manager is None:
             print("[Erreur] Gestionnaire de sessions non disponible.")
             return
@@ -259,7 +309,9 @@ class Commands:
             print("[Info] Commandes /session disponibles : list, load <id>, new [titre], delete <id>")
 
     def manage_profile(self, user_prompt: str = "") -> None:
-        """Affiche, liste ou change le profil utilisateur actif."""
+        """Affiche, liste ou change le profil utilisateur actif.
+                PARAMS: - user_prompt - STR: sous-commande ('show', 'load <nom>', 'list')
+                RETURN: None"""
         if self.profile_manager is None:
             print("[Erreur] Gestionnaire de profils non disponible.")
             return
@@ -291,7 +343,9 @@ class Commands:
             print("[Info] Commandes /profile disponibles : show, load <nom>, list")
 
     def print_models(self, user_prompt: str = "") -> None:
-        """Affiche la liste des modèles installés sur le serveur Ollama."""
+        """Affiche la liste des modèles installés sur le serveur Ollama.
+                PARAMS: - user_prompt - STR: arguments optionnels de la commande
+                RETURN: None"""
         if not self.client:
             print("[Erreur] Client Ollama non initialisé.")
             return
@@ -302,7 +356,9 @@ class Commands:
             print(f"[Erreur] {err}")
 
     def switch_model(self, user_prompt: str = "") -> None:
-        """Affiche ou modifie le nom du modèle actif en session."""
+        """Affiche ou modifie le nom du modèle actif en session.
+                PARAMS: - user_prompt - STR: nom du nouveau modèle à affecter
+                RETURN: None"""
         parts = user_prompt.split(maxsplit=1)
         if len(parts) > 1 and parts[1].strip():
             self.model = parts[1].strip()
@@ -316,7 +372,9 @@ class Commands:
             print("[Astuce] Pour changer : /model <nom_du_modèle> (ex: /model llama3)")
 
     def print_tools(self, user_prompt: str = "") -> None:
-        """Affiche la liste des outils ou active/désactive le mode tool calling."""
+        """Affiche la liste des outils ou active/désactive le mode tool calling.
+                PARAMS: - user_prompt - STR: option d'activation ('on' ou 'off')
+                RETURN: None"""
         parts = user_prompt.split(maxsplit=1)
         sub = parts[1].strip().lower() if len(parts) > 1 else ""
         if sub in ("on", "1", "enable", "activer"):
@@ -333,7 +391,9 @@ class Commands:
             print(f"[Info] Statut actuel : {'Activés' if self.active_tools is not None else 'Désactivés'}")
 
     def enable_structured_output(self, user_prompt: str = "") -> None:
-        """Active/désactive le mode JSON strict ou soumet une requête ponctuelle."""
+        """Active/désactive le mode JSON strict ou soumet une requête ponctuelle.
+                PARAMS: - user_prompt - STR: requête ponctuelle ou bascule ('on', 'off')
+                RETURN: None"""
         parts = user_prompt.split(maxsplit=1)
         arg = parts[1].strip() if len(parts) > 1 and parts[1].strip() else None
 
@@ -380,7 +440,9 @@ class Commands:
             print(f"[Erreur] {exc}")
 
     def manage_artifact(self, user_prompt: str = "") -> None:
-        """Affiche, réinitialise ou sauvegarde le livrable Markdown d'état."""
+        """Affiche, réinitialise ou sauvegarde le livrable Markdown d'état.
+                PARAMS: - user_prompt - STR: sous-commande ('show', 'reset', 'save [path]')
+                RETURN: None"""
         parts = user_prompt.split(maxsplit=2)
         subcmd = parts[1].strip().lower() if len(parts) > 1 else "show"
         if subcmd == "show":
@@ -412,7 +474,9 @@ class Commands:
             print("[Info] Commandes /artifact disponibles : /artifact (afficher), /artifact reset, /artifact save [path]")
 
     def manage_kingdom(self, user_prompt: str = "") -> None:
-        """Génère une fiche de royaume au format JSON strict."""
+        """Génère une fiche de royaume au format JSON strict.
+                PARAMS: - user_prompt - STR: nom du royaume cible
+                RETURN: None"""
         parts = user_prompt.split(maxsplit=1)
         kingdom_name = parts[1].strip() if len(parts) > 1 and parts[1].strip() else None
         if kingdom_name is None:
@@ -444,7 +508,9 @@ class Commands:
             print(f"[Erreur] {exc}")
 
     def manage_figure(self, user_prompt: str = "") -> None:
-        """Génère une fiche de personnage historique au format JSON strict."""
+        """Génère une fiche de personnage historique au format JSON strict.
+                PARAMS: - user_prompt - STR: nom du personnage historique cible
+                RETURN: None"""
         parts = user_prompt.split(maxsplit=1)
         figure_name = parts[1].strip() if len(parts) > 1 and parts[1].strip() else None
         if figure_name is None:
@@ -475,62 +541,127 @@ class Commands:
         except OllamaError as exc:
             print(f"[Erreur] {exc}")
 
+    def manage_persona(self, user_prompt: str = "") -> None:
+        """Gère le listage et le basculement dynamique de personas sans perte d'historique.
+                PARAMS: - user_prompt - STR: sous-commande ('list', 'defaults', 'load <nom>')
+                RETURN: None"""
+        if self.persona_manager is None:
+            print("[Erreur] Gestionnaire de personas non initialisé.")
+            return
+
+        parts = user_prompt.split(maxsplit=2)
+        arg = parts[1].strip() if len(parts) > 1 else ""
+
+        if arg.lower() in ("init", "defaults", "sample", "samples"):
+            self.persona_manager.ensure_default_personas()
+            personas = self.persona_manager.list_personas()
+            print(f"[Info] Personas d'exemple générées ({len(personas)}) : {', '.join(personas)}")
+            return
+
+        if not arg or arg.lower() == "list":
+            personas = self.persona_manager.list_personas()
+            if not personas:
+                print("[Info] Aucune persona disponible dans le dossier de configuration.")
+            else:
+                print(f"[Info] Personas disponibles ({len(personas)}) :")
+                for p_name in personas:
+                    active_tag = " (active)" if self.current_persona and (
+                        self.current_persona.name.lower() == p_name.lower()
+                        or (self.current_persona.file_path and self.current_persona.file_path.stem.lower() == p_name.lower())
+                    ) else ""
+                    print(f"  - {p_name}{active_tag}")
+            if self.current_persona:
+                print(f"[Info] Persona active : {self.current_persona.name} (v{self.current_persona.active_version})")
+            else:
+                print("[Info] Aucune persona active par défaut (profil standard).")
+            return
+
+
+        target_name = parts[2].strip() if arg.lower() in ("load", "switch", "set") and len(parts) > 2 else arg
+        try:
+            persona = self.persona_manager.load_persona(target_name)
+            self.current_persona = persona
+            self._apply_persona_to_history(persona)
+            print(f"[Info] Persona '{persona.name}' activée (Version: v{persona.active_version}). Historique ({len(self.history)} message(s)) conservé.")
+        except Exception as exc:
+            print(f"[Erreur Persona] {exc}")
+
+    def manage_prompt(self, user_prompt: str = "") -> None:
+        """Gère le versioning, l'inspection de diff et le rollback des personas.
+                PARAMS: - user_prompt - STR: sous-commande ('versions', 'diff', 'rollback')
+                RETURN: None"""
+        parts = user_prompt.split()
+        if len(parts) < 2:
+            print("[Info] Usage de la commande /prompt :")
+            print("  /prompt versions <nom>       : Affiche l'historique des versions d'une persona")
+            print("  /prompt diff <nom> <v1> <v2> : Affiche le diff unifié entre deux versions")
+            print("  /prompt rollback <nom> <v>   : Restaure une version antérieure")
+            return
+
+        subcmd = parts[1].lower()
+        if subcmd in ("versions", "history", "log"):
+            if len(parts) < 3:
+                if self.current_persona:
+                    persona_name = self.current_persona.file_path.stem if self.current_persona.file_path else self.current_persona.name
+                else:
+                    print("[Info] Usage : /prompt versions <nom_persona>")
+                    return
+            else:
+                persona_name = parts[2]
+
+            history = self.versioning_engine.get_history(persona_name)
+            if not history:
+                print(f"[Info] Aucune version enregistrée pour '{persona_name}'.")
+                return
+            print(f"[Info] Historique des versions pour '{persona_name}' ({len(history)} version(s)) :")
+            for v in history:
+                msg_suffix = f" — {v.message}" if v.message else ""
+                print(f"  - v{v.version} [{v.timestamp[:19]}] (hash: {v.content_hash[:8]}) par {v.author}{msg_suffix}")
+
+        elif subcmd == "diff":
+            if len(parts) < 5:
+                print("[Info] Usage : /prompt diff <nom> <v1> <v2> (ex: /prompt diff scribe_qin 1 2)")
+                return
+            persona_name = parts[2]
+            v_from = parts[3]
+            v_to = parts[4]
+            try:
+                diff_text = self.versioning_engine.get_diff(persona_name, v_from, v_to)
+                if not diff_text:
+                    print(f"[Info] Aucun écart textuel entre la version {v_from} et la version {v_to}.")
+                else:
+                    print(f"\n--- Diff {persona_name} : v{v_from} -> v{v_to} ---")
+                    print(diff_text.strip())
+                    print("-" * 50)
+            except Exception as exc:
+                print(f"[Erreur Prompt Diff] {exc}")
+
+        elif subcmd == "rollback":
+            if len(parts) < 4:
+                print("[Info] Usage : /prompt rollback <nom> <v> (ex: /prompt rollback scribe_qin 1)")
+                return
+            persona_name = parts[2]
+            target_v = parts[3]
+            try:
+                _restored = self.versioning_engine.rollback(persona_name, target_v)
+                if self.current_persona and (
+                    (self.current_persona.file_path and self.current_persona.file_path.stem.lower() == persona_name.lower())
+                    or self.current_persona.name.lower() == persona_name.lower()
+                ):
+                    updated = self.persona_manager.load_persona(persona_name)
+                    self.current_persona = updated
+                    self._apply_persona_to_history(updated)
+                print(f"[Info] Persona '{persona_name}' restaurée à la version {target_v} avec succès.")
+            except Exception as exc:
+                print(f"[Erreur Rollback] {exc}")
+        else:
+            print(f"[Info] Sous-commande /prompt inconnue : '{subcmd}'. Options : versions, diff, rollback.")
+
     def exit_app(self, user_prompt: str = "") -> None:
-        """Affiche le message de sortie de session."""
+        """Affiche le message de sortie de session.
+                PARAMS: - user_prompt - STR: arguments optionnels
+                RETURN: None"""
         print("Fermeture de SENSAI.")
-
-
-def print_help(user_prompt: str = "") -> None:
-    """Affiche dans la console l'ensemble des commandes spéciales disponibles dans la session."""
-    Commands().print_help(user_prompt)
-
-
-def clear_screen(user_prompt: str = "") -> None:
-    Commands().clear_screen(user_prompt)
-
-
-def switch_rag(user_prompt: str = "") -> None:
-    Commands().switch_rag(user_prompt)
-
-
-def switch_mcp(user_prompt: str = "") -> None:
-    Commands().switch_mcp(user_prompt)
-
-
-def manage_session(user_prompt: str = "") -> None:
-    Commands().manage_session(user_prompt)
-
-
-def manage_profile(user_prompt: str = "") -> None:
-    Commands().manage_profile(user_prompt)
-
-
-def print_models(user_prompt: str = "") -> None:
-    Commands().print_models(user_prompt)
-
-
-def switch_model(user_prompt: str = "") -> None:
-    Commands().switch_model(user_prompt)
-
-
-def print_tools(user_prompt: str = "") -> None:
-    Commands().print_tools(user_prompt)
-
-
-def enable_structured_output(user_prompt: str = "") -> None:
-    Commands().enable_structured_output(user_prompt)
-
-
-def manage_artifact(user_prompt: str = "") -> None:
-    Commands().manage_artifact(user_prompt)
-
-
-def manage_kingdom(user_prompt: str = "") -> None:
-    Commands().manage_kingdom(user_prompt)
-
-
-def manage_figure(user_prompt: str = "") -> None:
-    Commands().manage_figure(user_prompt)
 
 
 Command = Commands
@@ -546,6 +677,10 @@ COMMANDS_DICT: dict[str, Any] = {
     "/session": Commands.manage_session,
     "/sessions": Commands.manage_session,
     "/profile": Commands.manage_profile,
+    "/persona": Commands.manage_persona,
+    "/personas": Commands.manage_persona,
+    "/prompt": Commands.manage_prompt,
+    "/prompts": Commands.manage_prompt,
     "/models": Commands.print_models,
     "/model": Commands.switch_model,
     "/tools": Commands.print_tools,
