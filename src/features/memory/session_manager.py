@@ -28,10 +28,16 @@ class SessionMetadata(BaseModel):
 
     @property
     def id(self) -> str:
+        """Retourne l'identifiant unique de la session (alias de session_id).
+                PARAMS: Aucun
+                RETURN: identifiant sous forme de chaîne"""
         return self.session_id
 
     @property
     def model_name(self) -> str:
+        """Retourne le nom du modèle Ollama associé (alias de model).
+                PARAMS: Aucun
+                RETURN: nom du modèle"""
         return self.model
 
 
@@ -42,6 +48,9 @@ class ChatSession(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def normalize_input(cls, data: Any) -> Any:
+        """Normalise le format des données brutes en dictionnaire conforme à ChatSession.
+                PARAMS: - data - ANY: données d'entrée brutes
+                RETURN: dictionnaire restructuré avec clés metadata et messages"""
         if isinstance(data, dict) and "metadata" not in data and ("id" in data or "session_id" in data):
             sid = data.get("id") or data.get("session_id")
             title = data.get("title") or f"Session {str(sid)[:8]}"
@@ -59,10 +68,16 @@ class ChatSession(BaseModel):
         return data
 
     def add_message(self, message: ChatMessage) -> None:
+        """Ajoute un message à l'historique de la session et actualise son horodatage.
+                PARAMS: - message - CHATMESSAGE: message de chat à ajouter
+                RETURN: None"""
         self.messages.append(message)
         self.metadata.updated_at = datetime.now(timezone.utc).isoformat()
 
     def update_timestamp(self) -> None:
+        """Met à jour l'horodatage de dernière modification de la session à l'instant présent.
+                PARAMS: Aucun
+                RETURN: None"""
         self.metadata.updated_at = datetime.now(timezone.utc).isoformat()
 
 
@@ -72,6 +87,10 @@ class SessionManager:
         storage_dir: Path | str = "storage/sessions",
         backend_url: str | None = None,
     ) -> None:
+        """Initialise le gestionnaire de sessions local et configure l'URL du serveur distant.
+                PARAMS: - storage_dir - PATH | STR: répertoire de persistance des sessions JSON
+                        - backend_url - STR | NONE: URL optionnelle de l'API backend pour synchronisation
+                RETURN: None"""
         self.storage_dir = Path(storage_dir)
         self.storage_dir.mkdir(parents=True, exist_ok=True)
         self.backend_url = (
@@ -83,6 +102,9 @@ class SessionManager:
         self._backend_alive: bool = False
 
     def _is_backend_available(self) -> bool:
+        """Vérifie la disponibilité et l'accessibilité réseau du serveur backend distant.
+                PARAMS: Aucun
+                RETURN: True si le backend distant répond, False sinon"""
         if not self.backend_url:
             return False
         if self.backend_url.startswith(("http://test", "http://mock")):
@@ -103,10 +125,16 @@ class SessionManager:
             return False
 
     def _sanitize_session_id(self, session_id: str) -> str:
+        """Nettoie l'identifiant de session pour sécuriser les noms de fichiers.
+                PARAMS: - session_id - STR: identifiant brut de session
+                RETURN: identifiant nettoyé et sécurisé"""
         clean = re.sub(r"[^\w\-.]", "_", session_id.strip())
         return clean or uuid.uuid4().hex[:8]
 
     def _find_session_path(self, session_id: str) -> Path | None:
+        """Localise le fichier JSON d'une session par identifiant exact ou préfixe court.
+                PARAMS: - session_id - STR: identifiant ou préfixe de session recherché
+                RETURN: objet Path du fichier trouvé ou None"""
         clean_id = self._sanitize_session_id(session_id)
         exact_path = self.storage_dir / f"{clean_id}.json"
         if exact_path.is_file():
@@ -120,6 +148,11 @@ class SessionManager:
         model: str = "qwen2.5:1.5b",
         title: str | None = None,
     ) -> ChatSession:
+        """Crée, initialise et sauvegarde une nouvelle session de conversation.
+                PARAMS: - profile - USERPROFILE | NONE: profil utilisateur optionnel à injecter
+                        - model - STR: modèle Ollama alloué à la session
+                        - title - STR | NONE: titre personnalisé de la session
+                RETURN: instance ChatSession créée et persistée"""
         session_id = str(uuid.uuid4())
         now = datetime.now(timezone.utc).isoformat()
         session_title = title.strip() if title and title.strip() else f"Session {session_id[:8]}"
@@ -142,6 +175,10 @@ class SessionManager:
         return session
 
     def save_session(self, session: ChatSession, sync_remote: bool = True) -> None:
+        """Persiste une session au format JSON sur disque et la synchronise optionnellement sur le Web.
+                PARAMS: - session - CHATSESSION: session de conversation à sauvegarder
+                        - sync_remote - BOOL: indique si la session doit être poussée vers le backend
+                RETURN: None"""
         target_path = self.storage_dir / f"{session.metadata.session_id}.json"
         temp_path = self.storage_dir / f"{target_path.name}.tmp.{uuid.uuid4().hex[:6]}"
         session.metadata.updated_at = datetime.now(timezone.utc).isoformat()
@@ -160,6 +197,9 @@ class SessionManager:
                 pass
 
     def load_session(self, session_id: str) -> ChatSession:
+        """Charge une session depuis le disque local ou la rapatrie depuis le backend distant.
+                PARAMS: - session_id - STR: identifiant complet ou préfixe de la session
+                RETURN: session ChatSession restaurée"""
         path = self._find_session_path(session_id)
         if path and path.is_file():
             with open(path, "r", encoding="utf-8") as f:
@@ -181,6 +221,9 @@ class SessionManager:
         raise FileNotFoundError(f"Session '{session_id}' introuvable localement ou sur le serveur Web.")
 
     def list_sessions(self) -> list[SessionMetadata]:
+        """Récupère et fusionne la liste des métadonnées de sessions locales et distantes.
+                PARAMS: Aucun
+                RETURN: liste des métadonnées triées par date de mise à jour décroissante"""
         sessions_map: dict[str, SessionMetadata] = {}
 
         # 1. Sessions locales
@@ -218,6 +261,9 @@ class SessionManager:
         return sorted(sessions_map.values(), key=lambda s: s.updated_at, reverse=True)
 
     def delete_session(self, session_id: str) -> bool:
+        """Supprime une session en local sur le disque et sur le serveur distant si actif.
+                PARAMS: - session_id - STR: identifiant ou préfixe de la session à supprimer
+                RETURN: True si la session a été supprimée, False sinon"""
         path = self._find_session_path(session_id)
         clean_id = path.stem if path else self._sanitize_session_id(session_id)
         deleted_local = False
@@ -237,6 +283,10 @@ class SessionManager:
         return deleted_local or deleted_remote
 
     def rename_session(self, session_id: str, new_title: str) -> ChatSession:
+        """Renomme le titre d'une session existante et sauvegarde la modification.
+                PARAMS: - session_id - STR: identifiant de la session à renommer
+                        - new_title - STR: nouveau libellé à affecter
+                RETURN: instance ChatSession mise à jour"""
         session = self.load_session(session_id)
         session.metadata.title = new_title.strip()
         self.save_session(session)
