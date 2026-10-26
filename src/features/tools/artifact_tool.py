@@ -8,10 +8,11 @@ _active_session_id: str | None = None
 _active_manager: ArtifactManager | None = None
 
 ARTIFACT_SYSTEM_INSTRUCTION = (
-    "Tu disposes d'un document vivant d'état et livrable (artefact) associé à la session. "
-    "Maintiens ce livrable à jour en appelant l'outil 'update_artifact' dès qu'une information "
-    "clé, une caractéristique d'un royaume, une décision ou une chronologie doit être consignée ou modifiée. "
-    "N'écris pas tout le document d'un coup : applique des modifications ciblées par section ('update', 'append', 'delete')."
+    "You have access to a live state and deliverable document (artifact) associated with this session. "
+    "Keep this deliverable up to date by calling the 'update_artifact' tool whenever key information, "
+    "a kingdom's characteristics, a strategic decision, or a timeline needs to be recorded or modified. "
+    "Do not rewrite the entire document at once: apply targeted section modifications ('update', 'append', 'delete'). "
+    "Always respond in English."
 )
 
 

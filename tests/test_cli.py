@@ -203,6 +203,33 @@ def test_interfaces_cli_main_direct_import():
     assert callable(iface_run_session)
 
 
+def test_commands_debug_switch(capsys):
+    from src.interfaces.cli.commands.commands import Commands
+    from src.core.debug import is_debug, set_debug
+
+    set_debug(False)
+    cmd = Commands()
+    assert Commands.check_command("/debug") == "/debug"
+    assert Commands.check_command("/debug on") == "/debug"
+
+    # Status check
+    cmd.execute_command("/debug", "/debug")
+    out = capsys.readouterr().out
+    assert "Debug mode is currently OFF" in out
+
+    # Turn on
+    cmd.execute_command("/debug", "/debug on")
+    out = capsys.readouterr().out
+    assert "Debug mode enabled" in out
+    assert is_debug() is True
+
+    # Turn off
+    cmd.execute_command("/debug", "/debug off")
+    out = capsys.readouterr().out
+    assert "Debug mode disabled" in out
+    assert is_debug() is False
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main(["-v", __file__]))
 
