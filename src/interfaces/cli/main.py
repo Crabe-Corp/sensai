@@ -197,6 +197,7 @@ def run_session(client: OllamaClient, model: str, host: str, tools: Any = None, 
                 session_manager: SessionManager | None = None, profile_manager: ProfileManager | None = None,
                 artifact_manager: ArtifactManager | None = None, persona_manager: PersonaManager | None = None,
                 versioning_engine: PromptVersioningEngine | None = None, max_tokens: int = 2000, rag_enabled: bool = True,
+                cache_build: bool = False,
 ) -> None:
     """Gère la boucle interactive du chatbot CLI, l'historique et les commandes slash.
             PARAMS: - client - OLLAMACLIENT: instance active du client HTTP Ollama
@@ -212,6 +213,7 @@ def run_session(client: OllamaClient, model: str, host: str, tools: Any = None, 
                     - artifact_manager - ARTIFACTMANAGER | NONE: gestionnaire de livrables d'état
                     - persona_manager - PERSONAMANAGER | NONE: gestionnaire de personas
                     - versioning_engine - PROMPTVERSIONINGENGINE | NONE: moteur de versioning de prompts
+                    - cache_build - BOOL: indicateur d'activation du cache sémantique
             RETURN: None"""
 
     session_manager = session_manager or SessionManager()
@@ -455,7 +457,7 @@ def run_session(client: OllamaClient, model: str, host: str, tools: Any = None, 
             except OllamaModelNotFoundError as exc:
                 print(f"\n[Modèle introuvable] {exc}")
                 print(f"[Astuce] Exécutez 'ollama pull {model}' pour installer ce modèle.")
-            except OllamaStructuremdOutputError as exc:
+            except OllamaStructuredOutputError as exc:
                 print(f"\n[Erreur Sortie Structurée] {exc}")
             except OllamaAPIError as exc:
                 print(f"\n[Erreur API Ollama] {exc}")
@@ -542,10 +544,11 @@ def run_session(client: OllamaClient, model: str, host: str, tools: Any = None, 
                 history.append(ChatMessage(role="assistant", content=full_reply))
                 current_session.messages = list(history)
                 current_session.metadata.model = model
-                try:
-                    sementic_cache.add_to_cache(prompt=safe_input, llm_response=full_reply, ollama_url=host)
-                except Exception as e:
-                    print(f"[Erreur mise en cache] {e}")
+                if cache_build:
+                    try:
+                        sementic_cache.add_to_cache(prompt=safe_input, llm_response=full_reply, ollama_url=host)
+                    except Exception as e:
+                        print(f"[Erreur mise en cache] {e}")
                 session_manager.save_session(current_session)
                 artifact_manager.save_artifact(current_session.metadata.session_id, get_active_artifact())
 
@@ -623,7 +626,7 @@ def main(argv: list[str] | None = None) -> int:
         sementic_cache.create_cache()
         cache_build = True
     except Exception as e:
-        print("[Erreur dans la creation du cache] {e}")
+        print(f"[Erreur dans la creation du cache] {e}")
         cache_build = False
         return 1
 
