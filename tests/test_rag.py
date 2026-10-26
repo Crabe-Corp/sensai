@@ -140,3 +140,18 @@ def test_cli_rag_cascade_single_source_triggers_enrichment():
     assert "ARCHIVES ET SOURCES COMPLÉMENTAIRES" in sent_content
     assert "Web extrait" in sent_content
 
+
+def test_cli_rag_cascade_fallback_web_passed_even_without_tools():
+    from src.interfaces.cli.main import run_session
+    mock_client = MagicMock()
+
+    with patch("builtins.input", side_effect=["Parle moi de Chu", "/exit"]), \
+         patch("src.RAG.retriever.retrieve_rag_context", return_value=(None, 0)) as mock_retrieve, \
+         patch("src.core.engine.ConversationEngine.run_stream", return_value=iter([])):
+        run_session(mock_client, model="qwen2.5:1.5b", host="http://localhost:11434", tools=None, rag_enabled=True)
+
+    mock_retrieve.assert_called_once()
+    _args, kwargs = mock_retrieve.call_args
+    assert kwargs.get("fallback_web") is True
+
+

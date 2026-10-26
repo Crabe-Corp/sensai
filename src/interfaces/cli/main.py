@@ -515,7 +515,7 @@ def run_session(
                     rag_query,
                     ollama_url=host,
                     ollama_model=model,
-                    fallback_web=(active_tools is not None),
+                    fallback_web=True,
                     return_count=True,
                 )
                 if isinstance(rag_res, tuple):

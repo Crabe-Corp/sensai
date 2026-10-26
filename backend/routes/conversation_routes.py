@@ -754,7 +754,15 @@ async def chat_stream(
             "Ne mets jamais de phrase entière en guise de clé."
         )
 
-    if FORM_TOOL_NAME in selected_tool_names(tools_to_use):
+    active_tool_names = selected_tool_names(tools_to_use)
+    if "search_historical_archives" in active_tool_names:
+        system_prompt += (
+            "\nPriorité documentaire : Les archives historiques locales (outil 'search_historical_archives') "
+            "sont ta source première d'information. N'appelle l'outil 'web_search' que pour confirmer des faits "
+            "ou si les archives locales ne contiennent pas les informations recherchées."
+        )
+
+    if FORM_TOOL_NAME in active_tool_names:
         system_prompt += (
             f"\nSi des informations indispensables manquent pour répondre, utilise l'outil {FORM_TOOL_NAME} "
             "pour les demander à l'utilisateur au lieu de les deviner, puis attends ses réponses."
