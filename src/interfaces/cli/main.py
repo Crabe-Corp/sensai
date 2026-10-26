@@ -172,6 +172,7 @@ def print_banner(
     if session_id:
         print(f" Session ID   : {session_id}")
     print(" Tapez '/help' pour voir les commandes ou '/exit' pour quitter.")
+    print(" NB : Les textes historiques utilisés par le modèle provenant de traductions anciennes, certaines nuances peuvent être perdues. N'hésitez pas à vérifier les informations qui vous sembleraient incohérentes.")
     print("=" * 60)
 
 def run_session(client: OllamaClient, model: str, host: str, tools: Any = None, mcp_server_cmd: str | None = None,
@@ -300,7 +301,9 @@ def run_session(client: OllamaClient, model: str, host: str, tools: Any = None, 
     )
 
     while True:
-        if singleton_token.budget_tokens >= max_tokens:
+        margin = (max_tokens * 15) / 100 # Retirer 15% du context legth afin de laisser du context au model pour la compression de l'historique
+        token_with_margin = max_tokens - margin
+        if singleton_token.budget_tokens >= token_with_margin:
             history = mem.enforce_token_budget(model, client, history, max_history_tokens=max_tokens)
             current_session.messages = list(history)
             command_handler.history = history
@@ -340,6 +343,21 @@ def run_session(client: OllamaClient, model: str, host: str, tools: Any = None, 
 
         augmented_input = safe_input
         rag_found = False
+
+        if cache_build:
+            try:
+                from src.core import sementic_cache
+                cache_result = sementic_cache.get_info_cache(prompt=safe_input)
+                if cache_result != None:
+                    print("[SEMENTIC CACHE] question already asked find")
+                    sys.stdout.write("\nAssistant > ")
+                    print(cache_result)
+                    history.append(ChatMessage(role="user", content=safe_input))
+                    history.append(ChatMessage(role="assistant", content=cache_result))
+                    continue
+            except Exception:
+                pass
+
         if rag_enabled:
             try:
                 from src.RAG.retriever import retrieve_rag_context
@@ -469,6 +487,10 @@ def run_session(client: OllamaClient, model: str, host: str, tools: Any = None, 
                 history.append(ChatMessage(role="assistant", content=full_reply))
                 current_session.messages = list(history)
                 current_session.metadata.model = model
+                try:
+                    sementic_cache.add_to_cache(prompt=safe_input, llm_response=full_reply)
+                except Exception as e:
+                    print(f"[Erreur mise en cache] {e}")
                 session_manager.save_session(current_session)
                 artifact_manager.save_artifact(current_session.metadata.session_id, get_active_artifact())
 
@@ -541,6 +563,15 @@ def main(argv: list[str] | None = None) -> int:
         print(f"[Erreur dans l'initialisation de la BDD] {e}")
         return 1
 
+    cache_build = False
+    try:
+        sementic_cache.create_cache()
+        cache_build = True
+    except Exception as e:
+        print("[Erreur dans la creation du cache] {e}")
+        cache_build = False
+        return 1
+
     file_cfg = load_config_file(Path(args.config)) if args.config else {}
     mcp_cmd = args.mcp_server or os.getenv("SENSAI_MCP_SERVER") or file_cfg.get("mcp_server")
     tools_flag = (
@@ -568,6 +599,7 @@ def main(argv: list[str] | None = None) -> int:
             persona_name=persona_name,
             max_tokens = context_length,
             rag_enabled=args.rag,
+            cache_build=cache_build
         )
     return 0
 
