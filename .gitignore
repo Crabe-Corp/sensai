@@ -30,6 +30,8 @@ dist-ssr/
 .coverage
 .coverage.*
 htmlcov/
+tests/test_auto_evaluation.py
+tests/test_semantic_cache.py
 
 # Type checking & linters
 .mypy_cache/
@@ -60,3 +62,5 @@ desktop.ini
 # Exports de sessions générés
 exports/*.md
 !exports/.gitkeep
+
+/rapports_batailles

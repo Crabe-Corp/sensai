@@ -191,10 +191,6 @@ def retrieve_rag_context(
                 )
             points = getattr(reponse_qdrant, "points", [])
 
-
-        if not points:
-            return None
-
         contexte_historique = ""
         source_count = 0
         for hit in points:
