@@ -6,6 +6,7 @@ import uuid
 from typing import Any
 
 import requests
+from src.core.debug import debug_print
 
 logger = logging.getLogger(__name__)
 
@@ -24,70 +25,84 @@ STOP_WORDS = {
 }
 
 FILLER_PATTERNS = [
+    # English
     r"^(?:please\s+)?(?:can|could|would)\s+you\s+(?:please\s+)?(?:tell|explain|give|describe|provide)(?:\s+me)?(?:\s+about|\s+info|\s+information)?(?:\s+the)?\s+",
     r"^(?:tell|explain|describe)\s+me\s+about(?:\s+the)?\s+",
     r"^(?:tell|explain|describe)\s+about(?:\s+the)?\s+",
     r"^what\s+(?:do\s+you\s+know\s+about|is|are|were|was)\s+(?:the\s+)?",
     r"^who\s+(?:is|was|were)\s+(?:the\s+)?",
-    r"^(?:give\s+me\s+(?:more\s+)?(?:details|info|information)\s+(?:on|about)\s+(?:the\s+)?)"
+    r"^(?:give\s+me\s+(?:more\s+)?(?:details|info|information)\s+(?:on|about)\s+(?:the\s+)?)",
+    r"^(?:s'il\s+te\s+pla[iî]t\s*,?\s*)?(?:peux|pourrais|pourriez)-tu(?:\s+s'il\s+te\s+pla[iî]t)?\s+(?:me\s+)?(?:parler|dire|expliquer|donner)(?:\s+de|\s+des|\s+du|\s+d'|\s+sur)?(?:\s+le|\s+la|\s+les|\s+l')?\s+",
+    r"^(?:parle|dis|explique)-moi(?:\s+de|\s+des|\s+du|\s+d'|\s+sur)?(?:\s+le|\s+la|\s+les|\s+l')?\s+",
+    r"^qu'est(?:-|\s+)ce\s+que\s+(?:c'est\s+que\s+|les?\s+|la\s+|l')?",
+    r"^qui\s+(?:est|était|étaient|fut|furent)\s+(?:les?\s+|la\s+|l')?",
+    r"^donne-moi\s+(?:des\s+informations|des\s+infos|des\s+détails)\s+(?:sur|concernant)\s+",
 ]
 
 
-def normaliser_prompt(prompt: str) -> str:
-    """Normalise une requête en retirant la ponctuation parasite et les formules de politesse conversationnelles.
-            PARAMS: - prompt - STR: texte brut de la requête utilisateur
-            RETURN: chaîne normalisée et nettoyée pour comparaison sémantique"""
+def normalize_prompt(prompt: str) -> str:
+    """Normalize a prompt by stripping conversational filler words and punctuation.
+            PARAMS: - prompt - STR: raw user query text
+            RETURN: clean normalized string for semantic comparison"""
     if not prompt:
         return ""
-    texte = prompt.strip().lower()
-    texte = re.sub(r"[?!.,;:\"']+$", "", texte).strip()
+    text = prompt.strip().lower()
+    text = re.sub(r"[?!.,;:\"']+$", "", text).strip()
     for pattern in FILLER_PATTERNS:
-        texte = re.sub(pattern, "", texte, flags=re.IGNORECASE).strip()
-    texte = re.sub(r"^(?:the|a|an|le|la|les|l'|un|une|des|du)\s+", "", texte).strip()
-    texte = re.sub(r"\s+", " ", texte).strip()
-    return texte
+        text = re.sub(pattern, "", text, flags=re.IGNORECASE).strip()
+    text = re.sub(r"^(?:the|a|an|le|la|les|l'|un|une|des|du)\s+", "", text).strip()
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
 
 
-def similarite_lexicale(prompt1: str, prompt2: str) -> float:
-    """Calcule le coefficient de Jaccard sur les racines/mots significatifs de deux requêtes.
-            PARAMS: - prompt1 - STR: première requête
-                    - prompt2 - STR: deuxième requête
-            RETURN: score flottant de similarité entre 0.0 et 1.0"""
-    norm1 = normaliser_prompt(prompt1)
-    norm2 = normaliser_prompt(prompt2)
-    mots1 = {m for m in re.findall(r"\b\w{2,}\b", norm1) if m not in STOP_WORDS}
-    mots2 = {m for m in re.findall(r"\b\w{2,}\b", norm2) if m not in STOP_WORDS}
-    if not mots1 or not mots2:
+def normaliser_prompt(prompt: str) -> str:
+    return normalize_prompt(prompt)
+
+
+def lexical_similarity(prompt1: str, prompt2: str) -> float:
+    """Compute the Jaccard similarity coefficient on significant stems of two prompts.
+            PARAMS: - prompt1 - STR: first prompt
+                    - prompt2 - STR: second prompt
+            RETURN: similarity float score between 0.0 and 1.0"""
+    norm1 = normalize_prompt(prompt1)
+    norm2 = normalize_prompt(prompt2)
+    words1 = {m for m in re.findall(r"\b\w{2,}\b", norm1) if m not in STOP_WORDS}
+    words2 = {m for m in re.findall(r"\b\w{2,}\b", norm2) if m not in STOP_WORDS}
+    if not words1 or not words2:
         return 0.0
-    racines1 = {m[:4] for m in mots1}
-    racines2 = {m[:4] for m in mots2}
-    intersection = racines1 & racines2
-    union = racines1 | racines2
+    stems1 = {m[:4] for m in words1}
+    stems2 = {m[:4] for m in words2}
+    intersection = stems1 & stems2
+    union = stems1 | stems2
     return len(intersection) / len(union) if union else 0.0
 
 
-def verifier_equivalence_intention(
+def similarite_lexicale(prompt1: str, prompt2: str) -> float:
+    return lexical_similarity(prompt1, prompt2)
+
+
+def verify_intent_equivalence(
     prompt_cache: str,
     prompt_nouveau: str,
     ollama_url: str = "http://localhost:11434",
     model: str = "qwen2.5:1.5b",
 ) -> bool:
-    """Vérifie via un appel LLM ultra-rapide si deux requêtes partagent la même intention exacte.
-            PARAMS: - prompt_cache - STR: question déjà présente dans le cache
-                    - prompt_nouveau - STR: nouvelle question posée par l'utilisateur
-                    - ollama_url - STR: adresse racine du serveur Ollama
-                    - model - STR: nom du modèle pour la vérification JSON
-            RETURN: booléen True si l'intention est équivalente, False sinon"""
+    """Verify via a lightweight LLM call if two queries share identical intent.
+            PARAMS: - prompt_cache - STR: question already present in cache
+                    - prompt_nouveau - STR: new user question
+                    - ollama_url - STR: Ollama server base URL
+                    - model - STR: model name for JSON verification
+            RETURN: boolean True if intent is equivalent, False otherwise"""
     system_prompt = (
-        "Tu es un vérificateur sémantique pour un cache de questions-réponses.\n"
-        "Détermine si la Question B a la même intention et demande la même information que la Question A, "
-        "de sorte que la réponse à la Question A réponde parfaitement à la Question B.\n"
-        "Considère comme équivalentes les reformulations et synonymes évidents "
-        "(ex: '7 warrior states' et '7 warring states' désignent les mêmes 7 Royaumes Combattants).\n"
-        "Si les sujets, souverains ou personnages diffèrent (ex: Qin vs Zhao, Li Xin vs Han Xin), réponds faux.\n"
-        "Réponds UNIQUEMENT au format JSON strict : {\"meme_intention\": true} ou {\"meme_intention\": false}."
+        "You are a semantic validator for a question-answering cache.\n"
+        "Determine if Question B has the same intent and seeks the same information as Question A, "
+        "such that the answer to Question A perfectly answers Question B.\n"
+        "Consider obvious rephrasings, synonyms and typos equivalent "
+        "(e.g. '7 warrior states' and '7 warring states' refer to the exact same 7 Warring States).\n"
+        "If subjects, kingdoms or figures differ (e.g. Qin vs Zhao, Li Xin vs Han Xin), answer false.\n"
+        "Reply STRICTLY in JSON: {\"same_intent\": true} or {\"same_intent\": false}."
     )
-    user_prompt = f"Question A (en cache) : \"{prompt_cache}\"\nQuestion B (nouvelle) : \"{prompt_nouveau}\""
+    user_prompt = f"Question A (cached): \"{prompt_cache}\"\nQuestion B (new): \"{prompt_nouveau}\""
 
     try:
         response = requests.post(
@@ -103,19 +118,28 @@ def verifier_equivalence_intention(
         if response.status_code == 200:
             data = response.json()
             res_json = json.loads(data.get("response", "{}"))
-            return bool(res_json.get("meme_intention", False))
+            return bool(res_json.get("same_intent", res_json.get("meme_intention", False)))
     except Exception as exc:
-        logger.debug("[Vérification intention LLM ignorée] %s", exc)
+        logger.debug("[LLM intent verification skipped] %s", exc)
 
     return False
 
 
+def verifier_equivalence_intention(
+    prompt_cache: str,
+    prompt_nouveau: str,
+    ollama_url: str = "http://localhost:11434",
+    model: str = "qwen2.5:1.5b",
+) -> bool:
+    return verify_intent_equivalence(prompt_cache, prompt_nouveau, ollama_url, model)
+
+
 def get_dense_embedding(prompt: str, ollama_url: str = "http://localhost:11434") -> list[float] | None:
-    """Génère le vecteur d'embedding dense via nomic-embed-text avec préfixe de tâche 'search_query:'.
-            PARAMS: - prompt - STR: texte de la requête à vectoriser
-                    - ollama_url - STR: adresse racine du serveur Ollama
-            RETURN: liste de flottants de taille 768 ou None en cas d'échec"""
-    cleaned = normaliser_prompt(prompt)
+    """Generate dense embedding vector via nomic-embed-text with task prefix 'search_query:'.
+            PARAMS: - prompt - STR: query text to vectorize
+                    - ollama_url - STR: Ollama server base URL
+            RETURN: list of 768 floats or None on failure"""
+    cleaned = normalize_prompt(prompt)
     task_prompt = f"search_query: {cleaned}" if cleaned else prompt
 
     try:
@@ -134,15 +158,15 @@ def get_dense_embedding(prompt: str, ollama_url: str = "http://localhost:11434")
             data = response.json()
         return data.get("embedding")
     except Exception as exc:
-        logger.debug("[Erreur embedding cache] %s", exc)
+        logger.debug("[Embedding cache error] %s", exc)
         return None
 
 
 def get_qdrant_client(host: str = "localhost", port: int = 6333):
-    """Crée le client Qdrant s'il n'existe pas encore, ou retourne celui déjà existant.
-            PARAMS: - host - STR: hôte Qdrant
-                    - port - INT: port Qdrant
-            RETURN: instance active du client QdrantClient"""
+    """Retrieve active Qdrant client instance or initialize if needed.
+            PARAMS: - host - STR: Qdrant host
+                    - port - INT: Qdrant port
+            RETURN: active QdrantClient instance"""
     global _qdrant_client
     if _qdrant_client is None:
         _qdrant_client = create_cache(host=host, port=port)
@@ -150,13 +174,13 @@ def get_qdrant_client(host: str = "localhost", port: int = 6333):
 
 
 def create_cache(collection: str = "SEMENTIC_CACHE", host: str = "localhost", port: int = 6333):
-    """Initialise la collection Qdrant dédiée au cache sémantique si nécessaire.
-            PARAMS: - collection - STR: nom de la collection
-                    - host - STR: adresse d'hôte du serveur Qdrant
-                    - port - INT: port du serveur Qdrant
-            RETURN: instance active de QdrantClient"""
+    """Initialize Qdrant collection for semantic cache if needed.
+            PARAMS: - collection - STR: collection name
+                    - host - STR: Qdrant host address
+                    - port - INT: Qdrant port
+            RETURN: active QdrantClient instance"""
     if QdrantClient is None:
-        raise ImportError("qdrant-client n'est pas installé.")
+        raise ImportError("qdrant-client is not installed.")
 
     client = QdrantClient(host=host, port=port)
 
@@ -174,21 +198,21 @@ def add_to_cache(
     collection: str = "SEMENTIC_CACHE",
     ollama_url: str = "http://localhost:11434",
 ) -> bool:
-    """Ajoute une paire question-réponse dans le cache sémantique vectoriel.
-            PARAMS: - prompt - STR: question posée par l'utilisateur
-                    - llm_response - STR: réponse générée par le modèle
-                    - collection - STR: nom de la collection Qdrant
-                    - ollama_url - STR: adresse racine du serveur Ollama
-            RETURN: booléen True en cas de succès, False sinon"""
+    """Add a question-answer pair to the vector semantic cache.
+            PARAMS: - prompt - STR: user query
+                    - llm_response - STR: response generated by LLM
+                    - collection - STR: Qdrant collection name
+                    - ollama_url - STR: Ollama server base URL
+            RETURN: bool True on success, False otherwise"""
     client = get_qdrant_client()
-    vecteur = get_dense_embedding(prompt, ollama_url=ollama_url)
-    if not vecteur:
+    vector = get_dense_embedding(prompt, ollama_url=ollama_url)
+    if not vector:
         return False
 
-    prompt_norm = normaliser_prompt(prompt)
+    prompt_norm = normalize_prompt(prompt)
     point = PointStruct(
         id=str(uuid.uuid4()),
-        vector={"dense": vecteur},
+        vector={"dense": vector},
         payload={
             "prompt": prompt,
             "prompt_norm": prompt_norm,
@@ -196,7 +220,7 @@ def add_to_cache(
         },
     )
     client.upsert(collection_name=collection, points=[point])
-    print("Mise en cache réussie !")
+    debug_print("[Cache] Entry cached successfully.")
     return True
 
 
@@ -209,33 +233,33 @@ def get_info_cache(
     ollama_url: str = "http://localhost:11434",
     model: str = "qwen2.5:1.5b",
 ) -> str | None:
-    """Interroge le cache sémantique avec matching multi-niveaux et vérification d'intention.
-            PARAMS: - prompt - STR: question courante à rechercher
-                    - collection - STR: nom de la collection Qdrant
-                    - seuil - FLOAT | NONE: seuil historique pour rétrocompatibilité
-                    - seuil_haut - FLOAT: seuil de similarité cosinus pour validation immédiate (0.80)
-                    - seuil_bas - FLOAT: seuil minimal pour entrer en zone de vérification (0.65)
-                    - ollama_url - STR: adresse racine du serveur Ollama
-                    - model - STR: nom du modèle pour la validation d'intention
-            RETURN: réponse en cache si HIT, ou None si MISS"""
+    """Query semantic cache with multi-tier matching and intent confirmation.
+            PARAMS: - prompt - STR: query to search
+                    - collection - STR: Qdrant collection name
+                    - seuil - FLOAT | NONE: legacy threshold for backward compatibility
+                    - seuil_haut - FLOAT: cosine similarity threshold for immediate validation (0.80)
+                    - seuil_bas - FLOAT: minimum threshold to enter intent verification (0.65)
+                    - ollama_url - STR: Ollama server base URL
+                    - model - STR: model name for intent validation
+            RETURN: cached response if HIT, None if MISS"""
     if seuil is not None:
         seuil_haut = seuil
 
     client = get_qdrant_client()
-    vecteur = get_dense_embedding(prompt, ollama_url=ollama_url)
-    if not vecteur:
+    vector = get_dense_embedding(prompt, ollama_url=ollama_url)
+    if not vector:
         return None
 
     prompt_norm = normaliser_prompt(prompt)
 
     try:
-        reponse_qdrant = client.query_points(
+        qdrant_resp = client.query_points(
             collection_name=collection,
-            query=vecteur,
+            query=vector,
             using="dense",
             limit=3,
         )
-        points = getattr(reponse_qdrant, "points", [])
+        points = getattr(qdrant_resp, "points", [])
         if not points:
             return None
 
@@ -244,54 +268,52 @@ def get_info_cache(
             cached_norm = match.payload.get("prompt_norm") or normaliser_prompt(cached_prompt)
             score = match.score
 
-            # Niveau 1 : Correspondance exacte après normalisation
+            # Tier 1: Exact match after normalization
             if prompt_norm and cached_norm and prompt_norm == cached_norm:
-                print(f"[Cache HIT Exact] Correspondance trouvée : '{cached_prompt}' (Score: 1.00)")
+                debug_print(f"[Cache HIT Exact] Match found: '{cached_prompt}' (Score: 1.00)")
                 return match.payload.get("reponse")
 
-            print(f"[Cache] Question la plus proche : '{cached_prompt}' (Score: {score:.2f})")
+            debug_print(f"[Cache] Nearest question: '{cached_prompt}' (Score: {score:.2f})")
 
-            # Niveau 2 : Similarité cosinus forte (>= seuil_haut)
+            # Tier 2: Strong cosine similarity (>= seuil_haut)
             if score >= seuil_haut:
-                print(f"[Cache HIT Direct] Réponse récupérée instantanément ! (Score: {score:.2f} >= {seuil_haut:.2f})")
+                debug_print(f"[Cache HIT Direct] Retrieved response instantly! (Score: {score:.2f} >= {seuil_haut:.2f})")
                 return match.payload.get("reponse")
 
-            # Niveau 3 : Zone de vérification (seuil_bas <= score < seuil_haut)
+            # Tier 3: Verification zone (seuil_bas <= score < seuil_haut)
             if score >= seuil_bas:
-                # 1. Vérification d'intention par LLM
-                meme_intention = verifier_equivalence_intention(
+                same_intent = verifier_equivalence_intention(
                     prompt_cache=cached_prompt,
                     prompt_nouveau=prompt,
                     ollama_url=ollama_url,
                     model=model,
                 )
-                if meme_intention:
-                    print(f"[Cache HIT Confirmé] Intention sémantique validée pour '{cached_prompt}' (Score: {score:.2f})")
+                if same_intent:
+                    debug_print(f"[Cache HIT Confirmed] Semantic intent validated for: '{cached_prompt}' (Score: {score:.2f})")
                     return match.payload.get("reponse")
 
-                # 2. Repli sur l'overlap lexical si le LLM n'a pas répondu
                 sim_lex = similarite_lexicale(cached_prompt, prompt)
                 if sim_lex >= 0.50:
-                    print(f"[Cache HIT Lexical] Mots-clés alignés ({sim_lex:.0%}) pour '{cached_prompt}' (Score: {score:.2f})")
+                    debug_print(f"[Cache HIT Lexical] Keywords aligned ({sim_lex:.0%}) for: '{cached_prompt}' (Score: {score:.2f})")
                     return match.payload.get("reponse")
 
-                print(f"[Cache MISS] Question proche '{cached_prompt}' mais intention différente ou non confirmée.")
+                debug_print(f"[Cache MISS] Question close '{cached_prompt}' but intent differs or unconfirmed.")
                 return None
 
-        print(f"[Cache MISS] Score trop faible ({points[0].score:.2f} < {seuil_bas:.2f}). Besoin de générer la réponse.")
+        debug_print(f"[Cache MISS] Score too low ({points[0].score:.2f} < {seuil_bas:.2f}). Generating response.")
         return None
 
     except Exception as exc:
-        print(f"[Erreur Cache] Impossible de lire Qdrant : {exc}")
+        debug_print(f"[Cache Error] Failed to read from Qdrant: {exc}")
         return None
 
 
 def clean_cache(collection: str = "SEMENTIC_CACHE"):
-    """Nettoie intégralement la collection de cache sémantique.
-            PARAMS: - collection - STR: nom de la collection à réinitialiser
+    """Clean the semantic cache collection.
+            PARAMS: - collection - STR: collection name to reset
             RETURN: None"""
     client = get_qdrant_client()
     if client.collection_exists(collection):
         client.delete_collection(collection_name=collection)
-        print("[Cache] Base de données nettoyée avec succès.")
+        debug_print("[Cache] Database cleaned successfully.")
     create_cache(collection)

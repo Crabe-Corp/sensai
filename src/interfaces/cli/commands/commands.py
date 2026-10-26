@@ -4,6 +4,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 from src.core import singleton_token
+from src.core.debug import is_debug, set_debug
 from src.core.ollama_client import (ChatMessage, OllamaClient, OllamaError, OllamaStructuredOutputError,)
 from src.core.schemas import HistoricalFigure, KingdomInfo, StructuredResponse
 from src.features.memory import (ArtifactManager, ChatSession, ProfileManager, SessionManager, UserProfile,)
@@ -12,7 +13,7 @@ from src.features.tools.artifact_tool import (ARTIFACT_SYSTEM_INSTRUCTION, get_a
 from src.features.tools.mcp_client import MCPClient
 from src.features.tools.registry import default_registry
 
-COMMANDS_LIST: list[str] = ["/help", "/clear", "/history", "/budget", "/exit", "/quit", "/rag", "/mcp", "/session", "/sessions", "/profile", "/persona","/personas","/prompt","/prompts","/models","/model","/tools","/structured-output","/structured_output","/artifact","/artifacts", "/kingdom", "/kingdoms", "/figure", "/figures",]
+COMMANDS_LIST: list[str] = ["/help", "/clear", "/history", "/budget", "/exit", "/quit", "/rag", "/debug", "/clear-cache", "/clearcache", "/mcp", "/session", "/sessions", "/profile", "/persona","/personas","/prompt","/prompts","/models","/model","/tools","/structured-output","/structured_output","/artifact","/artifacts", "/kingdom", "/kingdoms", "/figure", "/figures",]
 
 
 class Commands:
@@ -115,6 +116,8 @@ class Commands:
         print("  /history                  : Affiche le nombre de messages échangés")
         print("  /budget                   : Affiche le nombre de tokens consommés")
         print("  /rag [on|off]             : Active ou désactive l'enrichissement documentaire RAG")
+        print("  /debug [on|off]           : Active ou désactive les logs et traces de debug")
+        print("  /clear-cache              : Purge l'ensemble du cache sémantique vectoriel")
         print("  /session list             : Liste les sessions sauvegardées")
         print("  /session load <id>        : Charge une session passée et son historique")
         print("  /session new [titre]      : Initialise une nouvelle session vierge")
@@ -197,6 +200,35 @@ class Commands:
             self.rag_enabled = not self.rag_enabled
             status = "activé" if self.rag_enabled else "désactivé"
             print(f"[Info] Enrichissement RAG vectoriel {status}.")
+
+    def switch_debug(self, user_prompt: str = "") -> None:
+        """Active, désactive ou affiche le statut du mode debug.
+                PARAMS: - user_prompt - STR: argument d'état optionnel ('on' ou 'off')
+                RETURN: None"""
+        parts = user_prompt.strip().split(maxsplit=1)
+        if len(parts) == 2:
+            sub = parts[1].strip().lower()
+            if sub in ("on", "1", "true", "enable"):
+                set_debug(True)
+                print("[Info] Debug mode enabled.")
+            elif sub in ("off", "0", "false", "disable"):
+                set_debug(False)
+                print("[Info] Debug mode disabled.")
+            else:
+                print("[Usage] /debug [on|off]")
+        else:
+            print(f"[Info] Debug mode is currently {'ON' if is_debug() else 'OFF'}.")
+
+    def clear_cache_command(self, user_prompt: str = "") -> None:
+        """Purge le cache sémantique vectoriel de Qdrant.
+                PARAMS: - user_prompt - STR: arguments optionnels
+                RETURN: None"""
+        from src.core import sementic_cache
+        try:
+            sementic_cache.clean_cache()
+            print("[Info] Cache cleared successfully!")
+        except Exception as exc:
+            print(f"[Error clearing cache] {exc}")
 
     def switch_mcp(self, user_prompt: str = "") -> None:
         """Gère le cycle de vie de la connexion à un serveur MCP externe.
@@ -492,11 +524,11 @@ class Commands:
                 messages=[
                     ChatMessage(
                         role="system",
-                        content="Tu es un historien spécialiste de la période des Royaumes combattants en Chine antique.",
+                        content="You are a historian specializing in Ancient China's Warring States period. Always respond in English.",
                     ),
                     ChatMessage(
                         role="user",
-                        content=f"Génère les informations historiques sur le royaume de {kingdom_name}.",
+                        content=f"Generate historical details for the kingdom of {kingdom_name}.",
                     ),
                 ],
                 response_format=KingdomInfo,
@@ -526,11 +558,11 @@ class Commands:
                 messages=[
                     ChatMessage(
                         role="system",
-                        content="Tu es un historien spécialiste de la période des Royaumes combattants et de l'unification par Qin.",
+                        content="You are a historian specializing in the Warring States period and the Qin unification. Always respond in English.",
                     ),
                     ChatMessage(
                         role="user",
-                        content=f"Génère les informations historiques sur le personnage historique {figure_name}.",
+                        content=f"Generate historical details for the historical figure {figure_name}.",
                     ),
                 ],
                 response_format=HistoricalFigure,
@@ -673,6 +705,9 @@ COMMANDS_DICT: dict[str, Any] = {
     "/history": Commands.print_history,
     "/budget": Commands.print_budget,
     "/rag": Commands.switch_rag,
+    "/debug": Commands.switch_debug,
+    "/clear-cache": Commands.clear_cache_command,
+    "/clearcache": Commands.clear_cache_command,
     "/mcp": Commands.switch_mcp,
     "/session": Commands.manage_session,
     "/sessions": Commands.manage_session,

@@ -3,6 +3,7 @@ import logging
 import requests
 from typing import Any
 
+from src.core.debug import debug_print
 from src.RAG.RAG_embedding import COLLECTION_NAME, get_embedding, get_bm25_model
 
 logger = logging.getLogger(__name__)
@@ -15,10 +16,10 @@ def extract_character(prompt: str, ollama_url: str = "http://localhost:11434", o
             RETURN: nom extrait du personnage ou None"""
 
     system_prompt = (
-        "Tu es un extracteur d'entités. Ton seul but est d'analyser la question de l'utilisateur "
-        "et d'extraire le nom du personnage historique principal mentionné.\n"
-        "Retourne UNIQUEMENT un JSON strict.\n"
-        "Si un personnage est trouvé : {\"personnage\": \"Nom du personnage\"}\n"
+        "You are an entity extractor. Your sole purpose is to analyze the user's question "
+        "and extract the main historical figure mentioned.\n"
+        "Return ONLY strict JSON.\n"
+        'If a character is found: {"personnage": "Character Name"}\n'
     )
     try:
         response = requests.post(
@@ -34,7 +35,7 @@ def extract_character(prompt: str, ollama_url: str = "http://localhost:11434", o
         if response.status_code == 200:
             data = response.json()
             resultat_json = json.loads(data.get("response", "{}"))
-            personnage = resultat_json.get("personnage")
+            personnage = resultat_json.get("personnage") or resultat_json.get("character")
             if personnage and isinstance(personnage, str) and personnage.strip():
                 clean_name = personnage.strip()
                 if clean_name.lower() in prompt.lower():
@@ -79,7 +80,7 @@ def retrieve_rag_context(query: str, top_k: int = 5, qdrant_host: str = "localho
             return None
 
         personnage_cible = extract_character(query, ollama_url=ollama_url, ollama_model=ollama_model)
-        print(f"Personnage detecté : {personnage_cible}")
+        debug_print(f"[RAG] Detected character: {personnage_cible}")
     
         qdrant_filter = None
         if personnage_cible:
@@ -119,7 +120,7 @@ def retrieve_rag_context(query: str, top_k: int = 5, qdrant_host: str = "localho
         points = getattr(reponse_qdrant, "points", [])
 
         if not points and qdrant_filter is not None:
-            print(f"[RAG] Filtre strict bloquant. Recherche globale pour le texte...")
+            debug_print("[RAG] Strict filter returned no points. Running global search...")
             try:
                 reponse_qdrant = client.query_points(
                     collection_name=COLLECTION_NAME,

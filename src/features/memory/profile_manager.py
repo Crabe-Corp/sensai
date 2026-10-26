@@ -28,6 +28,7 @@ class UserProfile(BaseModel):
         if self.facts:
             facts_rendered = "\n".join(f"  * {fact}" for fact in self.facts)
             lines.append(f"- Faits permanents connus :\n{facts_rendered}")
+        lines.append("- Language requirement : Always respond in English.")
         return "\n".join(lines)
 
 

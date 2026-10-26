@@ -1,6 +1,7 @@
 import argparse
 import json
 import os
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -12,6 +13,7 @@ if __package__ is None or __package__ == "":
     sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 from src.core.db.database import init_database
 from src.core import memory_management as mem, singleton_token
+from src.core.debug import debug_print, is_debug, set_debug
 from src.core import sementic_cache
 from src.core.engine import (
     ConversationEngine,
@@ -171,6 +173,12 @@ def parse_arguments(argv: list[str] | None = None) -> argparse.Namespace:
         default=True,
         help="Activer l'enrichissement documentaire automatique RAG.",
     )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        default=False,
+        help="Enable debug messages and background logs.",
+    )
     
     return parser.parse_args(argv)
 
@@ -195,23 +203,38 @@ def print_banner(
             RETURN: None"""
 
     print("=" * 60)
-    print(" SENSAI CLI — Chatbot Modulaire")
-    print(f" Modèle actif : {model}")
+    print(" SENSAI CLI — Modular Chatbot")
+    print(f" Active Model : {model}")
     print(f" Context      : {max_token}")
-    print(f" Hôte Ollama  : {host}")
-    print(f" Outils MCP   : {'Activés' if tools_enabled else 'Désactivés'}")
+    print(f" Ollama Host  : {host}")
+    print(f" MCP Tools    : {'Enabled' if tools_enabled else 'Disabled'}")
     if rag_enabled:
-        print(" RAG vectoriel: Activé")
+        print(" Vector RAG   : Enabled")
+    print(f" Debug Mode   : {'Enabled' if is_debug() else 'Disabled'}")
     if profile_name:
-        print(f" Profil       : {profile_name}")
+        print(f" Profile      : {profile_name}")
     if persona_name:
         print(f" Persona      : {persona_name}")
     if session_id:
         print(f" Session ID   : {session_id}")
     print(" Modes        : /simulation [seed] | /encyclopedia")
-    print(" Tapez '/help' pour voir les commandes ou '/exit' pour quitter.")
-    print(" NB : Les textes historiques utilisés par le modèle provenant de traductions anciennes, certaines nuances peuvent être perdues. N'hésitez pas à vérifier les informations qui vous sembleraient incohérentes.")
+    print(" Type '/help' to see commands, '/debug on|off' for debug logs, or '/exit' to quit.")
+    print(" Note: Historical chronicles rely on ancient translations; cross-check info when needed.")
     print("=" * 60)
+
+def is_french_text(text: str) -> bool:
+    """Détecte rapidement si un texte semble être rédigé en français."""
+    if not text:
+        return False
+    french_indicators = [
+        " les ", " des ", " dans ", " pour ", " avec ", " était ", " étaient ",
+        " mes chroniques ", " selon les ", " cette information ", " royaumes ",
+        " également ", " mais ", " une ", " sont ", " été ", " période ", " guerre "
+    ]
+    lower = f" {text.lower()} "
+    matches = sum(1 for ind in french_indicators if ind in lower)
+    return matches >= 2
+
 
 def build_call_messages(mode: AgentMode, history: list[ChatMessage]) -> list[ChatMessage]:
     """Construit la liste de messages envoyée au modèle pour le mode courant.
@@ -219,9 +242,20 @@ def build_call_messages(mode: AgentMode, history: list[ChatMessage]) -> list[Cha
                     - history - LIST[CHATMESSAGE]: historique de la session
             RETURN: liste de messages (le prompt système du mode remplace les autres messages système)"""
 
-    if not mode.system_prompt:
-        return list(history)
-    return [ChatMessage(role="system", content=mode.system_prompt)] + [m for m in history if m.role != "system"]
+    if mode.system_prompt:
+        messages = [ChatMessage(role="system", content=mode.system_prompt)] + [m for m in history if m.role != "system"]
+    else:
+        messages = list(history)
+
+    # Si un message système est actif, garantir la directive absolue de réponse en anglais
+    if messages and messages[0].role == "system":
+        content = messages[0].content
+        content = re.sub(r"Langue d'échange\s*:\s*français", "Langue d'échange : english", content, flags=re.IGNORECASE)
+        if "always respond in english" not in content.lower():
+            content = f"{content}\n\n[CRITICAL DIRECTIVE]\nYou must formulate your ENTIRE response in English. Never reply in French."
+        messages[0] = ChatMessage(role="system", content=content)
+
+    return messages
 
 
 def run_session(
@@ -274,7 +308,7 @@ def run_session(
         try:
             current_persona = persona_manager.load_persona(persona_name)
         except Exception as exc:
-            print(f"[Avertissement Persona] {exc}")
+            print(f"[Persona Warning] {exc}")
 
     current_session: ChatSession
     if session_id:
@@ -284,7 +318,7 @@ def run_session(
                 model = current_session.metadata.model
             print(f"[Info] Session '{session_id}' chargée ({len(current_session.messages)} messages).")
         except FileNotFoundError:
-            print(f"[Avertissement] Session '{session_id}' introuvable. Initialisation d'une nouvelle session.")
+            print(f"[Warning] Session '{session_id}' not found. Initializing a new session.")
             current_session = session_manager.create_session(profile=current_profile, model=model)
     else:
         current_session = session_manager.create_session(profile=current_profile, model=model)
@@ -324,9 +358,9 @@ def run_session(
             mcp_tool_names = [d.name for d in mcp_defs]
             active_tools = default_registry
             tools_enabled = True
-            print(f"[Info] Serveur MCP démarré ({mcp_server_cmd}). {len(mcp_defs)} outil(s) chargé(s).")
+            print(f"[Info] MCP server started ({mcp_server_cmd}). {len(mcp_defs)} tool(s) loaded.")
         except Exception as exc:
-            print(f"[Avertissement MCP] Échec de connexion au serveur MCP : {exc}")
+            print(f"[MCP Warning] Failed to connect to MCP server: {exc}")
 
     print_banner(
         model,
@@ -378,36 +412,36 @@ def run_session(
         try:
             user_input = input(prompt).strip()
         except (KeyboardInterrupt, EOFError):
-            print("\n\nSession interrompue.")
+            print("\n\nSession interrupted.")
             break
 
         if not user_input:
-            print("[Info] Veuillez saisir un message non vide.")
+            print("[Info] Please enter a non-empty message.")
             continue
+
         if user_input == "/clear-cache":
-            from src.core import sementic_cache
             sementic_cache.clean_cache()
-            print("[Info] Cache vidé avec succès !")
+            print("[Info] Cache cleared successfully!")
             continue
 
         mode_cmd, *mode_args = user_input.split()
         if mode_cmd in ("/simulation", "/encyclopedia"):
             target = MODES[mode_cmd.lstrip("/")]
             if target is current_mode and target.name == "encyclopedia":
-                print("[Info] Déjà en mode encyclopédie.")
+                print("[Info] Already in encyclopedia mode.")
                 continue
-            if target is current_mode and not confirm_simple("Une simulation est déjà en cours. La remplacer par une nouvelle partie ?"):
+            if target is current_mode and not confirm_simple("A simulation is already in progress. Replace with a new game?"):
                 continue
             if current_mode.on_exit and target is not current_mode:
                 current_mode.on_exit()
             current_mode = target
             if current_mode.on_enter:
                 print(current_mode.on_enter(mode_args))
-                print("[Info] RAG automatique et sortie structurée désactivés dans ce mode.")
+                print("[Info] Automatic RAG and structured output disabled in this mode.")
                 if any(tag in model for tag in (":0.5b", ":1.5b")):
-                    print(f"[Astuce] {model} appelle mal les outils : essaie '/model qwen2.5:7b' si ça se passe mal.")
+                    print(f"[Tip] {model} might have issues calling tools: try '/model qwen2.5:7b' if needed.")
             else:
-                print("[Info] Mode encyclopédie activé. La simulation en cours est fermée.")
+                print("[Info] Encyclopedia mode activated. Current simulation closed.")
             continue
 
         cmd_name = command_handler.check_command(user_input)
@@ -438,10 +472,13 @@ def run_session(
         augmented_input = safe_input
         if cache_build and current_mode.free_chat:
             try:
-                from src.core import sementic_cache
                 cache_result = sementic_cache.get_info_cache(prompt=safe_input, ollama_url=host, model=model)
+                if cache_result is not None and is_french_text(cache_result):
+                    debug_print("[Cache] Discarding cached entry because it is in French.")
+                    cache_result = None
+
                 if cache_result is not None:
-                    print("[SEMENTIC CACHE] question already asked find")
+                    debug_print("[SEMANTIC CACHE] Cached question found.")
                     sys.stdout.write("\nAssistant > ")
                     print(cache_result)
                     history.append(ChatMessage(role="user", content=safe_input))
@@ -456,22 +493,21 @@ def run_session(
             try:
                 from src.RAG.retriever import retrieve_rag_context
                 rag_ctx = retrieve_rag_context(safe_input, ollama_url=host, ollama_model=model)
-                print(rag_ctx)
                 if rag_ctx:
-                    print("[RAG] Contexte historique injecté depuis les chroniques.")
+                    debug_print("[RAG] Historical context injected from chronicles.")
                     augmented_input = (
-                        f"Tu es un conseiller stratégique expert des 7 Royaumes Combattants.\n\n"
-                        f"DOCUMENTS HISTORIQUES :\n"
+                        f"You are an expert strategic advisor on the 7 Warring States of Ancient China.\n\n"
+                        f"HISTORICAL DOCUMENTS:\n"
                         f"======================\n"
                         f"{rag_ctx}\n"
                         f"======================\n\n"
-                        f"INSTRUCTIONS DE RÉPONSE :\n"
-                        f"1. EXPLOITATION DU CONTEXTE : Synthétise et réponds directement en t'appuyant sur les faits historiques attestés dans les documents ci-dessus pour éclairer le Seigneur.\n"
-                        f"2. GESTION DU MANQUE D'INFORMATION : Si et seulement si les documents ci-dessus ne contiennent absolument AUCUN élément permettant de répondre à la question, réponds uniquement 'Mes chroniques ne mentionnent pas cette information.' Ne prononce JAMAIS cette phrase si tu donnes des éléments de réponse dans ton message.\n"
-                        f"3. CORRECTION DES ARMÉES : Les textes (Shiji et Zhan Guo Ce) sont de vieilles traductions. S'ils mentionnent des tailles d'armées chinoises en dizaines de milliers (ex: 20 000 ou 60 000), il s'agit d'une erreur de traduction du caractère 'Wan' (10 000). Multiplie toujours ces effectifs militaires par 10 (ex: 200 000) pour rétablir la vérité historique.\n"
-                        f"4. ANTI-FUSION : Les documents peuvent relater les histoires de plusieurs généraux différents (ex: Li Xin, Han Xin, Wang Jian). Ne mélange PAS leurs histoires. Ne réponds qu'avec les faits explicitement associés au sujet demandé par le Seigneur.\n"
-                        f"5. LANGUE : Réponds dans la même langue que la question posée par le Seigneur.\n\n"
-                        f"Question du Seigneur : {safe_input}"
+                        f"RESPONSE INSTRUCTIONS:\n"
+                        f"1. CONTEXT USAGE: Synthesize and respond directly by relying on the historical facts attested in the documents above to enlighten the Lord.\n"
+                        f"2. HANDLING MISSING INFORMATION: If and only if the documents above contain absolutely NO information to answer the question, respond only with 'My chronicles do not mention this information.' NEVER use this phrase if you provide any relevant facts or partial answers in your response.\n"
+                        f"3. ARMY SIZE CORRECTION: The ancient texts (Shiji and Zhan Guo Ce) contain classical translation conventions. If they mention Chinese army sizes in tens of thousands (e.g., 20,000 or 60,000), it stems from the Chinese numeral unit 'Wan' (10,000). Always multiply these military counts by 10 (e.g., 200,000) to reflect historical reality.\n"
+                        f"4. ANTI-CONFUSION: The documents may relate stories of multiple different generals (e.g., Li Xin, Han Xin, Wang Jian). Do NOT mix their accounts. Only answer with facts explicitly associated with the topic requested by the Lord.\n"
+                        f"5. LANGUAGE: You must ALWAYS formulate your entire response in English.\n\n"
+                        f"Lord's Question: {safe_input}"
                     )
             except Exception:
                 pass
@@ -489,16 +525,16 @@ def run_session(
                     messages=list(history),
                     response_format=StructuredResponse,
                 )
-                eval_res = auto_evaluation.evaluer_reponse_ia(
+                eval_res = auto_evaluation.evaluate_ai_response(
                     client=client,
                     model=model,
                     question_user=safe_input,
                     rag_context=rag_ctx,
                     reponse_assistant=result.response,
                 )
-                if auto_evaluation.interprete_result(eval_res):
-                    print("[Auto-Évaluation] Note < 3 ou hallucination détectée ! Retravail de la réponse...")
-                    result = auto_evaluation.retravailler_reponse_structuree(
+                if auto_evaluation.interpret_result(eval_res):
+                    debug_print("[Auto-Evaluation] Score < 3 or hallucination detected! Reworking structured response...")
+                    result = auto_evaluation.rework_structured_response(
                         client=client,
                         model=model,
                         question_user=safe_input,
@@ -507,7 +543,7 @@ def run_session(
                         evaluation=eval_res,
                         response_format=StructuredResponse,
                     )
-                    auto_evaluation.evaluer_reponse_ia(
+                    auto_evaluation.evaluate_ai_response(
                         client=client,
                         model=model,
                         question_user=safe_input,
@@ -521,16 +557,16 @@ def run_session(
                 session_manager.save_session(current_session)
                 artifact_manager.save_artifact(current_session.metadata.session_id, get_active_artifact())
             except OllamaConnectionError as exc:
-                print(f"\n[Erreur de connexion] {exc}")
+                print(f"\n[Connection Error] {exc}")
             except OllamaModelNotFoundError as exc:
-                print(f"\n[Modèle introuvable] {exc}")
-                print(f"[Astuce] Exécutez 'ollama pull {model}' pour installer ce modèle.")
+                print(f"\n[Model Not Found] {exc}")
+                print(f"[Tip] Run 'ollama pull {model}' to install this model.")
             except OllamaStructuredOutputError as exc:
-                print(f"\n[Erreur Sortie Structurée] {exc}")
+                print(f"\n[Structured Output Error] [Erreur Sortie Structurée] {exc}")
             except OllamaAPIError as exc:
-                print(f"\n[Erreur API Ollama] {exc}")
+                print(f"\n[Ollama API Error] {exc}")
             except OllamaError as exc:
-                print(f"\n[Erreur] {exc}")
+                print(f"\n[Error] {exc}")
             continue
 
         sys.stdout.write("\nAssistant > ")
@@ -569,26 +605,26 @@ def run_session(
                         sys.stdout.write(f"[Résultat outil] {preview}\n")
                     sys.stdout.flush()
                 elif isinstance(event, ErrorEvent):
-                    print(f"\n[Erreur] {event.error}")
+                    print(f"\n[Error] {event.error}")
 
             print()
             full_reply = "".join(response_chunks).strip()
             if full_reply and current_mode.free_chat:
-                eval_res = auto_evaluation.evaluer_reponse_ia(
+                eval_res = auto_evaluation.evaluate_ai_response(
                     client=client,
                     model=model,
                     question_user=safe_input,
                     rag_context=rag_ctx,
                     reponse_assistant=full_reply,
                 )
-                if auto_evaluation.interprete_result(eval_res):
-                    print("[Auto-Évaluation] Note < 3 ou hallucination détectée !")
-                    print("[Auto-Évaluation] Retravail de la réponse en cours avec les remarques du juge...")
-                    sys.stdout.write("\nAssistant (corrigé) > ")
+                if auto_evaluation.interpret_result(eval_res):
+                    debug_print("[Auto-Evaluation] Score < 3 or hallucination detected!")
+                    debug_print("[Auto-Evaluation] Reworking response based on judge feedback...")
+                    sys.stdout.write("\nAssistant (revised) > ")
                     sys.stdout.flush()
                     reworked_chunks: list[str] = []
                     try:
-                        for chunk in auto_evaluation.retravailler_reponse_stream(
+                        for chunk in auto_evaluation.rework_response_stream(
                             client=client,
                             model=model,
                             question_user=safe_input,
@@ -602,7 +638,7 @@ def run_session(
                         print()
                         if reworked_chunks:
                             full_reply = "".join(reworked_chunks).strip()
-                            auto_evaluation.evaluer_reponse_ia(
+                            auto_evaluation.evaluate_ai_response(
                                 client=client,
                                 model=model,
                                 question_user=safe_input,
@@ -610,7 +646,7 @@ def run_session(
                                 reponse_assistant=full_reply,
                             )
                     except Exception as err:
-                        print(f"\n[Auto-Évaluation] Erreur lors du retravail de la réponse : {err}")
+                        debug_print(f"\n[Auto-Evaluation] Error during response rework: {err}")
 
             if full_reply:
                 history.append(ChatMessage(role="assistant", content=full_reply))
@@ -620,19 +656,19 @@ def run_session(
                     try:
                         sementic_cache.add_to_cache(prompt=safe_input, llm_response=full_reply, ollama_url=host)
                     except Exception as e:
-                        print(f"[Erreur mise en cache] {e}")
+                        debug_print(f"[Cache Error] {e}")
                 session_manager.save_session(current_session)
                 artifact_manager.save_artifact(current_session.metadata.session_id, get_active_artifact())
 
         except OllamaConnectionError as exc:
-            print(f"\n[Erreur de connexion] {exc}")
+            print(f"\n[Connection Error] {exc}")
         except OllamaModelNotFoundError as exc:
-            print(f"\n[Modèle introuvable] {exc}")
-            print(f"[Astuce] Exécutez 'ollama pull {model}' pour installer ce modèle.")
+            print(f"\n[Model Not Found] {exc}")
+            print(f"[Tip] Run 'ollama pull {model}' to install this model.")
         except OllamaAPIError as exc:
-            print(f"\n[Erreur API Ollama] {exc}")
+            print(f"\n[Ollama API Error] {exc}")
         except KeyboardInterrupt:
-            print("\n[Génération interrompue par l'utilisateur]")
+            print("\n[Generation interrupted by user]")
             full_reply = "".join(response_chunks).strip()
             if full_reply:
                 history.append(ChatMessage(role="assistant", content=full_reply))
@@ -674,6 +710,15 @@ def main(argv: list[str] | None = None) -> int:
 
     args = parse_arguments(argv)
     host, model = resolve_configuration(args)
+    file_cfg = load_config_file(Path(args.config)) if args.config else {}
+
+    # Initialize debug mode from CLI flag, env var, or config file
+    debug_flag = (
+        bool(args.debug)
+        or os.getenv("SENSAI_DEBUG", "").lower() in ("1", "true", "yes")
+        or bool(file_cfg.get("debug", False))
+    )
+    set_debug(debug_flag)
 
     context_length = 2000
     try:
@@ -685,16 +730,16 @@ def main(argv: list[str] | None = None) -> int:
                 if "context_length" in key:
                     context_length = value
                     break
-            print(f"[Info] Context length détecté pour {model} : {context_length}")
+            debug_print(f"[Info] Context length detected for {model}: {context_length}")
         else:
-            print(f"[Avertissement] Modèle {model} introuvable ou erreur. Code: {response.status_code}")
+            debug_print(f"[Warning] Model {model} not found or error. Code: {response.status_code}")
     except Exception as e:
-        print(f"[Erreur dans la récupération du context length] {e}")
+        debug_print(f"[Warning] Error retrieving context length: {e}")
         context_length = 2000
     try:
         init_database()
     except Exception as e:
-        print(f"[Erreur dans l'initialisation de la BDD] {e}")
+        print(f"[Error initializing database] {e}")
         return 1
 
     cache_build = False
@@ -702,11 +747,10 @@ def main(argv: list[str] | None = None) -> int:
         sementic_cache.create_cache()
         cache_build = True
     except Exception as e:
-        print(f"[Erreur dans la creation du cache] {e}")
+        print(f"[Error creating cache] {e}")
         cache_build = False
         return 1
 
-    file_cfg = load_config_file(Path(args.config)) if args.config else {}
     mcp_cmd = args.mcp_server or os.getenv("SENSAI_MCP_SERVER") or file_cfg.get("mcp_server")
     tools_flag = (
         args.tools

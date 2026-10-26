@@ -39,9 +39,9 @@ def build_retry_correction_message(raw_content: str, error: Exception) -> dict[s
     return {
         "role": "user",
         "content": (
-            "La réponse précédente est invalide et ne respecte pas le schéma JSON attendu. "
-            f"Erreur de validation : {error}. "
-            "Veuillez corriger et renvoyer exclusivement l'objet JSON conforme au schéma."
+            "The previous response is invalid and does not adhere to the expected JSON schema. "
+            f"Validation error (Erreur de validation) : {error}. "
+            "Please correct and return exclusively the JSON object matching the schema."
         ),
     }
 

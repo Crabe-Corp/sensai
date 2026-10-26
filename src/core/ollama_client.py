@@ -95,9 +95,9 @@ class OllamaClient:
             data = response.json()
             return [model["name"] for model in data.get("models", [])]
         except (httpx.ConnectError, httpx.TimeoutException) as exc:
-            raise OllamaConnectionError(f"Serveur Ollama inaccessible sur {self.base_url}") from exc
+            raise OllamaConnectionError(f"Ollama server unreachable at {self.base_url}") from exc
         except httpx.HTTPError as exc:
-            raise OllamaAPIError(f"Erreur de récupération des modèles: {exc}") from exc
+            raise OllamaAPIError(f"Error retrieving models: {exc}") from exc
 
     def _format_messages(self, messages: list[ChatMessage | dict[str, Any]]) -> list[dict[str, Any]]:
         """Convertit une liste de messages mixtes en liste de dictionnaires pour l'API Ollama.
@@ -152,12 +152,12 @@ class OllamaClient:
             with self._client.stream("POST", f"{self.base_url}/api/chat", json=payload) as response:
                 if response.status_code == 404:
                     raise OllamaModelNotFoundError(
-                        f"Le modèle '{model}' est introuvable sur le serveur Ollama."
+                        f"Model '{model}' not found on Ollama server."
                     )
                 if response.is_error:
                     response.read()
                     raise OllamaAPIError(
-                        f"Erreur HTTP {response.status_code} d'Ollama: {response.text}"
+                        f"Ollama HTTP error {response.status_code}: {response.text}"
                     )
 
                 for line in response.iter_lines():
@@ -170,16 +170,16 @@ class OllamaClient:
                     if "error" in data:
                         err_msg = data["error"]
                         if "not found" in err_msg.lower():
-                            raise OllamaModelNotFoundError(f"Modèle '{model}' introuvable: {err_msg}")
+                            raise OllamaModelNotFoundError(f"Model '{model}' not found: {err_msg}")
                         raise OllamaAPIError(err_msg)
                     yield data
         except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
             raise OllamaConnectionError(
-                f"Serveur Ollama inaccessible sur {self.base_url}. Vérifiez qu'Ollama est bien démarré."
+                f"Ollama server unreachable at {self.base_url}. Please ensure Ollama is running."
             ) from exc
         except httpx.HTTPError as exc:
             if not isinstance(exc, (OllamaError,)):
-                raise OllamaAPIError(f"Erreur de communication avec Ollama: {exc}") from exc
+                raise OllamaAPIError(f"Communication error with Ollama: {exc}") from exc
 
     def chat_stream(self, model: str, messages: list[ChatMessage | dict[str, Any]], tools: list[dict[str, Any]] | None = None,) -> Iterator[str]:
         """Émet directement les fragments textuels (tokens) de la réponse en streaming.
@@ -218,27 +218,27 @@ class OllamaClient:
             response = self._client.post(f"{self.base_url}/api/chat", json=payload)
             if response.status_code == 404:
                 raise OllamaModelNotFoundError(
-                    f"Le modèle '{model}' est introuvable sur le serveur Ollama."
+                    f"Model '{model}' not found on Ollama server."
                 )
             if response.is_error:
                 raise OllamaAPIError(
-                    f"Erreur HTTP {response.status_code} d'Ollama: {response.text}"
+                    f"Ollama HTTP error {response.status_code}: {response.text}"
                 )
             data = response.json()
             if "error" in data:
                 err_msg = data["error"]
                 if "not found" in err_msg.lower():
-                    raise OllamaModelNotFoundError(f"Modèle '{model}' introuvable: {err_msg}")
+                    raise OllamaModelNotFoundError(f"Model '{model}' not found: {err_msg}")
                 raise OllamaAPIError(err_msg)
             self._track_token_usage(data)
             return data
         except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
             raise OllamaConnectionError(
-                f"Serveur Ollama inaccessible sur {self.base_url}. Vérifiez qu'Ollama est bien démarré."
+                f"Ollama server unreachable at {self.base_url}. Please ensure Ollama is running."
             ) from exc
         except httpx.HTTPError as exc:
             if not isinstance(exc, (OllamaError,)):
-                raise OllamaAPIError(f"Erreur de communication avec Ollama: {exc}") from exc
+                raise OllamaAPIError(f"Communication error with Ollama: {exc}") from exc
 
     def chat_structured(
         self,
@@ -295,24 +295,24 @@ class OllamaClient:
         try:
             response = self._client.post(f"{self.base_url}/api/chat", json=payload)
             if response.status_code == 404:
-                raise OllamaModelNotFoundError(f"Le modèle '{model}' est introuvable sur le serveur Ollama.")
+                raise OllamaModelNotFoundError(f"Model '{model}' not found on Ollama server.")
             if response.is_error:
-                raise OllamaAPIError(f"Erreur HTTP {response.status_code} d'Ollama: {response.text}")
+                raise OllamaAPIError(f"Ollama HTTP error {response.status_code}: {response.text}")
             data = response.json()
             if "error" in data:
                 err_msg = data["error"]
                 if "not found" in err_msg.lower():
-                    raise OllamaModelNotFoundError(f"Modèle '{model}' introuvable: {err_msg}")
+                    raise OllamaModelNotFoundError(f"Model '{model}' not found: {err_msg}")
                 raise OllamaAPIError(err_msg)
             self._track_token_usage(data)
             return data
         except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
             raise OllamaConnectionError(
-                f"Serveur Ollama inaccessible sur {self.base_url}. Vérifiez qu'Ollama est bien démarré."
+                f"Ollama server unreachable at {self.base_url}. Please ensure Ollama is running."
             ) from exc
         except httpx.HTTPError as exc:
             if not isinstance(exc, (OllamaError,)):
-                raise OllamaAPIError(f"Erreur de communication avec Ollama: {exc}") from exc
+                raise OllamaAPIError(f"Communication error with Ollama: {exc}") from exc
 
     def close(self) -> None:
         """Ferme le client HTTP sous-jacent et libère les connexions actives.
