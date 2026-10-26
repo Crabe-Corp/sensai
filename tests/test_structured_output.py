@@ -5,7 +5,7 @@ import httpx
 import pytest
 from pydantic import ValidationError
 
-from src.cli.main import run_session
+from src.interfaces.cli.main import run_session
 from src.core.ollama_client import (
     ChatMessage,
     OllamaAPIError,

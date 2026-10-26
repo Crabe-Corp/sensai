@@ -17,7 +17,7 @@ from src.core.engine import (ConversationEngine, EngineEvent, ErrorEvent, TokenC
 from src.core.ollama_client import (ChatMessage, OllamaAPIError, OllamaClient, OllamaConnectionError, OllamaError, OllamaModelNotFoundError, OllamaStructuredOutputError,)
 from src.core.schemas import HistoricalFigure, KingdomInfo, StructuredResponse
 from src.features.memory import (ArtifactDocument, ArtifactManager, ChatSession, ProfileManager, SessionManager, SessionMetadata, UserProfile,)
-from src.features.tools import artifact_tool, builtin, web_search
+from src.features.tools import artifact_tool, builtin, forms, web_search
 from src.features.tools.artifact_tool import (ARTIFACT_SYSTEM_INSTRUCTION, get_active_artifact, set_active_artifact,)
 from src.features.tools.mcp_client import MCPClient, MCPError
 from src.features.tools.registry import default_registry

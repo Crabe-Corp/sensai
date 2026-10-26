@@ -43,8 +43,8 @@ services:
 
   backend:
     build:
-      context: ./backend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: backend/Dockerfile
     container_name: sensai-backend
     ports:
       - "${BACKEND_PORT:-8080}:8080"
@@ -53,7 +53,9 @@ services:
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ia:11434}
       PORT: ${BACKEND_PORT:-8080}
     volumes:
-      - ./backend:/app:z
+      - ./backend:/app/backend:z
+      - ./src:/app/src:z
+      - ./manuscrit_royaumes:/app/manuscrit_royaumes:z
       - ./storage:/app/storage
     depends_on:
       bdd:
