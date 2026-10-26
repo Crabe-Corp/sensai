@@ -62,3 +62,5 @@ desktop.ini
 # Exports de sessions générés
 exports/*.md
 !exports/.gitkeep
+
+/rapports_batailles

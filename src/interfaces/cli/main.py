@@ -12,7 +12,6 @@ if __package__ is None or __package__ == "":
     sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 from src.core.db.database import init_database
 from src.core import memory_management as mem, singleton_token
-from src.core.sec.security import mask_pii, validate_input_with_llm
 from src.core import sementic_cache
 from src.core.engine import (
     ConversationEngine,
@@ -32,12 +31,33 @@ from src.core.ollama_client import (
     OllamaStructuredOutputError,
 )
 from src.core.schemas import HistoricalFigure, KingdomInfo, StructuredResponse
-from src.features.memory import (ArtifactDocument, ArtifactManager, ChatSession, ProfileManager, SessionManager, SessionMetadata, UserProfile,)
-from src.features.prompt import (Persona, PersonaManager, PromptVersion, PromptVersioningEngine, default_versioning_engine,)
+from src.features.sec.security import mask_pii, validate_input_with_llm
+from src.features.memory import (
+    ArtifactDocument,
+    ArtifactManager,
+    ChatSession,
+    ProfileManager,
+    SessionManager,
+    SessionMetadata,
+    UserProfile,
+)
+from src.features.prompt import (
+    Persona,
+    PersonaManager,
+    PromptVersion,
+    PromptVersioningEngine,
+    default_versioning_engine,
+)
 from src.features.tools import artifact_tool, builtin, forms, web_search
-from src.features.tools.artifact_tool import (ARTIFACT_SYSTEM_INSTRUCTION, get_active_artifact, set_active_artifact,)
+from src.features.tools.artifact_tool import (
+    ARTIFACT_SYSTEM_INSTRUCTION,
+    get_active_artifact,
+    set_active_artifact,
+)
 from src.features.tools.mcp_client import MCPClient, MCPError
 from src.features.tools.registry import default_registry
+from src.features.simulation.human_verif import confirm_simple
+from src.features.simulation.modes import MODES, AgentMode
 import requests
 from src.core import auto_evaluation
 from src.interfaces.cli.commands.commands import Command, Commands, command
@@ -188,16 +208,39 @@ def print_banner(
         print(f" Persona      : {persona_name}")
     if session_id:
         print(f" Session ID   : {session_id}")
+    print(" Modes        : /simulation [seed] | /encyclopedia")
     print(" Tapez '/help' pour voir les commandes ou '/exit' pour quitter.")
     print(" NB : Les textes historiques utilisés par le modèle provenant de traductions anciennes, certaines nuances peuvent être perdues. N'hésitez pas à vérifier les informations qui vous sembleraient incohérentes.")
     print("=" * 60)
 
-def run_session(client: OllamaClient, model: str, host: str, tools: Any = None, mcp_server_cmd: str | None = None,
-                session_id: str | None = None, profile_name: str | None = None, persona_name: str | None = None,
-                session_manager: SessionManager | None = None, profile_manager: ProfileManager | None = None,
-                artifact_manager: ArtifactManager | None = None, persona_manager: PersonaManager | None = None,
-                versioning_engine: PromptVersioningEngine | None = None, max_tokens: int = 2000, rag_enabled: bool = True,
-                cache_build: bool = False,
+def build_call_messages(mode: AgentMode, history: list[ChatMessage]) -> list[ChatMessage]:
+    """Construit la liste de messages envoyée au modèle pour le mode courant.
+            PARAMS: - mode - AGENTMODE: mode d'agent actif
+                    - history - LIST[CHATMESSAGE]: historique de la session
+            RETURN: liste de messages (le prompt système du mode remplace les autres messages système)"""
+
+    if not mode.system_prompt:
+        return list(history)
+    return [ChatMessage(role="system", content=mode.system_prompt)] + [m for m in history if m.role != "system"]
+
+
+def run_session(
+    client: OllamaClient,
+    model: str,
+    host: str,
+    tools: Any = None,
+    mcp_server_cmd: str | None = None,
+    session_id: str | None = None,
+    profile_name: str | None = None,
+    persona_name: str | None = None,
+    session_manager: SessionManager | None = None,
+    profile_manager: ProfileManager | None = None,
+    artifact_manager: ArtifactManager | None = None,
+    persona_manager: PersonaManager | None = None,
+    versioning_engine: PromptVersioningEngine | None = None,
+    max_tokens: int = 2000,
+    rag_enabled: bool = True,
+    cache_build: bool = False,
 ) -> None:
     """Gère la boucle interactive du chatbot CLI, l'historique et les commandes slash.
             PARAMS: - client - OLLAMACLIENT: instance active du client HTTP Ollama
@@ -296,7 +339,11 @@ def run_session(client: OllamaClient, model: str, host: str, tools: Any = None, 
         rag_enabled=rag_enabled,
     )
     init_database()
-    engine = ConversationEngine(client=client, registry=default_registry)
+    engines = {
+        name: ConversationEngine(client=client, registry=m.registry, max_tool_iterations=m.max_tool_iterations)
+        for name, m in MODES.items()
+    }
+    current_mode: AgentMode = MODES["encyclopedia"]
     command_handler = Commands(
         client=client,
         model=model,
@@ -327,8 +374,9 @@ def run_session(client: OllamaClient, model: str, host: str, tools: Any = None, 
             current_session.messages = list(history)
             command_handler.history = history
 
+        prompt = "\nYou > " if current_mode.name == "encyclopedia" else f"\nYou [{current_mode.name}] > "
         try:
-            user_input = input("\nYou > ").strip()
+            user_input = input(prompt).strip()
         except (KeyboardInterrupt, EOFError):
             print("\n\nSession interrompue.")
             break
@@ -340,6 +388,26 @@ def run_session(client: OllamaClient, model: str, host: str, tools: Any = None, 
             from src.core import sementic_cache
             sementic_cache.clean_cache()
             print("[Info] Cache vidé avec succès !")
+            continue
+
+        mode_cmd, *mode_args = user_input.split()
+        if mode_cmd in ("/simulation", "/encyclopedia"):
+            target = MODES[mode_cmd.lstrip("/")]
+            if target is current_mode and target.name == "encyclopedia":
+                print("[Info] Déjà en mode encyclopédie.")
+                continue
+            if target is current_mode and not confirm_simple("Une simulation est déjà en cours. La remplacer par une nouvelle partie ?"):
+                continue
+            if current_mode.on_exit and target is not current_mode:
+                current_mode.on_exit()
+            current_mode = target
+            if current_mode.on_enter:
+                print(current_mode.on_enter(mode_args))
+                print("[Info] RAG automatique et sortie structurée désactivés dans ce mode.")
+                if any(tag in model for tag in (":0.5b", ":1.5b")):
+                    print(f"[Astuce] {model} appelle mal les outils : essaie '/model qwen2.5:7b' si ça se passe mal.")
+            else:
+                print("[Info] Mode encyclopédie activé. La simulation en cours est fermée.")
             continue
 
         cmd_name = command_handler.check_command(user_input)
@@ -361,18 +429,18 @@ def run_session(client: OllamaClient, model: str, host: str, tools: Any = None, 
 
         safe_input, _has_confidential_data = mask_pii(user_input)
 
-        is_valid, error_message = validate_input_with_llm(safe_input, client, model)
-        if not is_valid:
-            print(f"\nAssistant > {error_message}")
-            continue
+        if current_mode.free_chat:
+            is_valid, error_message = validate_input_with_llm(safe_input, client, model)
+            if not is_valid:
+                print(f"\nAssistant > {error_message}")
+                continue
 
         augmented_input = safe_input
-
-        if cache_build:
+        if cache_build and current_mode.free_chat:
             try:
                 from src.core import sementic_cache
                 cache_result = sementic_cache.get_info_cache(prompt=safe_input, ollama_url=host, model=model)
-                if cache_result != None:
+                if cache_result is not None:
                     print("[SEMENTIC CACHE] question already asked find")
                     sys.stdout.write("\nAssistant > ")
                     print(cache_result)
@@ -384,7 +452,7 @@ def run_session(client: OllamaClient, model: str, host: str, tools: Any = None, 
 
         rag_ctx = None
 
-        if rag_enabled:
+        if rag_enabled and current_mode.free_chat:
             try:
                 from src.RAG.retriever import retrieve_rag_context
                 rag_ctx = retrieve_rag_context(safe_input, ollama_url=host, ollama_model=model)
@@ -412,7 +480,7 @@ def run_session(client: OllamaClient, model: str, host: str, tools: Any = None, 
         user_msg = ChatMessage(role="user", content=augmented_input)
         history.append(user_msg)
 
-        if structured_mode:
+        if structured_mode and current_mode.free_chat:
             sys.stdout.write("\nAssistant > ")
             sys.stdout.flush()
             try:
@@ -468,12 +536,16 @@ def run_session(client: OllamaClient, model: str, host: str, tools: Any = None, 
         sys.stdout.write("\nAssistant > ")
         sys.stdout.flush()
 
+        engine = engines[current_mode.name]
+        mode_tools = current_mode.registry if current_mode.force_tools else active_tools
+        call_messages = build_call_messages(current_mode, history)
+
         response_chunks: list[str] = []
         try:
             for event in engine.run_stream(
-                messages=list(history),
+                messages=call_messages,
                 model=model,
-                tools=active_tools,
+                tools=mode_tools,
             ):
                 if isinstance(event, TokenChunkEvent):
                     sys.stdout.write(event.token)
@@ -501,7 +573,7 @@ def run_session(client: OllamaClient, model: str, host: str, tools: Any = None, 
 
             print()
             full_reply = "".join(response_chunks).strip()
-            if full_reply:
+            if full_reply and current_mode.free_chat:
                 eval_res = auto_evaluation.evaluer_reponse_ia(
                     client=client,
                     model=model,
@@ -544,7 +616,7 @@ def run_session(client: OllamaClient, model: str, host: str, tools: Any = None, 
                 history.append(ChatMessage(role="assistant", content=full_reply))
                 current_session.messages = list(history)
                 current_session.metadata.model = model
-                if cache_build:
+                if cache_build and current_mode.free_chat:
                     try:
                         sementic_cache.add_to_cache(prompt=safe_input, llm_response=full_reply, ollama_url=host)
                     except Exception as e:
@@ -568,6 +640,9 @@ def run_session(client: OllamaClient, model: str, host: str, tools: Any = None, 
                 current_session.metadata.model = model
                 session_manager.save_session(current_session)
                 artifact_manager.save_artifact(current_session.metadata.session_id, get_active_artifact())
+
+    if current_mode.on_exit:
+        current_mode.on_exit()
 
     current_session = command_handler.current_session
     mcp_client = command_handler.mcp_client
@@ -600,6 +675,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_arguments(argv)
     host, model = resolve_configuration(args)
 
+    context_length = 2000
     try:
         response = requests.post(host + "/api/show", json={"model": model})
         if response.status_code == 200:
