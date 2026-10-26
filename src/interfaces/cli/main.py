@@ -13,8 +13,24 @@ if __package__ is None or __package__ == "":
 from src.core.db.database import init_database
 from src.core import memory_management as mem, singleton_token
 from src.core.sec.security import mask_pii, validate_input_with_llm
-from src.core.engine import (ConversationEngine, EngineEvent, ErrorEvent, TokenChunkEvent, ToolCallEvent, ToolResultEvent,)
-from src.core.ollama_client import (ChatMessage, OllamaAPIError, OllamaClient, OllamaConnectionError, OllamaError, OllamaModelNotFoundError, OllamaStructuredOutputError,)
+from src.core import sementic_cache
+from src.core.engine import (
+    ConversationEngine,
+    EngineEvent,
+    ErrorEvent,
+    TokenChunkEvent,
+    ToolCallEvent,
+    ToolResultEvent,
+)
+from src.core.ollama_client import (
+    ChatMessage,
+    OllamaAPIError,
+    OllamaClient,
+    OllamaConnectionError,
+    OllamaError,
+    OllamaModelNotFoundError,
+    OllamaStructuredOutputError,
+)
 from src.core.schemas import HistoricalFigure, KingdomInfo, StructuredResponse
 from src.features.memory import (ArtifactDocument, ArtifactManager, ChatSession, ProfileManager, SessionManager, SessionMetadata, UserProfile,)
 from src.features.prompt import (Persona, PersonaManager, PromptVersion, PromptVersioningEngine, default_versioning_engine,)
@@ -23,6 +39,7 @@ from src.features.tools.artifact_tool import (ARTIFACT_SYSTEM_INSTRUCTION, get_a
 from src.features.tools.mcp_client import MCPClient, MCPError
 from src.features.tools.registry import default_registry
 import requests
+from src.core import auto_evaluation
 from src.interfaces.cli.commands.commands import Command, Commands, command
 
 DEFAULT_CONFIG_PATH = Path("config.json")
@@ -172,6 +189,7 @@ def print_banner(
     if session_id:
         print(f" Session ID   : {session_id}")
     print(" Tapez '/help' pour voir les commandes ou '/exit' pour quitter.")
+    print(" NB : Les textes historiques utilisés par le modèle provenant de traductions anciennes, certaines nuances peuvent être perdues. N'hésitez pas à vérifier les informations qui vous sembleraient incohérentes.")
     print("=" * 60)
 
 def run_session(client: OllamaClient, model: str, host: str, tools: Any = None, mcp_server_cmd: str | None = None,
@@ -179,6 +197,7 @@ def run_session(client: OllamaClient, model: str, host: str, tools: Any = None, 
                 session_manager: SessionManager | None = None, profile_manager: ProfileManager | None = None,
                 artifact_manager: ArtifactManager | None = None, persona_manager: PersonaManager | None = None,
                 versioning_engine: PromptVersioningEngine | None = None, max_tokens: int = 2000, rag_enabled: bool = True,
+                cache_build: bool = False,
 ) -> None:
     """Gère la boucle interactive du chatbot CLI, l'historique et les commandes slash.
             PARAMS: - client - OLLAMACLIENT: instance active du client HTTP Ollama
@@ -194,6 +213,7 @@ def run_session(client: OllamaClient, model: str, host: str, tools: Any = None, 
                     - artifact_manager - ARTIFACTMANAGER | NONE: gestionnaire de livrables d'état
                     - persona_manager - PERSONAMANAGER | NONE: gestionnaire de personas
                     - versioning_engine - PROMPTVERSIONINGENGINE | NONE: moteur de versioning de prompts
+                    - cache_build - BOOL: indicateur d'activation du cache sémantique
             RETURN: None"""
 
     session_manager = session_manager or SessionManager()
@@ -300,7 +320,9 @@ def run_session(client: OllamaClient, model: str, host: str, tools: Any = None, 
     )
 
     while True:
-        if singleton_token.budget_tokens >= max_tokens:
+        margin = (max_tokens * 15) / 100 # Retirer 15% du context legth afin de laisser du context au model pour la compression de l'historique
+        token_with_margin = max_tokens - margin
+        if singleton_token.budget_tokens >= token_with_margin:
             history = mem.enforce_token_budget(model, client, history, max_history_tokens=max_tokens)
             current_session.messages = list(history)
             command_handler.history = history
@@ -314,6 +336,12 @@ def run_session(client: OllamaClient, model: str, host: str, tools: Any = None, 
         if not user_input:
             print("[Info] Veuillez saisir un message non vide.")
             continue
+        if user_input == "/clear-cache":
+            from src.core import sementic_cache
+            sementic_cache.clean_cache()
+            print("[Info] Cache vidé avec succès !")
+            continue
+
         cmd_name = command_handler.check_command(user_input)
         if cmd_name:
             should_continue = command_handler.execute_command(cmd_name, user_input)
@@ -339,20 +367,47 @@ def run_session(client: OllamaClient, model: str, host: str, tools: Any = None, 
             continue
 
         augmented_input = safe_input
+
+        if cache_build:
+            try:
+                from src.core import sementic_cache
+                cache_result = sementic_cache.get_info_cache(prompt=safe_input, ollama_url=host, model=model)
+                if cache_result != None:
+                    print("[SEMENTIC CACHE] question already asked find")
+                    sys.stdout.write("\nAssistant > ")
+                    print(cache_result)
+                    history.append(ChatMessage(role="user", content=safe_input))
+                    history.append(ChatMessage(role="assistant", content=cache_result))
+                    continue
+            except Exception:
+                pass
+
+        rag_ctx = None
+
         if rag_enabled:
             try:
                 from src.RAG.retriever import retrieve_rag_context
                 rag_ctx = retrieve_rag_context(safe_input, ollama_url=host, ollama_model=model)
+                print(rag_ctx)
                 if rag_ctx:
                     print("[RAG] Contexte historique injecté depuis les chroniques.")
                     augmented_input = (
-                        f"Tu es un conseiller stratégique des 7 Royaumes Combattants. "
-                        f"Réponds en t'appuyant sur ce contexte historique :\n\n"
-                        f"{rag_ctx}\n\n"
-                        f"Question : {safe_input}"
+                        f"Tu es un conseiller stratégique expert des 7 Royaumes Combattants.\n\n"
+                        f"DOCUMENTS HISTORIQUES :\n"
+                        f"======================\n"
+                        f"{rag_ctx}\n"
+                        f"======================\n\n"
+                        f"INSTRUCTIONS DE RÉPONSE :\n"
+                        f"1. EXPLOITATION DU CONTEXTE : Synthétise et réponds directement en t'appuyant sur les faits historiques attestés dans les documents ci-dessus pour éclairer le Seigneur.\n"
+                        f"2. GESTION DU MANQUE D'INFORMATION : Si et seulement si les documents ci-dessus ne contiennent absolument AUCUN élément permettant de répondre à la question, réponds uniquement 'Mes chroniques ne mentionnent pas cette information.' Ne prononce JAMAIS cette phrase si tu donnes des éléments de réponse dans ton message.\n"
+                        f"3. CORRECTION DES ARMÉES : Les textes (Shiji et Zhan Guo Ce) sont de vieilles traductions. S'ils mentionnent des tailles d'armées chinoises en dizaines de milliers (ex: 20 000 ou 60 000), il s'agit d'une erreur de traduction du caractère 'Wan' (10 000). Multiplie toujours ces effectifs militaires par 10 (ex: 200 000) pour rétablir la vérité historique.\n"
+                        f"4. ANTI-FUSION : Les documents peuvent relater les histoires de plusieurs généraux différents (ex: Li Xin, Han Xin, Wang Jian). Ne mélange PAS leurs histoires. Ne réponds qu'avec les faits explicitement associés au sujet demandé par le Seigneur.\n"
+                        f"5. LANGUE : Réponds dans la même langue que la question posée par le Seigneur.\n\n"
+                        f"Question du Seigneur : {safe_input}"
                     )
             except Exception:
                 pass
+
 
         user_msg = ChatMessage(role="user", content=augmented_input)
         history.append(user_msg)
@@ -366,6 +421,31 @@ def run_session(client: OllamaClient, model: str, host: str, tools: Any = None, 
                     messages=list(history),
                     response_format=StructuredResponse,
                 )
+                eval_res = auto_evaluation.evaluer_reponse_ia(
+                    client=client,
+                    model=model,
+                    question_user=safe_input,
+                    rag_context=rag_ctx,
+                    reponse_assistant=result.response,
+                )
+                if auto_evaluation.interprete_result(eval_res):
+                    print("[Auto-Évaluation] Note < 3 ou hallucination détectée ! Retravail de la réponse...")
+                    result = auto_evaluation.retravailler_reponse_structuree(
+                        client=client,
+                        model=model,
+                        question_user=safe_input,
+                        rag_context=rag_ctx,
+                        reponse_assistant=result.response,
+                        evaluation=eval_res,
+                        response_format=StructuredResponse,
+                    )
+                    auto_evaluation.evaluer_reponse_ia(
+                        client=client,
+                        model=model,
+                        question_user=safe_input,
+                        rag_context=rag_ctx,
+                        reponse_assistant=result.response,
+                    )
                 print(json.dumps(result.model_dump(), ensure_ascii=False))
                 history.append(ChatMessage(role="assistant", content=result.response))
                 current_session.messages = list(history)
@@ -422,9 +502,53 @@ def run_session(client: OllamaClient, model: str, host: str, tools: Any = None, 
             print()
             full_reply = "".join(response_chunks).strip()
             if full_reply:
+                eval_res = auto_evaluation.evaluer_reponse_ia(
+                    client=client,
+                    model=model,
+                    question_user=safe_input,
+                    rag_context=rag_ctx,
+                    reponse_assistant=full_reply,
+                )
+                if auto_evaluation.interprete_result(eval_res):
+                    print("[Auto-Évaluation] Note < 3 ou hallucination détectée !")
+                    print("[Auto-Évaluation] Retravail de la réponse en cours avec les remarques du juge...")
+                    sys.stdout.write("\nAssistant (corrigé) > ")
+                    sys.stdout.flush()
+                    reworked_chunks: list[str] = []
+                    try:
+                        for chunk in auto_evaluation.retravailler_reponse_stream(
+                            client=client,
+                            model=model,
+                            question_user=safe_input,
+                            rag_context=rag_ctx,
+                            reponse_assistant=full_reply,
+                            evaluation=eval_res,
+                        ):
+                            sys.stdout.write(chunk)
+                            sys.stdout.flush()
+                            reworked_chunks.append(chunk)
+                        print()
+                        if reworked_chunks:
+                            full_reply = "".join(reworked_chunks).strip()
+                            auto_evaluation.evaluer_reponse_ia(
+                                client=client,
+                                model=model,
+                                question_user=safe_input,
+                                rag_context=rag_ctx,
+                                reponse_assistant=full_reply,
+                            )
+                    except Exception as err:
+                        print(f"\n[Auto-Évaluation] Erreur lors du retravail de la réponse : {err}")
+
+            if full_reply:
                 history.append(ChatMessage(role="assistant", content=full_reply))
                 current_session.messages = list(history)
                 current_session.metadata.model = model
+                if cache_build:
+                    try:
+                        sementic_cache.add_to_cache(prompt=safe_input, llm_response=full_reply, ollama_url=host)
+                    except Exception as e:
+                        print(f"[Erreur mise en cache] {e}")
                 session_manager.save_session(current_session)
                 artifact_manager.save_artifact(current_session.metadata.session_id, get_active_artifact())
 
@@ -497,6 +621,15 @@ def main(argv: list[str] | None = None) -> int:
         print(f"[Erreur dans l'initialisation de la BDD] {e}")
         return 1
 
+    cache_build = False
+    try:
+        sementic_cache.create_cache()
+        cache_build = True
+    except Exception as e:
+        print(f"[Erreur dans la creation du cache] {e}")
+        cache_build = False
+        return 1
+
     file_cfg = load_config_file(Path(args.config)) if args.config else {}
     mcp_cmd = args.mcp_server or os.getenv("SENSAI_MCP_SERVER") or file_cfg.get("mcp_server")
     tools_flag = (
@@ -505,11 +638,11 @@ def main(argv: list[str] | None = None) -> int:
         or bool(file_cfg.get("tools"))
         or bool(file_cfg.get("tools_enabled"))
     )
-    
+
     profile_name = args.profile or "default"
     persona_name = args.persona or os.getenv("SENSAI_PERSONA") or file_cfg.get("persona")
     session_id = args.session
-    timeout = float(os.getenv("SENSAI_TIMEOUT") or file_cfg.get("request_timeout") or 180.0)
+    timeout = float(os.getenv("SENSAI_TIMEOUT") or file_cfg.get("request_timeout") or 300.0)
 
     with OllamaClient(base_url=host, timeout=timeout) as client:
         active_tools = default_registry if (tools_flag or mcp_cmd) else None
@@ -524,6 +657,7 @@ def main(argv: list[str] | None = None) -> int:
             persona_name=persona_name,
             max_tokens = context_length,
             rag_enabled=args.rag,
+            cache_build=cache_build
         )
     return 0
 
