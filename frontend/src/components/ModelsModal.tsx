@@ -9,9 +9,10 @@ import {
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
-import { Cpu, Wrench, Check, Sparkles } from 'lucide-react'
+import { Cpu, Check, Sparkles } from 'lucide-react'
 import { api } from '../lib/api'
 import type { ToolInfo } from '../types'
+import { ToolIcon } from './ToolIcon'
 
 interface ModelsModalProps {
   isOpen: boolean
@@ -82,19 +83,9 @@ export function ModelsModal({
     }
   }
 
-  const getToolIcon = (iconName: string) => {
-    switch (iconName) {
-      case 'Code':
-      case 'Sparkles':
-        return <Sparkles className="w-4 h-4 text-indigo-400" />
-      default:
-        return <Wrench className="w-4 h-4 text-neutral-400" />
-    }
-  }
-
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-xl bg-neutral-900 border-neutral-800 text-neutral-100 p-5 space-y-4">
+      <DialogContent className="sm:max-w-xl md:max-w-2xl bg-neutral-900 border-neutral-800 text-neutral-100 p-5 space-y-4">
         <DialogHeader className="pb-3 border-b border-neutral-800">
           <DialogTitle className="text-lg font-bold flex items-center gap-2">
             <Cpu className="w-5 h-5 text-indigo-400" />
@@ -147,33 +138,35 @@ export function ModelsModal({
           </p>
 
           <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
-            {toolsList.map((tool) => {
-              const isChecked = selectedTools.includes(tool.id)
-              return (
-                <button
-                  type="button"
-                  key={tool.id}
-                  onClick={() => handleToggleTool(tool.id)}
-                  className={`w-full text-left p-3 rounded-xl border flex items-center justify-between gap-3 transition-colors cursor-pointer ${
-                    isChecked
-                      ? 'bg-neutral-950 border-neutral-700'
-                      : 'bg-neutral-950/50 border-neutral-800/80 opacity-75 hover:opacity-100 hover:border-neutral-700'
-                  }`}
-                >
-                  <div className="flex items-start gap-2.5 min-w-0">
-                    <div className="p-2 rounded-lg bg-neutral-900 border border-neutral-800 shrink-0">
-                      {getToolIcon(tool.icon)}
-                    </div>
-                    <div className="min-w-0">
+            {toolsList
+              .filter((tool) => tool.visible !== false)
+              .map((tool) => {
+                const isChecked = selectedTools.includes(tool.id)
+                return (
+                  <button
+                    type="button"
+                    key={tool.id}
+                    onClick={() => handleToggleTool(tool.id)}
+                    className={`w-full text-left p-3 rounded-xl border flex items-center justify-between gap-3 transition-colors cursor-pointer ${
+                      isChecked
+                        ? 'bg-neutral-950 border-neutral-700'
+                        : 'bg-neutral-950/50 border-neutral-800/80 opacity-75 hover:opacity-100 hover:border-neutral-700'
+                    }`}
+                  >
+                    <div className="flex items-start gap-2.5 min-w-0">
+                      <div className="p-2 rounded-lg bg-neutral-900 border border-neutral-800 shrink-0">
+                        <ToolIcon name={tool.icon} className="w-4 h-4" />
+                      </div>
+                      <div className="min-w-0">
                       <div className="text-xs font-semibold text-neutral-100 flex items-center gap-2">
                         <span>{tool.name}</span>
                         <Badge variant="outline" className="text-[9px] px-1 py-0 border-neutral-800 text-neutral-400">
                           {tool.category}
                         </Badge>
                       </div>
-                      <div className="text-[11px] text-neutral-400 leading-tight mt-0.5">
-                        {tool.description}
-                      </div>
+                        <div className="text-[11px] text-neutral-400 leading-relaxed break-words mt-1">
+                          {tool.description}
+                        </div>
                     </div>
                   </div>
 

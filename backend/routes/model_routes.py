@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from database import get_db
 from models import ModelPreference, User
 from security import get_current_user
-from tools_registry import list_tools
+from tools_registry import ALL_TOOLS_ID, list_tools
 
 router = APIRouter(prefix="/api/models", tags=["models"])
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://ia:11434")
@@ -58,7 +58,7 @@ def get_user_model_config(user: User = Depends(get_current_user), db: Session = 
             "active_tools": ["structured_output"]
         }
     tools = json.loads(pref.active_tools) if pref.active_tools else []
-    valid_ids = [t["id"] for t in list_tools()] + ["structured_output", "Structured Output", "mcp_runner"]
+    valid_ids = [t["id"] for t in list_tools()] + ["Structured Output", ALL_TOOLS_ID]
     tools = [t for t in tools if t in valid_ids]
     return {
         "model_name": pref.model_name,
@@ -74,7 +74,7 @@ def update_user_model_config(
     db: Session = Depends(get_db)
 ):
     pref = db.query(ModelPreference).filter(ModelPreference.user_id == user.id).first()
-    valid_ids = [t["id"] for t in list_tools()] + ["structured_output", "Structured Output", "mcp_runner"]
+    valid_ids = [t["id"] for t in list_tools()] + ["Structured Output", ALL_TOOLS_ID]
     cleaned_tools = [t for t in (cfg.active_tools or []) if t in valid_ids]
     tools_json = json.dumps(cleaned_tools)
     if not pref:
