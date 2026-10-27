@@ -63,4 +63,4 @@ desktop.ini
 exports/*.md
 !exports/.gitkeep
 
-/rapports_batailles
+/battle_reports

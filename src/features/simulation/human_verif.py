@@ -18,7 +18,7 @@ def confirm_simple(question: str) -> bool:
             ans = input(f"{question} [Y/N] > ").strip().upper()
         except (KeyboardInterrupt, EOFError):
             return False
-        if ans in ("Y", "O"):
+        if ans in ("Y"):
             return True
         if ans == "N":
             return False

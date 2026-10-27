@@ -17,7 +17,7 @@ class Rule:
     max_bytes: int = 200_000
 
 RULES = (
-    Rule("batlle_reports", can_read=True, can_write=True, extensions=(".md")),
+    Rule("battle_reports", can_read=True, can_write=True, extensions=(".md")),
 )
 
 def check(path: str, op: str, size: int = 0) -> tuple[bool, str]:
