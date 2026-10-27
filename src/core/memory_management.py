@@ -53,7 +53,7 @@ def enforce_token_budget(
 
     from src.core.ollama_client import ChatMessage
 
-    msg_prompt = ChatMessage(role="agent", content=resume_prompt)
+    msg_prompt = ChatMessage(role="assistant", content=resume_prompt)
 
     try:
         raw_res = client.call_model(model, [msg_prompt])
