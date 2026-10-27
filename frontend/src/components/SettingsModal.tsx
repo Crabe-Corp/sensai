@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
-import { User, Lock, Plug, Plus, ShieldCheck, CheckCircle2, AlertCircle, Trash2 } from 'lucide-react'
+import { User, Lock, Plug, Plus, ShieldCheck, CheckCircle2, AlertCircle, Trash2, Power, PowerOff, Loader2, Wrench } from 'lucide-react'
 import { api } from '../lib/api'
 import type { McpServer, User as UserType } from '../types'
 
@@ -40,6 +40,7 @@ export function SettingsModal({ isOpen, onClose, user, onUserUpdated, initialTab
   const [newMcpDesc, setNewMcpDesc] = useState('')
   const [mcpLoading, setMcpLoading] = useState(false)
   const [mcpStatusMsg, setMcpStatusMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+  const [connectingServerId, setConnectingServerId] = useState<string | null>(null)
 
   useEffect(() => {
     if (isOpen) {
@@ -104,6 +105,69 @@ export function SettingsModal({ isOpen, onClose, user, onUserUpdated, initialTab
       setMcpStatusMsg({ type: 'error', text: err.message || "Erreur lors de l'ajout du serveur MCP." })
     } finally {
       setMcpLoading(false)
+    }
+  }
+
+  const handleConnectMcp = async (serverId: string, serverName: string) => {
+    setConnectingServerId(serverId)
+    setMcpStatusMsg(null)
+    try {
+      const res = await api.connectMcpServer({ server_id: serverId })
+      setMcpServers((prev) =>
+        prev.map((s) =>
+          s.id === serverId
+            ? {
+                ...s,
+                ...res.server,
+                status: 'connected',
+                tools_count: res.tools_count,
+                tools: res.tools,
+              }
+            : s
+        )
+      )
+      setMcpStatusMsg({
+        type: 'success',
+        text: `Serveur "${serverName}" connecté (${res.tools_count} outil(s) découvert(s)).`,
+      })
+    } catch (err: any) {
+      setMcpStatusMsg({
+        type: 'error',
+        text: err.message || `Erreur de connexion au serveur "${serverName}".`,
+      })
+    } finally {
+      setConnectingServerId(null)
+    }
+  }
+
+  const handleDisconnectMcp = async (serverId: string, serverName: string) => {
+    setConnectingServerId(serverId)
+    setMcpStatusMsg(null)
+    try {
+      await api.disconnectMcpServer(serverId)
+      setMcpServers((prev) =>
+        prev.map((s) =>
+          s.id === serverId
+            ? {
+                ...s,
+                status: 'disconnected',
+                tools_count: 0,
+                tools: [],
+              }
+            : s
+        )
+      )
+      setMcpStatusMsg({
+        type: 'success',
+        text: `Serveur "${serverName}" déconnecté.`,
+      })
+    } catch (err: any) {
+      setMcpStatusMsg({
+        type: 'error',
+        text: err.message || `Erreur de déconnexion du serveur "${serverName}".`,
+      })
+    } finally {
+      setConnectingServerId(null)
     }
   }
 
@@ -267,15 +331,34 @@ export function SettingsModal({ isOpen, onClose, user, onUserUpdated, initialTab
                       <div className="font-semibold text-neutral-100 flex items-center gap-2 flex-wrap">
                         <span>{srv.name}</span>
                         <span className="text-[10px] text-neutral-500 font-mono">({srv.endpoint})</span>
-                        {typeof srv.tools_count === 'number' && (
-                          <Badge variant="outline" className="text-[9px] px-1 py-0 border-neutral-800 text-neutral-400">
-                            {srv.tools_count} outil{srv.tools_count > 1 ? 's' : ''}
+                        {typeof srv.tools_count === 'number' && srv.tools_count > 0 && (
+                          <Badge variant="outline" className="text-[9px] px-1.5 py-0 border-emerald-900/60 bg-emerald-950/30 text-emerald-300">
+                            {srv.tools_count} outil{srv.tools_count > 1 ? 's' : ''} actif{srv.tools_count > 1 ? 's' : ''}
                           </Badge>
                         )}
                       </div>
                       <div className="text-[11px] text-neutral-400 leading-relaxed break-words mt-1">
                         {srv.description}
                       </div>
+
+                      {/* Outils découverts en cas de connexion active */}
+                      {srv.status === 'connected' && srv.tools && srv.tools.length > 0 && (
+                        <div className="mt-2 pt-2 border-t border-neutral-800/60 flex flex-wrap gap-1.5 items-center">
+                          <span className="text-[10px] text-neutral-500 mr-1 flex items-center gap-1">
+                            <Wrench className="w-2.5 h-2.5" />
+                            Outils découverts :
+                          </span>
+                          {srv.tools.map((tName) => (
+                            <Badge
+                              key={tName}
+                              variant="outline"
+                              className="text-[9px] px-1.5 py-0 border-zinc-800 bg-zinc-900/80 text-zinc-300 font-mono"
+                            >
+                              {tName}
+                            </Badge>
+                          ))}
+                        </div>
+                      )}
                     </div>
 
                     <div className="flex items-center gap-2 shrink-0 pt-0.5">
@@ -289,8 +372,52 @@ export function SettingsModal({ isOpen, onClose, user, onUserUpdated, initialTab
                             : 'border-neutral-700 text-neutral-400'
                         }`}
                       >
-                        {srv.status === 'connected' ? 'Connecté' : srv.status === 'available' ? 'Disponible' : srv.status}
+                        {srv.status === 'connected' ? 'Connecté' : srv.status === 'available' ? 'Disponible' : srv.status === 'disconnected' ? 'Déconnecté' : srv.status}
                       </Badge>
+
+                      {srv.status === 'connected' ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          disabled={connectingServerId === srv.id}
+                          onClick={() => handleDisconnectMcp(srv.id, srv.name)}
+                          className="h-6 px-2 text-[10px] border-neutral-800 text-neutral-400 hover:text-red-400 hover:border-red-900/50 cursor-pointer"
+                          title="Déconnecter ce serveur MCP"
+                        >
+                          {connectingServerId === srv.id ? (
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                          ) : (
+                            <>
+                              <PowerOff className="w-3 h-3 mr-1" />
+                              Déconnecter
+                            </>
+                          )}
+                        </Button>
+                      ) : (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          disabled={connectingServerId === srv.id}
+                          onClick={() => handleConnectMcp(srv.id, srv.name)}
+                          className="h-6 px-2 text-[10px] border-neutral-800 text-neutral-300 hover:text-emerald-400 hover:border-emerald-900/50 cursor-pointer"
+                          title="Connecter ce serveur MCP"
+                        >
+                          {connectingServerId === srv.id ? (
+                            <>
+                              <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                              Connexion...
+                            </>
+                          ) : (
+                            <>
+                              <Power className="w-3 h-3 mr-1" />
+                              Connecter
+                            </>
+                          )}
+                        </Button>
+                      )}
+
                       <button
                         type="button"
                         onClick={() => handleDeleteMcp(srv.id, srv.name)}
