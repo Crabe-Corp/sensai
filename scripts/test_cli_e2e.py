@@ -218,7 +218,7 @@ def run_e2e_test(live_mode: bool = False) -> tuple[str, list[tuple[str, bool, st
     # Assertions de conformité
     checks.append((
         "Socle [B1] : Bannière d'accueil & initialisation",
-        "SENSAI CLI — Chatbot Modulaire" in raw_output,
+        ("SENSAI CLI — Modular Chatbot" in raw_output),
         "Bannière de démarrage affichée",
     ))
     checks.append((

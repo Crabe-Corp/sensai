@@ -16,7 +16,7 @@ from src.features.tools.registry import (
     extract_tool_schema,
     tool,
 )
-from src.features.tools import artifact_tool, forms, web_search
+from src.features.tools import artifact_tool, builtin, forms, web_search
 from src.features.tools.artifact_tool import update_artifact
 
 __all__ = [

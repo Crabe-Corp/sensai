@@ -90,3 +90,53 @@ def search_historical_archives(query: str) -> dict[str, Any]:
         return {"status": "empty", "message": "Aucun document historique trouvé pour cette requête."}
     except Exception as exc:
         return {"status": "error", "message": str(exc)}
+
+
+@tool
+def read_pdf_document(file_path: str) -> dict[str, Any]:
+    """Extrait et lit le contenu textuel d'un document PDF pour le relire, l'analyser ou le corriger.
+            PARAMS: - file_path - STR: chemin d'accès au document PDF sur le disque
+            RETURN: dictionnaire contenant les métadonnées et le contenu extrait du document ou une erreur"""
+
+    from src.features.pdf.pdf_reader import read_pdf_file
+
+    return read_pdf_file(file_path)
+
+
+@tool
+def verify_pdf_historical_veracity(file_path: str, focus_topic: str = "") -> dict[str, Any]:
+    """Lit un document PDF pour vérifier et corriger sa véracité historique (Chine ancienne, 7 Royaumes Combattants).
+            PARAMS: - file_path - STR: chemin d'accès au fichier PDF
+                    - focus_topic - STR: point ou événement historique précis à vérifier
+            RETURN: dictionnaire contenant les métadonnées, le texte extrait et les directives d'audit"""
+
+    from src.features.pdf.pdf_reader import read_pdf_file
+
+    res = read_pdf_file(file_path)
+    if res.get("status") == "success":
+        res["instructions"] = (
+            "Vérifie la conformité avec les chroniques des Royaumes Combattants (Shiji, Zhan Guo Ce), "
+            "corrige les effectifs de troupes (Wan x10), les dates et les attributions de batailles."
+        )
+        if focus_topic:
+            res["focus_topic"] = focus_topic
+    return res
+
+
+@tool
+def generate_pdf_document(filename: str, title: str, content: str, author: str = "SENSAI Historical Advisor",) -> dict[str, Any]:
+    """Génère et exporte un document PDF complet mis en page (biographie, chronique, rapport de bataille).
+            PARAMS: - filename - STR: nom du fichier PDF à créer (ex: 'qin_shi_huang_biography.pdf', enregistré dans exports/)
+                    - title - STR: titre principal du document PDF
+                    - content - STR: texte complet structuré en paragraphes ou markdown à intégrer dans le PDF
+                    - author - STR: nom de l'auteur ou conseiller émetteur
+            RETURN: dictionnaire contenant le statut, le chemin d'accès, la taille et le nombre de pages du document généré"""
+
+    from src.features.pdf.pdf_generator import generate_pdf
+
+    try:
+        result = generate_pdf(file_path=filename, title=title, content=content, author=author)
+        return result.model_dump()
+    except Exception as exc:
+        return {"status": "error", "error": str(exc)}
+

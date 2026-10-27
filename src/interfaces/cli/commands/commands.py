@@ -13,7 +13,7 @@ from src.features.tools.artifact_tool import (ARTIFACT_SYSTEM_INSTRUCTION, get_a
 from src.features.tools.mcp_client import MCPClient
 from src.features.tools.registry import default_registry
 
-COMMANDS_LIST: list[str] = ["/help", "/clear", "/history", "/budget", "/exit", "/quit", "/rag", "/debug", "/clear-cache", "/clearcache", "/mcp", "/session", "/sessions", "/profile", "/persona","/personas","/prompt","/prompts","/models","/model","/tools","/structured-output","/structured_output","/artifact","/artifacts", "/kingdom", "/kingdoms", "/figure", "/figures",]
+COMMANDS_LIST: list[str] = ["/help", "/clear", "/history", "/budget", "/exit", "/quit", "/rag", "/debug", "/clear-cache", "/clearcache", "/mcp", "/session", "/sessions", "/profile", "/persona","/personas","/prompt","/prompts","/models","/model","/tools","/structured-output","/structured_output","/artifact","/artifacts", "/export", "/exports", "/kingdom", "/kingdoms", "/figure", "/figures",]
 
 
 class Commands:
@@ -136,6 +136,7 @@ class Commands:
         print("  /figure [nom]             : Génère une fiche de personnage historique")
         print("  /structured-output [msg]  : Active/désactive le mode JSON ou soumet une requête")
         print("  /artifact [reset|save [path]] : Affiche, réinitialise ou exporte le livrable de la session")
+        print("  /export [pdf|md] [path]   : Exporte les échanges épurés ou le livrable en PDF ou Markdown")
         print("  /exit | /quit             : Quitte l'application\n")
 
     def _apply_persona_to_history(self, persona: Persona) -> None:
@@ -505,6 +506,72 @@ class Commands:
         else:
             print("[Info] Commandes /artifact disponibles : /artifact (afficher), /artifact reset, /artifact save [path]")
 
+    def manage_export(self, user_prompt: str = "") -> None:
+        """Exporte l'historique de conversation ou le livrable actif au format PDF ou Markdown.
+                PARAMS: - user_prompt - STR: syntaxe /export [pdf|md] [chemin_optionnel]
+                RETURN: None"""
+        parts = user_prompt.strip().split(maxsplit=2)
+        format_type = parts[1].lower() if len(parts) > 1 else "pdf"
+        target_path = parts[2].strip() if len(parts) > 2 else ""
+
+        if format_type not in ("pdf", "md", "markdown"):
+            print("[Info] Format d'export non reconnu. Formats supportés : /export pdf [path] ou /export md [path]")
+            return
+
+        sess_id = (
+            self.current_session.metadata.session_id[:8]
+            if self.current_session and self.current_session.metadata
+            else "session"
+        )
+        doc = get_active_artifact()
+        has_artifact = doc is not None and bool(doc.sections)
+
+        if format_type in ("md", "markdown"):
+            default_name = f"export_{sess_id}.md"
+            final_path = Path(target_path) if target_path else Path("exports") / default_name
+            if final_path.suffix.lower() != ".md":
+                final_path = final_path.with_suffix(".md")
+            final_path.parent.mkdir(parents=True, exist_ok=True)
+
+            if has_artifact:
+                content = doc.render_markdown()
+            else:
+                lines = [f"# Compte-rendu de Session SENSAI ({sess_id})\n"]
+                for msg in self.history:
+                    if msg.role == "system" or msg.content.strip().startswith(("/", "You > /")):
+                        continue
+                    speaker = "**Utilisateur**" if msg.role == "user" else "**Conseiller Historique SENSAI**"
+                    lines.append(f"{speaker} :\n{msg.content.strip()}\n")
+                content = "\n".join(lines)
+
+            final_path.write_text(content, encoding="utf-8")
+            print(f"[Export] Session exportée avec succès en Markdown dans '{final_path}'.")
+
+        elif format_type == "pdf":
+            default_name = f"export_{sess_id}.pdf"
+            final_path = Path(target_path) if target_path else Path("exports") / default_name
+
+            from src.features.pdf.pdf_generator import export_conversation_to_pdf, generate_pdf
+
+            try:
+                if has_artifact:
+                    res = generate_pdf(
+                        file_path=final_path,
+                        title=f"Livrable — {doc.title}",
+                        content=doc.render_markdown(),
+                        author="SENSAI Historical Advisor",
+                    )
+                else:
+                    res = export_conversation_to_pdf(
+                        messages=self.history,
+                        file_path=final_path,
+                        title="Compte-rendu de Session — SENSAI",
+                        author="SENSAI Historical Advisor",
+                    )
+                print(f"[Export] {res.message}")
+            except Exception as exc:
+                print(f"[Erreur Export PDF] {exc}")
+
     def manage_kingdom(self, user_prompt: str = "") -> None:
         """Génère une fiche de royaume au format JSON strict.
                 PARAMS: - user_prompt - STR: nom du royaume cible
@@ -723,6 +790,7 @@ COMMANDS_DICT: dict[str, Any] = {
     "/structured_output": Commands.enable_structured_output,
     "/artifact": Commands.manage_artifact,
     "/artifacts": Commands.manage_artifact,
+    "/export": Commands.manage_export,
     "/kingdom": Commands.manage_kingdom,
     "/kingdoms": Commands.manage_kingdom,
     "/figure": Commands.manage_figure,
