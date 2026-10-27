@@ -28,10 +28,12 @@ import {
   Pencil,
   GitBranch,
   RotateCcw,
+  Zap,
 } from 'lucide-react'
 import type { Conversation, Message, AttachedFile, ToolInfo } from '../types'
-import { parseUserMessage, parseFormMessage, stripFormBlock } from '../lib/messageParser'
+import { parseUserMessage, parseFormMessage, stripFormBlock, parseConfirmMessage, stripConfirmBlock } from '../lib/messageParser'
 import { FormCard } from './FormCard'
+import { ConfirmationCard } from './ConfirmationCard'
 import { ToolIcon } from './ToolIcon'
 
 const THINKING_PHRASES = [
@@ -104,6 +106,30 @@ function formatJson(str: string): string {
   } catch {
     return str
   }
+}
+
+function renderMessageContent(text: string, isUser: boolean) {
+  if (text.includes('[DONNÉE MASQUÉE]')) {
+    const parts = text.split(/(\[DONNÉE MASQUÉE\])/g)
+    return parts.map((part, idx) => {
+      if (part === '[DONNÉE MASQUÉE]') {
+        return (
+          <span
+            key={idx}
+            className={`inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-mono tracking-tight mx-0.5 select-none ${
+              isUser
+                ? 'bg-indigo-800/90 text-indigo-100 border border-indigo-400/30'
+                : 'bg-zinc-800 text-zinc-300 border border-zinc-700'
+            }`}
+          >
+            [DONNÉE MASQUÉE]
+          </span>
+        )
+      }
+      return part
+    })
+  }
+  return text
 }
 
 export function ChatView({
@@ -427,9 +453,15 @@ export function ChatView({
               const { cleanContent: displayContent, attachments: displayAttachments } = isUser
                 ? parseUserMessage(msg.content, msg.attachments)
                 : { cleanContent: msg.content, attachments: msg.attachments || [] }
-              const { text: messageText, form: messageForm } = isUser
+              const parsedForm = isUser
                 ? { text: displayContent, form: null }
                 : parseFormMessage(displayContent)
+              const parsedConfirm = isUser
+                ? { text: parsedForm.text, confirmation: null }
+                : parseConfirmMessage(parsedForm.text)
+              const messageText = parsedConfirm.text
+              const messageForm = parsedForm.form
+              const messageConfirmation = parsedConfirm.confirmation
 
               return (
                 <div
@@ -485,8 +517,16 @@ export function ChatView({
                           <pre className="font-mono text-xs overflow-x-auto text-indigo-300 p-1">
                             {formatJson(messageText)}
                           </pre>
+                        ) : !isUser && messageText.includes("The imperial advisor refuses to discuss this topic with you.") ? (
+                          <div className="flex items-start gap-2.5 py-0.5">
+                            <AlertCircle className="w-4 h-4 text-zinc-400 shrink-0 mt-0.5" />
+                            <div className="space-y-1">
+                              <p className="text-zinc-200">{renderMessageContent(messageText, isUser)}</p>
+                              <p className="text-[11px] text-zinc-500 font-medium">Contenu non conforme à la politique de modération.</p>
+                            </div>
+                          </div>
                         ) : (
-                          messageText
+                          renderMessageContent(messageText, isUser)
                         )
                       ) : null}
                       {messageForm && (
@@ -494,6 +534,14 @@ export function ChatView({
                           form={messageForm}
                           disabled={isStreaming || msgIndex < messages.length - 1}
                           onSubmit={(text) => onSendMessage(text)}
+                        />
+                      )}
+                      {messageConfirmation && (
+                        <ConfirmationCard
+                          confirmation={messageConfirmation}
+                          disabled={isStreaming || msgIndex < messages.length - 1}
+                          onConfirm={(text) => onSendMessage(text)}
+                          onReject={(text) => onSendMessage(text)}
                         />
                       )}
                     </div>
@@ -504,6 +552,12 @@ export function ChatView({
                         <div className="inline-flex items-center gap-1 text-[10px] text-amber-300 bg-amber-950/40 border border-amber-800/60 px-2 py-0.5 rounded-md">
                           <Square className="w-2.5 h-2.5 fill-current text-amber-400" />
                           <span>Génération interrompue</span>
+                        </div>
+                      )}
+                      {msg.from_cache && (
+                        <div className="inline-flex items-center gap-1 text-[10px] text-neutral-300 bg-neutral-900/80 border border-neutral-800 px-2 py-0.5 rounded-md w-fit">
+                          <Zap className="w-2.5 h-2.5 text-neutral-400" />
+                          <span>Cache sémantique</span>
                         </div>
                       )}
                       {!isUser && msg.total_tokens > 0 && (
@@ -575,9 +629,12 @@ export function ChatView({
                 <div className="p-3.5 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap break-words bg-neutral-900 border border-indigo-900/40 text-neutral-100 rounded-bl-xs shadow-md">
                   {streamingText ? (
                     <>
-                      {stripFormBlock(streamingText).text}
+                      {renderMessageContent(stripConfirmBlock(stripFormBlock(streamingText).text).text, false)}
                       {stripFormBlock(streamingText).formPending && (
                         <span className="block text-xs text-neutral-400 italic">Préparation du formulaire…</span>
+                      )}
+                      {stripConfirmBlock(streamingText).confirmPending && (
+                        <span className="block text-xs text-zinc-400 italic">Confirmation requise en attente…</span>
                       )}
                       <span className="inline-block w-1.5 h-4 ml-0.5 bg-indigo-400 animate-pulse align-middle" />
                     </>

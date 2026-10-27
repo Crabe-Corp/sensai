@@ -43,6 +43,7 @@ export interface Message {
   created_at?: string
   attachments?: MessageAttachment[]
   interrupted?: boolean
+  from_cache?: boolean
 }
 
 export interface AttachedFile {
@@ -71,8 +72,8 @@ export interface McpServer {
   status: string
   endpoint: string
   tools_count: number
+  tools?: string[]
 }
-
 
 export interface FormQuestion {
   id: string
@@ -85,4 +86,20 @@ export interface FormQuestion {
 export interface FormSpec {
   title: string
   questions: FormQuestion[]
+}
+
+export interface ConfirmationSpec {
+  action_id?: string
+  tool_name?: string
+  summary: string
+  action_type?: 'file_write' | 'db_update' | string
+  details?: Record<string, any> | string
+}
+
+export interface Persona {
+  id: string
+  name: string
+  description: string
+  system_prompt: string
+  prompt?: string
 }

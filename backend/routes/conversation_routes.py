@@ -15,9 +15,15 @@ from database import get_db
 from models import Conversation, ConversationMember, Message, User
 from realtime import manager
 from security import get_current_user
+from src.core import memory_management, sementic_cache
+from src.core.ollama_client import ChatMessage, OllamaClient
+from src.features.sec.security import mask_pii, validate_input_with_llm
 from tools_registry import (
     ALL_TOOLS_ID,
+    CONFIRM_BLOCK_LANG,
+    DESTRUCTIVE_TOOLS,
     FORM_TOOL_NAME,
+    build_confirm_block,
     build_form_block,
     get_ollama_tools,
     list_tools,
@@ -59,6 +65,8 @@ class ChatMessageRequest(BaseModel):
     model: Optional[str] = None
     tools_enabled: Optional[List[str]] = None
     system_instruction: Optional[str] = None
+    auto_confirm: Optional[bool] = None
+    confirmation_token: Optional[str] = None
 
 
 def estimate_tokens(text: str) -> int:
@@ -195,6 +203,10 @@ def save_conversation(
         for new_msg in raw_messages[existing_count:]:
             m_role = new_msg.get("role", "user")
             m_content = new_msg.get("content", "")
+            if m_role == "user" and m_content:
+                masked_m, has_pii_m = mask_pii(m_content)
+                if has_pii_m:
+                    m_content = masked_m
             m = Message(
                 id=str(uuid.uuid4()),
                 conversation_id=conv.id,
@@ -674,6 +686,27 @@ def add_member_to_work_conv(
     return {"success": True, "message": f"{target_user.username} a été ajouté à la conversation"}
 
 
+@router.post("/{conversation_id}/clearcache")
+@router.post("/{conversation_id}/clear-cache", include_in_schema=False)
+def clear_semantic_cache(
+    conversation_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    conv = db.query(Conversation).filter(Conversation.id == conversation_id).first()
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversation introuvable")
+
+    if not check_user_access(conv, user, db):
+        raise HTTPException(status_code=403, detail="Accès non autorisé à cette conversation")
+
+    try:
+        sementic_cache.clean_cache()
+        return {"success": True, "message": "Cache sémantique vidé avec succès"}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Erreur lors du vidage du cache : {str(exc)}")
+
+
 @router.post("/{conversation_id}/chat")
 async def chat_stream(
     conversation_id: str,
@@ -695,7 +728,11 @@ async def chat_stream(
     valid_tool_ids = [t["id"] for t in list_tools()] + ["structured_output", "Structured Output", "mcp_runner"]
     tools_to_use = [t for t in raw_tools if t in valid_tool_ids]
 
-    user_tokens = estimate_tokens(req.content)
+    # Masquage des données sensibles (email, téléphone)
+    masked_content, has_pii = mask_pii(req.content)
+    effective_content = masked_content if has_pii else req.content
+
+    user_tokens = estimate_tokens(effective_content)
     user_msg_id = str(uuid.uuid4())
     user_msg = Message(
         id=user_msg_id,
@@ -703,7 +740,7 @@ async def chat_stream(
         sender_id=user.id,
         sender_name=user.username,
         role="user",
-        content=req.content,
+        content=effective_content,
         prompt_tokens=user_tokens,
         completion_tokens=0,
         total_tokens=user_tokens,
@@ -712,18 +749,18 @@ async def chat_stream(
     conv.updated_at = datetime.utcnow()
     if conv.title == "Nouvelle conversation":
         clean_prompt = re.sub(
-            r'\[Fichier joint\s*:\s*[^\]\(\)]+?(?: \([^)]+\))?\](?:\s*--- Début du contenu de [^\n\r]+ ---\s*[\s\S]*?\s*--- Fin du contenu de [^\n\r]+ ---)?',
+            r'\[Fichier joint\s*:\s*[^\\\]\(\)]+?(?: \([^)]+\))?\](?:\s*--- Début du contenu de [^\n\r]+ ---\s*[\s\S]*?\s*--- Fin du contenu de [^\n\r]+ ---)?',
             '',
-            req.content
+            effective_content
         ).strip()
         if clean_prompt:
             conv.title = clean_prompt[:35] + ("..." if len(clean_prompt) > 35 else "")
         else:
-            file_match = re.search(r'\[Fichier joint\s*:\s*([^\]\(\)]+?)', req.content)
+            file_match = re.search(r'\[Fichier joint\s*:\s*([^\\\]\(\)]+?)', effective_content)
             if file_match:
                 conv.title = file_match.group(1).strip()[:35]
             else:
-                conv.title = req.content[:35] + ("..." if len(req.content) > 35 else "")
+                conv.title = effective_content[:35] + ("..." if len(effective_content) > 35 else "")
 
     db.commit()
 
@@ -733,7 +770,7 @@ async def chat_stream(
             "id": user_msg_id,
             "role": "user",
             "sender_name": user.username,
-            "content": req.content,
+            "content": effective_content,
             "prompt_tokens": user_tokens,
             "completion_tokens": 0,
             "total_tokens": user_tokens,
@@ -768,11 +805,35 @@ async def chat_stream(
             "pour les demander à l'utilisateur au lieu de les deviner, puis attends ses réponses."
         )
 
-    history.append({"role": "system", "content": system_prompt})
-
-    past_messages = db.query(Message).filter(Message.conversation_id == conv.id).order_by(Message.created_at).limit(15).all()
+    # Récupération de l'historique et gestion du budget de tokens via memory_management ([M2])
+    past_messages = db.query(Message).filter(Message.conversation_id == conv.id).order_by(Message.created_at).all()
+    raw_chat_messages = [ChatMessage(role="system", content=system_prompt)]
+    total_tokens_calc = estimate_tokens(system_prompt)
     for pm in past_messages:
-        history.append({"role": pm.role, "content": pm.content})
+        raw_chat_messages.append(ChatMessage(role=pm.role, content=pm.content))
+        total_tokens_calc += (pm.total_tokens or estimate_tokens(pm.content))
+
+    memory_management.consume_tokens(total_tokens_calc)
+
+    try:
+        mem_client = OllamaClient(base_url=OLLAMA_BASE_URL)
+        try:
+            managed_messages = memory_management.enforce_token_budget(
+                model=model_to_use,
+                client=mem_client,
+                messages=raw_chat_messages,
+                max_history_tokens=2000,
+            )
+        finally:
+            mem_client.close()
+    except Exception:
+        managed_messages = raw_chat_messages
+
+    for msg in managed_messages:
+        history.append({
+            "role": getattr(msg, "role", "user"),
+            "content": getattr(msg, "content", ""),
+        })
 
     async def event_generator():
         accumulated_text = ""
@@ -781,6 +842,140 @@ async def chat_stream(
 
         ollama_tools = get_ollama_tools(tools_to_use)
         yield json.dumps({"type": "start", "user_message_id": user_msg_id}) + "\n"
+
+        # Validation de sécurité par guardrail LLM
+        sec_client = OllamaClient(base_url=OLLAMA_BASE_URL)
+        try:
+            is_valid, refusal_message = await asyncio.to_thread(
+                validate_input_with_llm,
+                effective_content,
+                sec_client,
+                model_to_use
+            )
+        finally:
+            sec_client.close()
+
+        if not is_valid:
+            refusal_text = refusal_message or "The imperial advisor refuses to discuss this topic with you."
+            accumulated_text = refusal_text
+            completion_tokens_eval = estimate_tokens(accumulated_text)
+            total_response_tokens = prompt_tokens_eval + completion_tokens_eval
+
+            yield json.dumps({"type": "chunk", "content": refusal_text}) + "\n"
+
+            assistant_msg_id = str(uuid.uuid4())
+            assistant_msg = Message(
+                id=assistant_msg_id,
+                conversation_id=conv.id,
+                sender_id=None,
+                sender_name="SensAI",
+                role="assistant",
+                content=accumulated_text,
+                prompt_tokens=prompt_tokens_eval,
+                completion_tokens=completion_tokens_eval,
+                total_tokens=total_response_tokens,
+            )
+            db.add(assistant_msg)
+            conv.updated_at = datetime.utcnow()
+            db.commit()
+            conv_total_tokens = sum(m.total_tokens for m in conv.messages)
+
+            final_payload = {
+                "type": "done",
+                "message_id": assistant_msg_id,
+                "user_message_id": user_msg_id,
+                "prompt_tokens": prompt_tokens_eval,
+                "completion_tokens": completion_tokens_eval,
+                "total_tokens": total_response_tokens,
+                "conversation_total_tokens": conv_total_tokens,
+            }
+            yield json.dumps(final_payload) + "\n"
+
+            await manager.broadcast(conv.id, {
+                "type": "new_message",
+                "message": {
+                    "id": assistant_msg_id,
+                    "role": "assistant",
+                    "sender_name": "SensAI",
+                    "content": accumulated_text,
+                    "prompt_tokens": prompt_tokens_eval,
+                    "completion_tokens": completion_tokens_eval,
+                    "total_tokens": total_response_tokens,
+                    "created_at": assistant_msg.created_at.isoformat(),
+                    "conversation_total_tokens": conv_total_tokens
+                }
+            })
+            return
+
+        # Interrogation du cache sémantique vectoriel ([A6])
+        cached_response = None
+        try:
+            cached_response = await asyncio.to_thread(
+                sementic_cache.get_info_cache,
+                prompt=effective_content,
+                ollama_url=OLLAMA_BASE_URL,
+                model=model_to_use,
+            )
+        except Exception:
+            cached_response = None
+
+        if cached_response and cached_response.strip():
+            completion_tokens_eval = estimate_tokens(cached_response)
+            total_response_tokens = prompt_tokens_eval + completion_tokens_eval
+
+            yield json.dumps({
+                "type": "chunk",
+                "content": cached_response,
+                "from_cache": True,
+                "source": "cache",
+            }) + "\n"
+
+            assistant_msg_id = str(uuid.uuid4())
+            assistant_msg = Message(
+                id=assistant_msg_id,
+                conversation_id=conv.id,
+                sender_id=None,
+                sender_name="SensAI",
+                role="assistant",
+                content=cached_response,
+                prompt_tokens=prompt_tokens_eval,
+                completion_tokens=completion_tokens_eval,
+                total_tokens=total_response_tokens,
+            )
+            db.add(assistant_msg)
+            conv.updated_at = datetime.utcnow()
+            db.commit()
+            conv_total_tokens = sum(m.total_tokens for m in conv.messages)
+
+            final_payload = {
+                "type": "done",
+                "message_id": assistant_msg_id,
+                "user_message_id": user_msg_id,
+                "prompt_tokens": prompt_tokens_eval,
+                "completion_tokens": completion_tokens_eval,
+                "total_tokens": total_response_tokens,
+                "conversation_total_tokens": conv_total_tokens,
+                "from_cache": True,
+                "source": "cache",
+            }
+            yield json.dumps(final_payload) + "\n"
+
+            await manager.broadcast(conv.id, {
+                "type": "new_message",
+                "message": {
+                    "id": assistant_msg_id,
+                    "role": "assistant",
+                    "sender_name": "SensAI",
+                    "content": cached_response,
+                    "prompt_tokens": prompt_tokens_eval,
+                    "completion_tokens": completion_tokens_eval,
+                    "total_tokens": total_response_tokens,
+                    "created_at": assistant_msg.created_at.isoformat(),
+                    "conversation_total_tokens": conv_total_tokens,
+                    "from_cache": True,
+                }
+            })
+            return
 
         ollama_payload = {
             "model": model_to_use,
@@ -868,6 +1063,38 @@ async def chat_stream(
                                 form_sent = True
                                 break
 
+                            if t_name in DESTRUCTIVE_TOOLS:
+                                token_match = re.search(r'\[(?:Token|action_id):\s*([a-zA-Z0-9_\-]+)\]', req.content)
+                                user_confirmed = (
+                                    getattr(req, "auto_confirm", None) is True
+                                    or "[Confirmation : approuvée]" in req.content
+                                    or "[Confirmation : oui]" in req.content
+                                    or bool(token_match)
+                                )
+                                if user_confirmed:
+                                    t_args["auto_confirm"] = True
+                                    if token_match:
+                                        t_args["action_id"] = token_match.group(1)
+                                    elif getattr(req, "confirmation_token", None):
+                                        t_args["action_id"] = req.confirmation_token
+                                else:
+                                    action_id = f"act-{uuid.uuid4().hex[:8]}"
+                                    summary = f"Exécution de l'action {t_name}"
+                                    if t_name == "write_manuscript_file":
+                                        summary = f"Écriture dans le fichier {t_args.get('filename')}"
+                                    elif t_name == "update_kingdom_database":
+                                        summary = f"Mise à jour SQL : {t_args.get('sql_statement')}"
+                                    confirm_block = build_confirm_block(
+                                        summary=summary,
+                                        tool_name=t_name,
+                                        action_id=action_id,
+                                        details=t_args,
+                                    )
+                                    accumulated_text += confirm_block
+                                    yield json.dumps({"type": "chunk", "content": confirm_block}) + "\n"
+                                    form_sent = True
+                                    break
+
                             # Les outils sont synchrones (réseau, SQL, fichiers) : hors de la boucle d'événements
                             tool_output = await asyncio.to_thread(run_tool, t_name, t_args)
                             info_text = f"\n\n*[Outil exécuté : {t_name}]*\n```json\n{tool_output}\n```\n\n"
@@ -913,6 +1140,23 @@ async def chat_stream(
             yield json.dumps({"type": "chunk", "content": empty_msg}) + "\n"
 
         total_response_tokens = prompt_tokens_eval + completion_tokens_eval
+
+        # Enregistrement dans le cache sémantique après génération réussie ([A6])
+        if (
+            accumulated_text.strip()
+            and not accumulated_text.startswith("[Erreur")
+            and not accumulated_text.startswith("[Connexion")
+            and not accumulated_text.startswith("[Le modèle")
+        ):
+            try:
+                await asyncio.to_thread(
+                    sementic_cache.add_to_cache,
+                    prompt=effective_content,
+                    llm_response=accumulated_text,
+                    ollama_url=OLLAMA_BASE_URL,
+                )
+            except Exception:
+                pass
 
         assistant_msg_id = str(uuid.uuid4())
         assistant_msg = Message(
