@@ -317,7 +317,7 @@ def run_session(
             current_session = session_manager.load_session(session_id)
             if current_session.metadata.model:
                 model = current_session.metadata.model
-            print(f"[Info] Session '{session_id}' chargée ({len(current_session.messages)} messages).")
+            print(f"[Info] Session '{session_id}' loaded ({len(current_session.messages)} messages).")
         except FileNotFoundError:
             print(f"[Warning] Session '{session_id}' not found. Initializing a new session.")
             current_session = session_manager.create_session(profile=current_profile, model=model)
@@ -470,8 +470,8 @@ def run_session(
         if pdf_audit is not None:
             _pdf_path, pdf_instruction, pdf_info = pdf_audit
             print(
-                f"[PDF Détecté] '{pdf_info.file_name}' ({pdf_info.extracted_pages}/{pdf_info.total_pages} page(s), "
-                f"{len(pdf_info.content)} car.) — Audit de la véracité historique..."
+                f"[PDF Detected] '{pdf_info.file_name}' ({pdf_info.extracted_pages}/{pdf_info.total_pages} page(s), "
+                f"{len(pdf_info.content)} chars) — Historical veracity audit..."
             )
             safe_input = build_pdf_historical_veracity_prompt(pdf_info, pdf_instruction)
 
@@ -535,7 +535,7 @@ def run_session(
                             f"{rag_ctx}\n"
                             f"======================\n\n"
                             f"RESPONSE INSTRUCTIONS:\n"
-                            f"1. CONTEXT USAGE: Synthesize and respond directly by relying on the historical facts attested in the documents above to enlighten the Lord. N'appelle l'outil 'web_search' que si un détail extérieur spécifique manque.\n"
+                            f"1. CONTEXT USAGE: Synthesize and respond directly by relying on the historical facts attested in the documents above to enlighten the Lord. Call the 'web_search' tool only if you judge it necessary.\n"
                             f"2. HANDLING MISSING INFORMATION: If and only if the documents above contain absolutely NO information to answer the question, respond only with 'My chronicles do not mention this information.' NEVER use this phrase if you provide any relevant facts or partial answers in your response.\n"
                             f"3. ARMY SIZE CORRECTION: The ancient texts (Shiji and Zhan Guo Ce) contain classical translation conventions. If they mention Chinese army sizes in tens of thousands (e.g., 20,000 or 60,000), it stems from the Chinese numeral unit 'Wan' (10,000). Always multiply these military counts by 10 (e.g., 200,000) to reflect historical reality.\n"
                             f"4. ANTI-CONFUSION: The documents may relate stories of multiple different generals (e.g., Li Xin, Han Xin, Wang Jian). Do NOT mix their accounts. Only answer with facts explicitly associated with the topic requested by the Lord.\n"

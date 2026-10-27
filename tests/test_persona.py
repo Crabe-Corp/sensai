@@ -176,25 +176,25 @@ def test_cli_persona_interactive_commands(persona_env, capsys):
     # 1. /persona list quand aucune persona n'est enregistrée
     cmd.execute_command("/persona", "/persona list")
     out = capsys.readouterr().out
-    assert "Aucune persona disponible" in out
-    assert "Aucune persona active" in out
+    assert "No personas available" in out
+    assert "No active persona" in out
 
     # 2. Génération explicite des personas exemples via /persona defaults
     cmd.execute_command("/persona", "/persona defaults")
     out = capsys.readouterr().out
-    assert "Personas d'exemple générées" in out
+    assert "Sample personas generated" in out
     assert "scribe_qin" in out
 
     # 3. /persona <nom>
     cmd.execute_command("/persona", "/persona general_bai_qi")
     out = capsys.readouterr().out
-    assert "Persona 'Général Bai Qi' activée" in out
+    assert "activated" in out
     assert cmd.current_persona.name == "Général Bai Qi"
 
     # 4. /persona inexistant
     cmd.execute_command("/persona", "/persona inconnue")
     out = capsys.readouterr().out
-    assert "[Erreur Persona]" in out
+    assert "[Persona Error]" in out
 
 
 def test_clear_screen_preserves_active_persona(persona_env):

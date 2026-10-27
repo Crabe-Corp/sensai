@@ -23,9 +23,9 @@ class TestUserProfile:
     def test_default_profile_attributes(self):
         profile = UserProfile()
         assert profile.username == "default"
-        assert profile.tone == "scribe antique"
-        assert profile.conciseness == "équilibré"
-        assert profile.language == "français"
+        assert profile.tone == "ancient scribe"
+        assert profile.conciseness == "balanced"
+        assert profile.language == "english"
         assert "Qin" in profile.custom_instructions
         assert profile.facts == []
 
@@ -39,7 +39,7 @@ class TestUserProfile:
             facts=["Expertise dynastie Qin", "Intérêt pour l'armée en terre cuite"],
         )
         prompt = profile.format_system_prompt()
-        assert "[Profil Utilisateur : historien_qin]" in prompt
+        assert "[User Profile : historien_qin]" in prompt
         assert "académique et solennel" in prompt
         assert "très détaillé" in prompt
         assert "Se concentrer sur les réformes de Shang Yang." in prompt
@@ -267,8 +267,8 @@ class TestCliIntegrationPersistence:
         captured = capsys.readouterr()
         assert "Ancienne Guerre" in captured.out
         assert "Campagne_Nord" in captured.out
-        assert f"Session '{sess1.metadata.session_id}' chargée avec succès" in captured.out
-        assert "1 message(s) en mémoire" in captured.out
+        assert f"Session '{sess1.metadata.session_id}' loaded successfully" in captured.out
+        assert "1 message(s) in memory" in captured.out
 
     def test_cli_profile_commands_show_and_load(self, tmp_path: Path, capsys):
         sm = SessionManager(storage_dir=tmp_path / "sessions")
@@ -297,9 +297,9 @@ class TestCliIntegrationPersistence:
             )
 
         captured = capsys.readouterr()
-        assert "[Profil Utilisateur : default]" in captured.out
-        assert "Profil 'archonte' chargé" in captured.out
-        assert "[Profil Utilisateur : archonte]" in captured.out
+        assert "[User Profile : default]" in captured.out
+        assert "Profile 'archonte' loaded" in captured.out
+        assert "[User Profile : archonte]" in captured.out
         assert "aristocratique" in captured.out
         assert "archonte" in captured.out
 
@@ -415,7 +415,7 @@ class TestWebCliInteroperability:
             )
 
         captured = capsys.readouterr()
-        assert f"Session '{short_id}' chargée" in captured.out
+        assert f"Session '{short_id}' loaded" in captured.out
 
         # Vérification que la session a été continuée avec succès
         reloaded = sm.load_session(web_session.metadata.session_id)

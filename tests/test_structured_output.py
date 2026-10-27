@@ -329,7 +329,8 @@ def test_cli_kingdom_structured_error_handling(capsys):
 
     mock_client.chat_structured.assert_called_once()
     captured = capsys.readouterr()
-    assert "[Erreur Sortie Structurée] Format non respecté" in captured.out
+    assert "[Structured Output Error]" in captured.out
+    assert "Format non respecté" in captured.out
 
 
 def test_structured_response_validation():
@@ -387,7 +388,7 @@ def test_cli_structured_output_toggle_mode(mock_validate, capsys):
     mock_client.chat_stream.assert_called_once()
 
     captured = capsys.readouterr()
-    assert "Mode sortie structurée activé" in captured.out
+    assert "Structured output mode enabled" in captured.out
     assert '"response": "Réponse en mode structuré."' in captured.out
-    assert "Mode sortie structurée désactivé" in captured.out
+    assert "Structured output mode disabled" in captured.out
     assert "Réponse en streaming." in captured.out

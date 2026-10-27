@@ -224,10 +224,10 @@ def test_cli_artifact_interactive_commands(tmp_path: Path, capsys: pytest.Captur
         )
 
     captured = capsys.readouterr().out
-    assert "LIVRABLE — Fiche du Royaume de Qin" in captured
+    assert "ARTIFACT — Fiche du Royaume de Qin" in captured
     assert "Ying Zheng" in captured
-    assert "exporté avec succès" in captured
+    assert "exported successfully" in captured
     assert export_file.is_file()
     assert "Ying Zheng" in export_file.read_text(encoding="utf-8")
-    assert "Livrable réinitialisé" in captured
-    assert "Livrable vide pour le moment" in captured
+    assert "Artifact reset" in captured
+    assert "Empty artifact for now" in captured

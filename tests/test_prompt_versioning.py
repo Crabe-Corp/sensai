@@ -159,12 +159,12 @@ def test_cli_prompt_interactive_commands(tmp_path: Path, capsys):
     # 1. /prompt sans argument
     cmd.execute_command("/prompt", "/prompt")
     out = capsys.readouterr().out
-    assert "Usage de la commande /prompt" in out
+    assert "Usage of /prompt command" in out
 
     # 2. /prompt versions test_persona
     cmd.execute_command("/prompt", "/prompt versions test_persona")
     out = capsys.readouterr().out
-    assert "Historique des versions pour 'test_persona'" in out
+    assert "Version history for 'test_persona'" in out
     assert "v1" in out
     assert "v2" in out
 
@@ -178,5 +178,5 @@ def test_cli_prompt_interactive_commands(tmp_path: Path, capsys):
     # 4. /prompt rollback test_persona 1
     cmd.execute_command("/prompt", "/prompt rollback test_persona 1")
     out = capsys.readouterr().out
-    assert "Persona 'test_persona' restaurée à la version 1 avec succès" in out
+    assert "Persona 'test_persona' restored to version 1 successfully" in out
     assert target_file.read_text(encoding="utf-8") == "Prompt v1"
