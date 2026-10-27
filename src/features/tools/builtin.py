@@ -122,3 +122,21 @@ def verify_pdf_historical_veracity(file_path: str, focus_topic: str = "") -> dic
             res["focus_topic"] = focus_topic
     return res
 
+
+@tool
+def generate_pdf_document(filename: str, title: str, content: str, author: str = "SENSAI Historical Advisor",) -> dict[str, Any]:
+    """Génère et exporte un document PDF complet mis en page (biographie, chronique, rapport de bataille).
+            PARAMS: - filename - STR: nom du fichier PDF à créer (ex: 'qin_shi_huang_biography.pdf', enregistré dans exports/)
+                    - title - STR: titre principal du document PDF
+                    - content - STR: texte complet structuré en paragraphes ou markdown à intégrer dans le PDF
+                    - author - STR: nom de l'auteur ou conseiller émetteur
+            RETURN: dictionnaire contenant le statut, le chemin d'accès, la taille et le nombre de pages du document généré"""
+
+    from src.features.pdf.pdf_generator import generate_pdf
+
+    try:
+        result = generate_pdf(file_path=filename, title=title, content=content, author=author)
+        return result.model_dump()
+    except Exception as exc:
+        return {"status": "error", "error": str(exc)}
+

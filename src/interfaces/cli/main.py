@@ -582,16 +582,19 @@ def run_session(
                 f"[Système : Aucune archive locale n'a été trouvée dans les chroniques historiques pour cette question. "
                 f"Utilise l'outil 'web_search' pour rechercher les informations manquantes si nécessaire.]"
             )
-        user_msg = ChatMessage(role="user", content=augmented_input)
+        user_msg = ChatMessage(role="user", content=safe_input)
         history.append(user_msg)
 
         if structured_mode and current_mode.free_chat:
             sys.stdout.write("\nAssistant > ")
             sys.stdout.flush()
             try:
+                structured_messages = list(history)
+                if augmented_input != safe_input and structured_messages and structured_messages[-1].role == "user":
+                    structured_messages[-1] = ChatMessage(role="user", content=augmented_input)
                 result = client.chat_structured(
                     model=model,
-                    messages=list(history),
+                    messages=structured_messages,
                     response_format=StructuredResponse,
                 )
                 eval_res = auto_evaluation.evaluate_ai_response(
@@ -644,6 +647,8 @@ def run_session(
         engine = engines[current_mode.name]
         mode_tools = current_mode.registry if current_mode.force_tools else active_tools
         call_messages = build_call_messages(current_mode, history)
+        if augmented_input != safe_input and call_messages and call_messages[-1].role == "user":
+            call_messages[-1] = ChatMessage(role="user", content=augmented_input)
 
         response_chunks: list[str] = []
         try:
