@@ -15,30 +15,32 @@ class Change:
 def confirm_simple(question: str) -> bool:
     while True:
         try:
-            ans = input(f"{question} [O/N] > ").strip().upper()
+            ans = input(f"{question} [Y/N] > ").strip().upper()
         except (KeyboardInterrupt, EOFError):
             return False
-        if ans in ("O", "N"):
-            return ans == "O"
+        if ans in ("Y", "O"):
+            return True
+        if ans == "N":
+            return False
 
 
 def review_changes(title: str, changes: list[Change]) -> list[Change]:
-    """Affiche le diff et renvoie les changements acceptés (liste vide = refus total)."""
-    print(f"\n[VALIDATION REQUISE] {title}")
+    """Show the diff and return the accepted changes (empty list = full refusal)."""
+    print(f"\n[APPROVAL REQUIRED] {title}")
     for i, c in enumerate(changes, 1):
         print(f"  {i:>2}. {c.render()}")
     while True:
         try:
-            choice = input("[T]out appliquer / [N]on / [S]électionner > ").strip().upper()
+            choice = input("[A]pply all / [N]o / [S]elect > ").strip().upper()
         except (KeyboardInterrupt, EOFError):
             return []
-        if choice == "T":
+        if choice in ("A"):
             return changes
         if choice == "N":
             return []
         if choice == "S":
             try:
-                raw = input("Numéros à appliquer (ex: 1,3) > ")
+                raw = input("Numbers to apply (e.g. 1,3) > ")
             except (KeyboardInterrupt, EOFError):
                 return []
             idx = {int(x) for x in raw.replace(" ", "").split(",") if x.isdigit()}

@@ -27,15 +27,15 @@ CREATE TABLE sim_log (id INTEGER PRIMARY KEY AUTOINCREMENT, turn INTEGER, kind T
 def validate(c: Change) -> str | None:
     spec = WHITELIST.get(c.table)
     if not spec:
-        return f"table non autorisée : {c.table}"
+        return f"table not allowed: {c.table}"
     rule = spec[1].get(c.field)
     if rule is None:
-        return f"champ non autorisé : {c.field}"
+        return f"field not allowed: {c.field}"
     if isinstance(rule, tuple):
         if not isinstance(c.new, int) or isinstance(c.new, bool) or not rule[0] <= c.new <= rule[1]:
-            return f"{c.field} doit être un entier dans {rule}, reçu {c.new!r}"
+            return f"{c.field} must be an integer within {rule}, got {c.new!r}"
     elif c.new not in rule:
-        return f"{c.field} doit valoir l'un de {sorted(rule)}, reçu {c.new!r}"
+        return f"{c.field} must be one of {sorted(rule)}, got {c.new!r}"
     return None
 
 class Simulation:
@@ -47,7 +47,7 @@ class Simulation:
         self._create()
 
     def _create(self) -> None:
-        """Tire l'état initial autour des valeurs de seed.py. Même seed = même état de départ."""
+        """Draw the initial state around the values of seed.py. Same seed = same starting state."""
         rng = random.Random(self.seed)
         clamp = lambda v: max(0, min(100, v))
         self.conn.executescript(DDL)
@@ -100,7 +100,7 @@ class Simulation:
                 "fallen": fallen, "kingdoms": self.kingdoms()}
 
     def render_table(self) -> str:
-        rows = [f"{'Royaume':<8} {'Troupes':>8} {'Moral':>6} {'Or':>10}  Statut"]
+        rows = [f"{'Kingdom':<8} {'Troops':>8} {'Morale':>6} {'Gold':>10}  Status"]
         rows += [f"{k['name']:<8} {k['troops']:>8,} {k['morale']:>6} {k['gold']:>10,}  {k['status']}"
                  for k in self.kingdoms()]
         return "\n".join(rows)
