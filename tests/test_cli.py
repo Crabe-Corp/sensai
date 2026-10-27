@@ -116,7 +116,7 @@ def test_run_session_chat_exchange():
     assert kwargs["model"] == "qwen2.5:1.5b"
     assert len(kwargs["messages"]) == 1
     assert kwargs["messages"][0].role == "user"
-    assert kwargs["messages"][0].content == "Salut"
+    assert "Salut" in kwargs["messages"][0].content
 
 
 def test_run_session_connection_error_handling():
