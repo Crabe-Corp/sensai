@@ -1,5 +1,5 @@
 import json
-from typing import Any
+from typing import Any, Optional
 
 from src.core.db.database import (execute_db_update, get_active_diplomacy, get_kingdom_stats, query_db,)
 from src.core.fs_tools import agent_read_file, agent_write_file
@@ -36,13 +36,20 @@ def read_manuscript_file(filename: str) -> dict[str, Any]:
 
 
 @tool
-def write_manuscript_file(filename: str, content: str) -> dict[str, Any]:
+def write_manuscript_file(
+    filename: str,
+    content: str,
+    auto_confirm: Optional[bool] = None,
+    action_id: Optional[str] = None,
+) -> dict[str, Any]:
     """Crée ou modifie un fichier dans /manuscrit_royaumes avec confirmation humaine préalable.
             PARAMS: - filename - STR: nom du fichier cible
                     - content - STR: contenu textuel à écrire
+                    - auto_confirm - BOOL: validation automatique sans invite
+                    - action_id - STR: identifiant d'action pour confirmation par token
             RETURN: dictionnaire contenant le résultat de l'opération ou le motif d'annulation"""
 
-    raw = agent_write_file(filename, content)
+    raw = agent_write_file(filename, content, auto_confirm=auto_confirm, action_id=action_id)
     try:
         return json.loads(raw)
     except Exception:
@@ -63,12 +70,18 @@ def query_kingdom_database(sql_query: str) -> dict[str, Any]:
 
 
 @tool
-def update_kingdom_database(sql_statement: str) -> dict[str, Any]:
+def update_kingdom_database(
+    sql_statement: str,
+    auto_confirm: Optional[bool] = None,
+    action_id: Optional[str] = None,
+) -> dict[str, Any]:
     """Exécute une requête SQL d'écriture (INSERT, UPDATE, DELETE) avec confirmation humaine obligatoire.
             PARAMS: - sql_statement - STR: instruction SQL de mise à jour
+                    - auto_confirm - BOOL: validation automatique sans invite
+                    - action_id - STR: identifiant d'action pour confirmation par token
             RETURN: dictionnaire contenant le statut de l'exécution"""
 
-    raw = execute_db_update(sql_statement)
+    raw = execute_db_update(sql_statement, auto_confirm=auto_confirm, action_id=action_id)
     try:
         return json.loads(raw)
     except Exception:
@@ -139,4 +152,3 @@ def generate_pdf_document(filename: str, title: str, content: str, author: str =
         return result.model_dump()
     except Exception as exc:
         return {"status": "error", "error": str(exc)}
-

@@ -1,4 +1,4 @@
-import type { MessageAttachment, FormSpec } from '../types'
+import type { MessageAttachment, FormSpec, ConfirmationSpec } from '../types'
 
 export interface ParsedAttachment {
   name: string
@@ -97,4 +97,68 @@ export function formatFormAnswers(form: FormSpec, answers: Record<string, string
       return `- ${q.label} : ${typeof value === 'boolean' ? (value ? 'Oui' : 'Non') : value}`
     })
   return `Réponses au formulaire « ${form.title} » :\n${lines.join('\n')}`
+}
+
+
+// --- Confirmations d'actions sensibles (Human-in-the-Loop [A3]) ---
+
+const CONFIRM_BLOCK_PATTERN = /```sensai-confirm\n([\s\S]*?)\n```/
+
+export interface ParsedConfirmMessage {
+  text: string
+  confirmation: ConfirmationSpec | null
+}
+
+export function parseConfirmMessage(content: string): ParsedConfirmMessage {
+  if (!content) return { text: '', confirmation: null }
+
+  // 1. Détection via bloc explicite ```sensai-confirm
+  const match = CONFIRM_BLOCK_PATTERN.exec(content)
+  if (match) {
+    try {
+      const data = JSON.parse(match[1])
+      const summary = data.summary || data.title || data.message || "Confirmation requise pour une action destructive"
+      const confirmation: ConfirmationSpec = {
+        action_id: data.action_id || data.id,
+        tool_name: data.tool_name || data.tool,
+        summary,
+        action_type: data.action_type || (data.tool_name === 'write_manuscript_file' ? 'file_write' : 'db_update'),
+        details: data.details,
+      }
+      return { text: content.replace(CONFIRM_BLOCK_PATTERN, '').trim(), confirmation }
+    } catch {
+      return { text: content, confirmation: null }
+    }
+  }
+
+  // 2. Détection via retour d'outil destructif nécessitant confirmation
+  const toolExecPattern = /\*\[Outil exécuté\s*:\s*(write_manuscript_file|update_kingdom_database)\]\*\s*```json\s*([\s\S]*?)\s*```/
+  const toolMatch = toolExecPattern.exec(content)
+  if (toolMatch) {
+    try {
+      const toolName = toolMatch[1]
+      const toolResult = JSON.parse(toolMatch[2])
+      if (toolResult.status === 'aborted' || toolResult.requires_confirmation) {
+        const isFile = toolName === 'write_manuscript_file'
+        const confirmation: ConfirmationSpec = {
+          action_id: toolResult.action_id,
+          tool_name: toolName,
+          summary: toolResult.message || (isFile ? "Confirmation requise pour l'écriture de fichier." : "Confirmation requise pour la mise à jour de la base de données."),
+          action_type: isFile ? 'file_write' : 'db_update',
+          details: toolResult,
+        }
+        return { text: content, confirmation }
+      }
+    } catch {
+      // pas de json valide
+    }
+  }
+
+  return { text: content, confirmation: null }
+}
+
+export function stripConfirmBlock(content: string): { text: string; confirmPending: boolean } {
+  const start = content.indexOf('```sensai-confirm')
+  if (start === -1) return { text: content, confirmPending: false }
+  return { text: content.slice(0, start).trim(), confirmPending: true }
 }
