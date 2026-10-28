@@ -18,7 +18,7 @@ COMMANDS_LIST: list[str] = ["/help", "/clear", "/history", "/budget", "/exit", "
 
 class Commands:
     """Gestionnaire centralisé des commandes interactives de la CLI SENSAI."""
-    def __init__(self, command: str | None = None, user_prompt: str | None = None, *, client: OllamaClient | None = None, model: str = "qwen2.5:1.5b", host: str = "http://localhost:11434",history: list[ChatMessage] | None = None, current_session: ChatSession | None = None, current_profile: UserProfile | None = None, session_manager: SessionManager | None = None, profile_manager: ProfileManager | None = None, artifact_manager: ArtifactManager | None = None, current_persona: Persona | None = None, persona_manager: PersonaManager | None = None, versioning_engine: PromptVersioningEngine | None = None, max_tokens: int = 2000, rag_enabled: bool = False, structured_mode: bool = False, active_tools: Any = None, tools_enabled: bool = False, mcp_client: MCPClient | None = None, mcp_tool_names: list[str] | None = None,) -> None:
+    def __init__(self, command: str | None = None, user_prompt: str | None = None, *, client: OllamaClient | None = None, model: str = "qwen2.5:3b", host: str = "http://localhost:11434",history: list[ChatMessage] | None = None, current_session: ChatSession | None = None, current_profile: UserProfile | None = None, session_manager: SessionManager | None = None, profile_manager: ProfileManager | None = None, artifact_manager: ArtifactManager | None = None, current_persona: Persona | None = None, persona_manager: PersonaManager | None = None, versioning_engine: PromptVersioningEngine | None = None, max_tokens: int = 2000, rag_enabled: bool = False, structured_mode: bool = False, active_tools: Any = None, tools_enabled: bool = False, mcp_client: MCPClient | None = None, mcp_tool_names: list[str] | None = None,) -> None:
         """Initialise le routeur de commandes interactives avec le contexte d'exécution.
                 PARAMS: - command - STR | NONE: nom de la commande invoquée
                         - user_prompt - STR | NONE: ligne de commande utilisateur complète
@@ -45,7 +45,7 @@ class Commands:
         self.command: str = command or ""
         self.user_prompt: str = user_prompt or ""
         self.client = client
-        self.model = model or "qwen2.5:1.5b"
+        self.model = model or "qwen2.5:3b"
         self.host = host
         self.history = history if history is not None else []
         self.current_session = current_session
@@ -164,6 +164,7 @@ class Commands:
                 PARAMS: - user_prompt - STR: arguments optionnels de la commande
                 RETURN: None"""
         self.history.clear()
+        singleton_token.context_tokens = 0
         if self.current_persona:
             self._apply_persona_to_history(self.current_persona)
         elif self.current_profile:
@@ -304,6 +305,7 @@ class Commands:
                     self.current_session = self.session_manager.load_session(target_id)
                     self.history.clear()
                     self.history.extend(self.current_session.messages)
+                    singleton_token.context_tokens = 0
                     if self.current_session.metadata.model:
                         self.model = self.current_session.metadata.model
                     if self.artifact_manager:
@@ -319,6 +321,7 @@ class Commands:
             self.current_session = self.session_manager.create_session(profile=self.current_profile, model=self.model, title=title_arg)
             self.history.clear()
             self.history.extend(self.current_session.messages)
+            singleton_token.context_tokens = 0
             if self.artifact_manager:
                 current_artifact = self.artifact_manager.get_or_create_artifact(self.current_session.metadata.session_id)
                 set_active_artifact(current_artifact, session_id=self.current_session.metadata.session_id, manager=self.artifact_manager)
@@ -334,6 +337,7 @@ class Commands:
                         self.current_session = self.session_manager.create_session(profile=self.current_profile, model=self.model)
                         self.history.clear()
                         self.history.extend(self.current_session.messages)
+                        singleton_token.context_tokens = 0
                         if self.artifact_manager:
                             current_artifact = self.artifact_manager.get_or_create_artifact(self.current_session.metadata.session_id)
                             set_active_artifact(current_artifact, session_id=self.current_session.metadata.session_id, manager=self.artifact_manager)

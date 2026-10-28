@@ -67,7 +67,7 @@ from src.interfaces.cli.commands.commands import Command, Commands, command
 
 DEFAULT_CONFIG_PATH = Path("config.json")
 DEFAULT_HOST = "http://localhost:11434"
-DEFAULT_MODEL = "qwen2.5:1.5b"
+DEFAULT_MODEL = "qwen2.5:3b"
 
 def load_config_file(config_path: Path) -> dict[str, Any]:
     """Charge et lit le fichier de configuration JSON s'il existe sur le disque.
@@ -122,7 +122,7 @@ def parse_arguments(argv: list[str] | None = None) -> argparse.Namespace:
         "--model",
         type=str,
         default=None,
-        help="Nom du modèle Ollama à utiliser (ex: qwen2.5:1.5b, llama3, mistral).",
+        help="Nom du modèle Ollama à utiliser (ex: qwen2.5:3b, llama3, mistral).",
     )
     parser.add_argument(
         "-H",
@@ -404,7 +404,7 @@ def run_session(
     while True:
         margin = (max_tokens * 15) / 100 # Retirer 15% du context legth afin de laisser du context au model pour la compression de l'historique
         token_with_margin = max_tokens - margin
-        if singleton_token.budget_tokens >= token_with_margin:
+        if singleton_token.context_tokens > 0 and singleton_token.context_tokens >= token_with_margin:
             history = mem.enforce_token_budget(model, client, history, max_history_tokens=max_tokens)
             current_session.messages = list(history)
             command_handler.history = history
@@ -596,6 +596,7 @@ def run_session(
                     model=model,
                     messages=structured_messages,
                     response_format=StructuredResponse,
+                    track_as_context=True,
                 )
                 eval_res = auto_evaluation.evaluate_ai_response(
                     client=client,

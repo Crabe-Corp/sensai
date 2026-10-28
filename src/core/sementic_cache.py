@@ -85,7 +85,7 @@ def verify_intent_equivalence(
     prompt_cache: str,
     prompt_nouveau: str,
     ollama_url: str = "http://localhost:11434",
-    model: str = "qwen2.5:1.5b",
+    model: str = "qwen2.5:3b",
 ) -> bool:
     """Verify via a lightweight LLM call if two queries share identical intent.
             PARAMS: - prompt_cache - STR: question already present in cache
@@ -129,7 +129,7 @@ def verifier_equivalence_intention(
     prompt_cache: str,
     prompt_nouveau: str,
     ollama_url: str = "http://localhost:11434",
-    model: str = "qwen2.5:1.5b",
+    model: str = "qwen2.5:3b",
 ) -> bool:
     return verify_intent_equivalence(prompt_cache, prompt_nouveau, ollama_url, model)
 
@@ -231,7 +231,7 @@ def get_info_cache(
     seuil_haut: float = 0.80,
     seuil_bas: float = 0.65,
     ollama_url: str = "http://localhost:11434",
-    model: str = "qwen2.5:1.5b",
+    model: str = "qwen2.5:3b",
 ) -> str | None:
     """Query semantic cache with multi-tier matching and intent confirmation.
             PARAMS: - prompt - STR: query to search

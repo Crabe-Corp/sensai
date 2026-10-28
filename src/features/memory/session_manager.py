@@ -22,7 +22,7 @@ class SessionMetadata(BaseModel):
     title: str = "Nouvelle session"
     created_at: str = ""
     updated_at: str = ""
-    model: str = Field(default="qwen2.5:1.5b", alias="model_name")
+    model: str = Field(default="qwen2.5:3b", alias="model_name")
     username: str | None = None
     source: str = "local"
 
@@ -54,7 +54,7 @@ class ChatSession(BaseModel):
         if isinstance(data, dict) and "metadata" not in data and ("id" in data or "session_id" in data):
             sid = data.get("id") or data.get("session_id")
             title = data.get("title") or f"Session {str(sid)[:8]}"
-            model = data.get("model_name") or data.get("model") or "qwen2.5:1.5b"
+            model = data.get("model_name") or data.get("model") or "qwen2.5:3b"
             meta = {
                 "id": str(sid),
                 "title": title,
@@ -145,7 +145,7 @@ class SessionManager:
     def create_session(
         self,
         profile: UserProfile | None = None,
-        model: str = "qwen2.5:1.5b",
+        model: str = "qwen2.5:3b",
         title: str | None = None,
     ) -> ChatSession:
         """Crée, initialise et sauvegarde une nouvelle session de conversation.
@@ -251,7 +251,7 @@ class SessionManager:
                                     title=item.get("title", f"Session {sid[:8]}"),
                                     created_at=item.get("created_at") or "",
                                     updated_at=item.get("updated_at") or "",
-                                    model=item.get("model_name") or item.get("model") or "qwen2.5:1.5b",
+                                    model=item.get("model_name") or item.get("model") or "qwen2.5:3b",
                                     username=item.get("username"),
                                     source="web",
                                 )

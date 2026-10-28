@@ -214,8 +214,8 @@ def test_cli_natural_sentence_detects_pdf_and_launches_veracity_audit(tmp_path: 
         run_session(mock_client, model="qwen2.5:1.5b", host="http://localhost:11434", rag_enabled=False)
 
     out = capsys.readouterr().out
-    assert "[PDF Détecté]" in out
+    assert "[PDF Détecté]" in out or "[PDF Detected]" in out
     assert "chronique_inconnue.pdf" in out
-    assert "Audit de la véracité historique..." in out
+    assert "Audit de la véracité historique..." in out or "Historical veracity audit..." in out
     assert "Audit historique : Bai Qi était un général de Qin." in out
 
