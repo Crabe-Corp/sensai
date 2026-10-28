@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 import shlex
 import sys
@@ -16,7 +17,7 @@ if str(_BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(_BACKEND_DIR))
 
 from src.features.tools.mcp_client import MCPClient
-from tools_registry import register_mcp_client, unregister_mcp_tools
+from tools_registry import default_registry, register_mcp_client, unregister_mcp_tools
 
 router = APIRouter(prefix="/api/mcp", tags=["mcp"])
 
@@ -29,6 +30,7 @@ DEFAULT_MCP_SERVERS: List[Dict[str, Any]] = [
         "endpoint": "local-stdio",
         "tools_count": 0,
         "tools": [],
+        "tool_schemas": [],
     },
     {
         "id": "composio",
@@ -38,15 +40,7 @@ DEFAULT_MCP_SERVERS: List[Dict[str, Any]] = [
         "endpoint": "remote-bridge",
         "tools_count": 0,
         "tools": [],
-    },
-    {
-        "id": "sensai_lore",
-        "name": "SensAI Lore & DB Server (MCP Custom)",
-        "description": "Serveur MCP interne pour la gestion des 7 Royaumes et diplomatie.",
-        "status": "available",
-        "endpoint": "python -m src.features.tools.mcp_server_demo",
-        "tools_count": 0,
-        "tools": [],
+        "tool_schemas": [],
     },
     {
         "id": "demo_server",
@@ -56,11 +50,18 @@ DEFAULT_MCP_SERVERS: List[Dict[str, Any]] = [
         "endpoint": "python -m src.features.tools.mcp_server_demo",
         "tools_count": 0,
         "tools": [],
+        "tool_schemas": [],
     },
 ]
 
 _active_mcp_clients: Dict[str, MCPClient] = {}
 _active_mcp_tools: Dict[str, List[str]] = {}
+
+PING_TIMEOUT = 2.0
+# Un serveur MCP est un sous-processus lancé sur la machine : seules les commandes de cette liste
+# (séparées par ';' dans SENSAI_MCP_ALLOWED_COMMANDS pour en ajouter) peuvent être connectées,
+# quelle que soit la commande ou l'endpoint fournis par le client.
+_BUILTIN_MCP_COMMANDS = ["python -m src.features.tools.mcp_server_demo"]
 
 
 def _normalize_command(cmd_str: str) -> List[str]:
@@ -70,18 +71,53 @@ def _normalize_command(cmd_str: str) -> List[str]:
     return parts
 
 
+def _allowed_commands() -> set:
+    extra = [c for c in os.getenv("SENSAI_MCP_ALLOWED_COMMANDS", "").split(";") if c.strip()]
+    return {tuple(_normalize_command(c)) for c in _BUILTIN_MCP_COMMANDS + extra}
+
+
+def _tool_schemas(tool_names: List[str]) -> List[Dict[str, Any]]:
+    schemas = []
+    for name in tool_names:
+        tool_def = default_registry.get(name)
+        if tool_def:
+            schemas.append({
+                "name": name,
+                "description": tool_def.description.split("\n")[0].strip(),
+                "parameters": tool_def.parameters.get("properties", {}),
+            })
+    return schemas
+
+
+def _reset_entry(server: Dict[str, Any], status: str = "disconnected") -> None:
+    server["status"] = status
+    server["tools_count"] = 0
+    server["tools"] = []
+    server["tool_schemas"] = []
+
+
+def _is_alive(client: MCPClient) -> bool:
+    """Vrai ping : un aller-retour JSON-RPC, pas seulement l'état du sous-processus."""
+    if not client.is_connected:
+        return False
+    try:
+        client.list_tools(timeout=PING_TIMEOUT)
+        return True
+    except Exception:
+        return False
+
+
 def _sync_servers_state() -> None:
+    for server_id, client in list(_active_mcp_clients.items()):
+        if not _is_alive(client):
+            _disconnect_single_server(server_id)
     for s in DEFAULT_MCP_SERVERS:
-        s_id = s.get("id")
-        client = _active_mcp_clients.get(s_id)
-        if client and client.is_connected:
+        tools = _active_mcp_tools.get(s["id"])
+        if tools is not None:
             s["status"] = "connected"
-            s["tools_count"] = len(_active_mcp_tools.get(s_id, []))
-            s["tools"] = list(_active_mcp_tools.get(s_id, []))
-        elif s.get("status") == "connected":
-            s["status"] = "disconnected"
-            s["tools_count"] = 0
-            s["tools"] = []
+            s["tools_count"] = len(tools)
+            s["tools"] = list(tools)
+            s["tool_schemas"] = _tool_schemas(tools)
 
 
 def _disconnect_single_server(server_id: str) -> bool:
@@ -96,9 +132,7 @@ def _disconnect_single_server(server_id: str) -> bool:
             pass
     for s in DEFAULT_MCP_SERVERS:
         if s["id"] == server_id:
-            s["status"] = "disconnected"
-            s["tools_count"] = 0
-            s["tools"] = []
+            _reset_entry(s)
             break
     return client is not None
 
@@ -138,6 +172,7 @@ def add_mcp_server(server: McpServerCreate, user=Depends(get_current_user)):
         "endpoint": server.endpoint,
         "tools_count": 0,
         "tools": [],
+        "tool_schemas": [],
     }
     DEFAULT_MCP_SERVERS.append(new_s)
     return {"success": True, "server": new_s}
@@ -220,6 +255,12 @@ def connect_mcp_server(
             detail=f"L'endpoint '{cmd_str}' est un placeholder. Fournissez une commande exécutable valide.",
         )
 
+    if tuple(_normalize_command(cmd_str)) not in _allowed_commands():
+        raise HTTPException(
+            status_code=403,
+            detail="Commande MCP non autorisée : elle doit figurer dans la liste blanche du serveur (SENSAI_MCP_ALLOWED_COMMANDS).",
+        )
+
     if not srv:
         target_id = target_id or "custom_mcp"
         srv = {
@@ -230,6 +271,7 @@ def connect_mcp_server(
             "endpoint": cmd_str,
             "tools_count": 0,
             "tools": [],
+            "tool_schemas": [],
         }
         DEFAULT_MCP_SERVERS.append(srv)
 
@@ -262,6 +304,7 @@ def connect_mcp_server(
     srv["status"] = "connected"
     srv["tools_count"] = len(tool_names)
     srv["tools"] = tool_names
+    srv["tool_schemas"] = _tool_schemas(tool_names)
 
     return {
         "success": True,

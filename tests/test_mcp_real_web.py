@@ -17,6 +17,9 @@ from backend.routes.mcp_routes import (
     DEFAULT_MCP_SERVERS,
     McpConnectRequest,
     McpDisconnectRequest,
+    McpServerCreate,
+    _active_mcp_clients,
+    add_mcp_server,
     connect_mcp_server,
     delete_mcp_server,
     disconnect_mcp_server,
@@ -129,15 +132,63 @@ def test_mcp_connect_with_custom_command(fake_user):
     assert "calculate_grain_supply" not in default_registry
 
 
-def test_mcp_connect_invalid_command_error_handling(fake_user):
-    """Vérifie que l'échec de démarrage d'une commande invalide renvoie une HTTPException 500."""
+def test_mcp_connect_rejects_command_outside_allowlist(fake_user):
+    """Un client ne peut pas faire exécuter une commande arbitraire au serveur."""
+    for payload in (
+        McpConnectRequest(server_id="invalid_srv", command="non_existent_mcp_bin_12345"),
+        McpConnectRequest(server_id="demo_server", command="calc.exe"),
+        McpConnectRequest(command="echo pwned"),
+    ):
+        with pytest.raises(HTTPException) as exc_info:
+            connect_mcp_server(req=payload, user=fake_user)
+        assert exc_info.value.status_code == 403
+    assert not any(s["id"] == "invalid_srv" for s in DEFAULT_MCP_SERVERS)
+
+
+def test_mcp_user_registered_server_cannot_run_its_own_endpoint(fake_user):
+    """Enregistrer un serveur avec un endpoint arbitraire ne permet pas de l'exécuter."""
+    add_mcp_server(McpServerCreate(name="Evil Server", endpoint="calc.exe"), user=fake_user)
+    try:
+        with pytest.raises(HTTPException) as exc_info:
+            connect_mcp_server(req=McpConnectRequest(server_id="evil_server"), user=fake_user)
+        assert exc_info.value.status_code == 403
+    finally:
+        delete_mcp_server("evil_server", user=fake_user)
+
+
+def test_mcp_operator_can_extend_allowlist(fake_user, monkeypatch):
+    """L'opérateur autorise une commande via SENSAI_MCP_ALLOWED_COMMANDS."""
+    cmd = f'"{sys.executable}" -c "raise SystemExit(1)"'
     with pytest.raises(HTTPException) as exc_info:
-        connect_mcp_server(
-            req=McpConnectRequest(server_id="invalid_srv", command="non_existent_mcp_bin_12345"),
-            user=fake_user,
-        )
+        connect_mcp_server(req=McpConnectRequest(server_id="ops_srv", command=cmd), user=fake_user)
+    assert exc_info.value.status_code == 403
+
+    monkeypatch.setenv("SENSAI_MCP_ALLOWED_COMMANDS", cmd)
+    with pytest.raises(HTTPException) as exc_info:
+        connect_mcp_server(req=McpConnectRequest(server_id="ops_srv", command=cmd), user=fake_user)
+    # Autorisée, donc réellement tentée : le processus quitte aussitôt, la connexion échoue (500)
     assert exc_info.value.status_code == 500
-    delete_mcp_server("invalid_srv", user=fake_user)
+    delete_mcp_server("ops_srv", user=fake_user)
+
+
+def test_mcp_status_pings_server_and_exposes_tool_schemas(fake_user):
+    connect_mcp_server(req=McpConnectRequest(server_id="demo_server"), user=fake_user)
+    try:
+        servers = {s["id"]: s for s in get_mcp_servers(user=fake_user)["servers"]}
+        demo = servers["demo_server"]
+        assert demo["status"] == "connected"
+        schemas = {t["name"]: t for t in demo["tool_schemas"]}
+        assert set(schemas) == {"calculate_grain_supply", "get_historical_battle"}
+        assert all(t["description"] and isinstance(t["parameters"], dict) for t in schemas.values())
+
+        # Le sous-processus meurt : le ping le détecte et le serveur repasse en "disconnected"
+        _active_mcp_clients["demo_server"]._process.kill()
+        servers = {s["id"]: s for s in get_mcp_servers(user=fake_user)["servers"]}
+        assert servers["demo_server"]["status"] == "disconnected"
+        assert servers["demo_server"]["tool_schemas"] == []
+        assert "calculate_grain_supply" not in default_registry
+    finally:
+        disconnect_mcp_server(req=McpDisconnectRequest(server_id="demo_server"), user=fake_user)
 
 
 def test_mcp_connect_placeholder_endpoint_rejected(fake_user):
