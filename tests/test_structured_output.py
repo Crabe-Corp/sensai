@@ -333,6 +333,19 @@ def test_cli_kingdom_structured_error_handling(capsys):
     assert "Format non respecté" in captured.out
 
 
+
+
+def test_cli_kingdom_invalid_domain_rejected(capsys):
+    mock_client = MagicMock()
+    with patch("builtins.input", side_effect=["/kingdom Paris", "/exit"]):
+        exit_code = run_session(mock_client, model="qwen2.5:1.5b", host="http://localhost:11434")
+        assert exit_code is None
+
+    mock_client.chat_structured.assert_not_called()
+    captured = capsys.readouterr()
+    assert "[Error] 'Paris' is not a recognized kingdom" in captured.out
+
+
 def test_structured_response_validation():
     data = {"response": "Les Royaumes combattants ont pris fin en 221 av. J.-C."}
     parsed = StructuredResponse.model_validate(data)
