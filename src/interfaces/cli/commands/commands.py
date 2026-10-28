@@ -9,6 +9,7 @@ from src.core.ollama_client import (ChatMessage, OllamaClient, OllamaError, Olla
 from src.core.schemas import HistoricalFigure, KingdomInfo
 from src.features.memory import (ArtifactManager, ChatSession, ProfileManager, SessionManager, UserProfile,)
 from src.features.prompt import (Persona, PersonaManager, PromptVersion, PromptVersioningEngine, default_versioning_engine,)
+from src.features.sec.security import mask_pii
 from src.features.tools.artifact_tool import (ARTIFACT_SYSTEM_INSTRUCTION, get_active_artifact, set_active_artifact,)
 from src.features.tools.mcp_client import MCPClient
 from src.features.tools.registry import default_registry
@@ -563,6 +564,7 @@ class Commands:
             print("[Info] Please specify a kingdom name. Usage : /kingdom [name] (e.g.: /kingdom Qin)")
             return
 
+        kingdom_name, _ = mask_pii(kingdom_name)
         known_kingdoms = {
             "qin", "chu", "qi", "zhao", "wei", "han", "yan",
             "jin", "lu", "song", "zhongshan", "ba", "shu", "yue", "wu", "zhou"
@@ -639,6 +641,7 @@ class Commands:
             print("[Error] Ollama client not initialized.")
             return
 
+        figure_name, _ = mask_pii(figure_name)
         print(f"[Info] Generating details for figure '{figure_name}'...")
         rag_context = ""
         if self.rag_enabled:
