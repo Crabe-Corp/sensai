@@ -93,9 +93,7 @@ export function RunSettingsPanel({
 
   // Détection de la persona correspondant aux instructions actuelles
   const matchedPersona = personas.find(
-    (p) =>
-      (p.system_prompt && p.system_prompt.trim() === systemInstruction.trim()) ||
-      (p.prompt && p.prompt.trim() === systemInstruction.trim())
+    (p) => p.system_prompt.trim() === systemInstruction.trim()
   )
   const effectivePersonaId = selectedPersonaId || (matchedPersona ? matchedPersona.id : '')
   const activePersona = personas.find((p) => p.id === effectivePersonaId)
@@ -105,8 +103,7 @@ export function RunSettingsPanel({
     if (!personaId) return
     const chosen = personas.find((p) => p.id === personaId)
     if (chosen) {
-      const promptToApply = chosen.system_prompt || chosen.prompt || ''
-      onSystemInstructionChange(promptToApply)
+      onSystemInstructionChange(chosen.system_prompt)
     }
   }
 

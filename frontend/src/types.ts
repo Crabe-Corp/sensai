@@ -101,5 +101,4 @@ export interface Persona {
   name: string
   description: string
   system_prompt: string
-  prompt?: string
 }

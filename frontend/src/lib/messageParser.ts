@@ -112,7 +112,6 @@ export interface ParsedConfirmMessage {
 export function parseConfirmMessage(content: string): ParsedConfirmMessage {
   if (!content) return { text: '', confirmation: null }
 
-  // 1. Détection via bloc explicite ```sensai-confirm
   const match = CONFIRM_BLOCK_PATTERN.exec(content)
   if (match) {
     try {
@@ -128,29 +127,6 @@ export function parseConfirmMessage(content: string): ParsedConfirmMessage {
       return { text: content.replace(CONFIRM_BLOCK_PATTERN, '').trim(), confirmation }
     } catch {
       return { text: content, confirmation: null }
-    }
-  }
-
-  // 2. Détection via retour d'outil destructif nécessitant confirmation
-  const toolExecPattern = /\*\[Outil exécuté\s*:\s*(write_manuscript_file|update_kingdom_database)\]\*\s*```json\s*([\s\S]*?)\s*```/
-  const toolMatch = toolExecPattern.exec(content)
-  if (toolMatch) {
-    try {
-      const toolName = toolMatch[1]
-      const toolResult = JSON.parse(toolMatch[2])
-      if (toolResult.status === 'aborted' || toolResult.requires_confirmation) {
-        const isFile = toolName === 'write_manuscript_file'
-        const confirmation: ConfirmationSpec = {
-          action_id: toolResult.action_id,
-          tool_name: toolName,
-          summary: toolResult.message || (isFile ? "Confirmation requise pour l'écriture de fichier." : "Confirmation requise pour la mise à jour de la base de données."),
-          action_type: isFile ? 'file_write' : 'db_update',
-          details: toolResult,
-        }
-        return { text: content, confirmation }
-      }
-    } catch {
-      // pas de json valide
     }
   }
 
