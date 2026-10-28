@@ -222,42 +222,42 @@ def run_e2e_test(live_mode: bool = False) -> tuple[str, list[tuple[str, bool, st
     ))
     checks.append((
         "Socle [B1] : Commande /help",
-        "Commandes disponibles :" in raw_output and "/session list" in raw_output,
+        ("Commandes disponibles :" in raw_output or "Available commands:" in raw_output) and "/session list" in raw_output,
         "Menu d'aide exhaustif documenté",
     ))
     checks.append((
         "Socle [B1] : Commande /history",
-        "Historique actuel :" in raw_output,
+        ("Historique actuel :" in raw_output or "Current history :" in raw_output),
         "Comptage des messages vérifié",
     ))
     checks.append((
         "Socle [B1] : Commande /models & /model",
-        "Modèles disponibles" in raw_output and "Modèle actuellement sélectionné" in raw_output,
+        ("Modèles disponibles" in raw_output or "Available models" in raw_output or "Models installed" in raw_output) and ("Modèle actuellement sélectionné" in raw_output or "Currently selected model" in raw_output),
         "Inspection du modèle à chaud",
     ))
     checks.append((
         "Profils [M1] : /profile show, list & load",
-        "Profil 'test_user' chargé" in raw_output and "Profils existants" in raw_output,
+        ("Profil 'test_user' chargé" in raw_output or "Profile 'test_user' loaded" in raw_output) and ("Profils existants" in raw_output or "Existing profiles" in raw_output),
         "Gestion et bascule de persona validées",
     ))
     checks.append((
         "Sessions [M1] : /session new, list & /clear",
-        "Nouvelle session initialisée :" in raw_output and "Historique de session réinitialisé" in raw_output,
+        ("Nouvelle session initialisée :" in raw_output or "New session initialized :" in raw_output) and ("Historique de session réinitialisé" in raw_output or "Session history reset" in raw_output),
         "Persistance et réinitialisation de session",
     ))
     checks.append((
         "Sorties Structurées [T5] - Cas 1 : /kingdom Qin",
-        "puissance_militaire" in raw_output and "specialite_strategique" in raw_output,
+        (("puissance_militaire" in raw_output and "specialite_strategique" in raw_output) or ("military_power" in raw_output and "strategic_specialty" in raw_output)),
         "Schéma KingdomInfo JSON strict validé",
     ))
     checks.append((
         "Sorties Structurées [T5] - Cas 2 : /figure Qin Shi Huang",
-        "faits_marquants" in raw_output and "royaume_origine" in raw_output,
+        (("faits_marquants" in raw_output and "royaume_origine" in raw_output) or ("notable_facts" in raw_output and "origin_kingdom" in raw_output)),
         "Schéma HistoricalFigure JSON strict validé",
     ))
     checks.append((
         "Sorties Structurées [T5] - Cas 3 : /structured-output",
-        "Mode sortie structurée activé" in raw_output and '"response":' in raw_output,
+        ("Mode sortie structurée activé" in raw_output or "Structured output mode enabled" in raw_output) and '"response":' in raw_output,
         "Schéma StructuredResponse générique validé",
     ))
     checks.append((
@@ -272,7 +272,7 @@ def run_e2e_test(live_mode: bool = False) -> tuple[str, list[tuple[str, bool, st
     ))
     checks.append((
         "Socle [B1] : Commande /exit",
-        "Fermeture de SENSAI." in raw_output,
+        ("Fermeture de SENSAI." in raw_output or "Exiting SENSAI." in raw_output),
         "Fermeture propre de la CLI",
     ))
 
