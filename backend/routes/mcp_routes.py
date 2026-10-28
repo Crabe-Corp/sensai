@@ -15,8 +15,8 @@ _BACKEND_DIR = Path(__file__).resolve().parent.parent
 if str(_BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(_BACKEND_DIR))
 
-from src.features.tools.mcp_client import MCPClient, MCPError
-from tools_registry import default_registry, register_mcp_client, unregister_mcp_tools
+from src.features.tools.mcp_client import MCPClient
+from tools_registry import register_mcp_client, unregister_mcp_tools
 
 router = APIRouter(prefix="/api/mcp", tags=["mcp"])
 
@@ -294,15 +294,4 @@ def disconnect_mcp_server(
     return {
         "success": True,
         "message": "Tous les serveurs MCP ont été déconnectés.",
-    }
-
-
-@router.post("/disconnect/{server_id}")
-def disconnect_mcp_server_by_id(server_id: str, user=Depends(get_current_user)):
-    _disconnect_single_server(server_id)
-    return {
-        "success": True,
-        "server_id": server_id,
-        "status": "disconnected",
-        "message": f"Serveur MCP '{server_id}' déconnecté.",
     }

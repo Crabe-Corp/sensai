@@ -1,6 +1,5 @@
 import json
 import os
-import sys
 from pathlib import Path
 from typing import List, Optional
 from fastapi import APIRouter, Depends
@@ -12,12 +11,8 @@ from models import ModelPreference, User
 from security import get_current_user
 from tools_registry import ALL_TOOLS_ID, list_tools
 
-# S'assurer que le package src est importable
-_ROOT = Path(__file__).resolve().parent.parent.parent
-if str(_ROOT) not in sys.path:
-    sys.path.insert(0, str(_ROOT))
-
 router = APIRouter(prefix="/api/models", tags=["models"])
+PERSONAS_FILE = Path(__file__).resolve().parents[2] / "configs" / "personas.json"
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://ia:11434")
 
 
@@ -57,66 +52,24 @@ def get_available_tools():
 
 @router.get("/personas")
 def get_available_personas():
-    """Renvoie la liste des Personas avec leur id, nom, description et prompt système."""
+    """Personas proposées dans l'interface : configs/personas.json, complétées par celles du CLI (PersonaManager)."""
     personas: List[dict] = []
-    seen_ids = set()
+    if PERSONAS_FILE.is_file():
+        personas = json.loads(PERSONAS_FILE.read_text(encoding="utf-8"))
 
-    # 1. Vérification dans configs/personas.json
-    configs_paths = [
-        Path("configs/personas.json"),
-        _ROOT / "configs" / "personas.json",
-        Path(__file__).resolve().parent.parent / "configs" / "personas.json",
-    ]
-    for p in configs_paths:
-        if p.is_file():
-            try:
-                data = json.loads(p.read_text(encoding="utf-8"))
-                items = data.get("personas", []) if isinstance(data, dict) else (data if isinstance(data, list) else [])
-                for item in items:
-                    p_id = str(item.get("id") or item.get("name", "").lower().replace(" ", "_"))
-                    if p_id and p_id not in seen_ids:
-                        prompt_text = str(item.get("system_prompt") or item.get("prompt") or "")
-                        personas.append({
-                            "id": p_id,
-                            "name": str(item.get("name") or p_id),
-                            "description": str(item.get("description") or ""),
-                            "system_prompt": prompt_text,
-                            "prompt": prompt_text,
-                        })
-                        seen_ids.add(p_id)
-            except Exception:
-                pass
-            break
+    from src.features.prompt.persona_manager import PersonaManager
 
-    # 2. Complément ou fallback avec PersonaManager
-    try:
-        try:
-            from src.features.prompt.persona import PersonaManager
-        except ImportError:
-            from src.features.prompt.persona_manager import PersonaManager
-
-        pm = PersonaManager()
-        if not personas and not pm.list_personas():
-            pm.ensure_default_personas()
-
-        for p_id in pm.list_personas():
-            if p_id not in seen_ids:
-                try:
-                    loaded = pm.load_persona(p_id)
-                    prompt_text = loaded.system_prompt
-                    personas.append({
-                        "id": p_id,
-                        "name": loaded.name,
-                        "description": loaded.description,
-                        "system_prompt": prompt_text,
-                        "prompt": prompt_text,
-                    })
-                    seen_ids.add(p_id)
-                except Exception:
-                    pass
-    except Exception:
-        pass
-
+    manager = PersonaManager()
+    known_ids = {p["id"] for p in personas}
+    for persona_id in manager.list_personas():
+        if persona_id not in known_ids:
+            persona = manager.load_persona(persona_id)
+            personas.append({
+                "id": persona_id,
+                "name": persona.name,
+                "description": persona.description,
+                "system_prompt": persona.system_prompt,
+            })
     return personas
 
 
