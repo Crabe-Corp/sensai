@@ -143,7 +143,7 @@ def test_run_session_internal_commands():
     mock_client = MagicMock()
     mock_client.list_models.return_value = ["qwen2.5:1.5b"]
 
-    with patch("builtins.input", side_effect=["/help", "/history", "/models", "/clear", "/exit"]):
+    with patch("builtins.input", side_effect=["/help", "/history", "/budget", "/models", "/clear", "/exit"]):
         run_session(mock_client, model="qwen2.5:1.5b", host="http://localhost:11434")
 
     mock_client.list_models.assert_called_once()

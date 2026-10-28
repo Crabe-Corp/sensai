@@ -172,3 +172,83 @@ def test_session_persistence_preserves_token_metrics(tmp_path: Path):
 
     assert singleton_token.context_tokens == 450
     assert singleton_token.budget_tokens == 600
+
+
+def test_cli_run_session_saves_token_metrics_on_chat(tmp_path: Path):
+    from unittest.mock import patch
+    from src.interfaces.cli.main import run_session
+    from src.core.engine import TokenChunkEvent
+
+    session_dir = tmp_path / "sessions"
+    sm = SessionManager(storage_dir=session_dir)
+
+    mock_client = MagicMock()
+    # Simulate streaming chat turn where Ollama consumes tokens
+    def fake_stream(messages, model, tools=None):
+        mem.consume_tokens(200, is_context=True)
+        yield TokenChunkEvent(token="General Li Xin was a commander.")
+
+    with patch("builtins.input", side_effect=["Who is Li Xin ?", "/exit"]), \
+         patch("src.core.engine.ConversationEngine.run_stream", side_effect=fake_stream):
+        run_session(
+            client=mock_client,
+            model="qwen2.5:1.5b",
+            host="http://localhost:11434",
+            session_manager=sm,
+            rag_enabled=False,
+        )
+
+    saved_sessions = sm.list_sessions()
+    assert len(saved_sessions) == 1
+    loaded = sm.load_session(saved_sessions[0].session_id)
+    assert loaded.metadata.context_tokens == 200
+    assert loaded.metadata.total_tokens == 200
+
+
+def test_cli_run_session_loads_and_continues_token_metrics(tmp_path: Path, capsys):
+    from unittest.mock import patch
+    from src.interfaces.cli.main import run_session
+    from src.core.engine import TokenChunkEvent
+
+    session_dir = tmp_path / "sessions"
+    sm = SessionManager(storage_dir=session_dir)
+
+    # Create and save a session that previously used 200 tokens
+    session = sm.create_session(model="qwen2.5:1.5b", title="Previous Session")
+    session.add_message(ChatMessage(role="user", content="Past question"))
+    session.add_message(ChatMessage(role="assistant", content="Past answer"))
+    session.metadata.context_tokens = 200
+    session.metadata.total_tokens = 200
+    sm.save_session(session)
+
+    singleton_token.context_tokens = 0
+    singleton_token.budget_tokens = 0
+
+    mock_client = MagicMock()
+    # Next turn brings total context to 270 (200 previous + 70 new)
+    def fake_stream(messages, model, tools=None):
+        mem.consume_tokens(270, is_context=True)
+        yield TokenChunkEvent(token="More details.")
+
+    with patch("builtins.input", side_effect=["/budget", "Next question", "/budget", "/exit"]), \
+         patch("src.core.engine.ConversationEngine.run_stream", side_effect=fake_stream):
+        run_session(
+            client=mock_client,
+            model="qwen2.5:1.5b",
+            host="http://localhost:11434",
+            session_id=session.metadata.session_id,
+            session_manager=sm,
+            rag_enabled=False,
+            max_tokens=2000,
+        )
+
+    out = capsys.readouterr().out
+    # Initial /budget before new prompt displays the loaded 200 tokens
+    assert "Token budget : 200 / 2000 consumed." in out
+    # Second /budget after new prompt displays 200 + 70 = 270 tokens (and NOT 470!)
+    assert "Token budget : 270 / 2000 consumed." in out
+
+    # Check that updated session is saved with 270 tokens
+    loaded = sm.load_session(session.metadata.session_id)
+    assert loaded.metadata.context_tokens == 270
+    assert loaded.metadata.total_tokens == 270
