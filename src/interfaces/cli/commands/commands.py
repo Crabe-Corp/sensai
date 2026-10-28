@@ -6,7 +6,7 @@ from typing import Any
 from src.core import singleton_token
 from src.core.debug import is_debug, set_debug
 from src.core.ollama_client import (ChatMessage, OllamaClient, OllamaError, OllamaStructuredOutputError,)
-from src.core.schemas import HistoricalFigure, KingdomInfo, StructuredResponse
+from src.core.schemas import HistoricalFigure, KingdomInfo
 from src.features.memory import (ArtifactManager, ChatSession, ProfileManager, SessionManager, UserProfile,)
 from src.features.prompt import (Persona, PersonaManager, PromptVersion, PromptVersioningEngine, default_versioning_engine,)
 from src.features.sec.security import mask_pii
@@ -461,34 +461,6 @@ class Commands:
             print("[Info] Structured output mode disabled.")
             return
 
-        if not self.client:
-            print("[Error] Ollama client not initialized.")
-            return
-
-        query = arg
-        try:
-            result = self.client.chat_structured(
-                model=self.model,
-                messages=[ChatMessage(role="user", content=query)],
-                response_format=StructuredResponse,
-            )
-            print(json.dumps(result.model_dump(), ensure_ascii=False))
-            self.history.append(ChatMessage(role="user", content=query))
-            self.history.append(ChatMessage(role="assistant", content=result.response))
-            if self.current_session:
-                self.current_session.messages = list(self.history)
-                self.current_session.metadata.model = self.model
-                self.current_session.metadata.context_tokens = singleton_token.context_tokens
-                self.current_session.metadata.total_tokens = singleton_token.budget_tokens
-                if self.session_manager:
-                    self.session_manager.save_session(self.current_session)
-                if self.artifact_manager:
-                    self.artifact_manager.save_artifact(self.current_session.metadata.session_id, get_active_artifact())
-        except OllamaStructuredOutputError as exc:
-            print(f"[Structured Output Error] {exc}")
-        except OllamaError as exc:
-            print(f"[Error] {exc}")
-        
         print(
             "[Info] /structured-output is a mode switch. Usage: /structured-output [on|off]. "
             "Enable it and ask your question directly in the chat to benefit from RAG and history."
