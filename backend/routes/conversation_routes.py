@@ -3,6 +3,7 @@ import json
 import os
 from pathlib import Path
 import re
+import threading
 import uuid
 from datetime import datetime
 from typing import List, Optional
@@ -707,6 +708,8 @@ def clear_semantic_cache(
 
 
 HISTORY_TOKEN_BUDGET = 2000
+# memory_management lit un compteur global (singleton_token) : une requête à la fois entre consume et enforce
+_history_budget_lock = threading.Lock()
 # Le message d'approbation du frontend commence par ce marqueur suivi du token de l'action
 APPROVAL_PATTERN = re.compile(r'^\[Confirmation : approuvée\] \[action_id:([A-Za-z0-9_\-]+)\]')
 
@@ -884,15 +887,16 @@ async def chat_stream(
         total_tokens_calc += (pm.total_tokens or estimate_tokens(pm.content))
 
     def compress_history() -> list:
-        memory_management.consume_tokens(total_tokens_calc)
         mem_client = OllamaClient(base_url=OLLAMA_BASE_URL)
         try:
-            return memory_management.enforce_token_budget(
-                model=model_to_use,
-                client=mem_client,
-                messages=raw_chat_messages,
-                max_history_tokens=HISTORY_TOKEN_BUDGET,
-            )
+            with _history_budget_lock:
+                memory_management.consume_tokens(total_tokens_calc)
+                return memory_management.enforce_token_budget(
+                    model=model_to_use,
+                    client=mem_client,
+                    messages=raw_chat_messages,
+                    max_history_tokens=HISTORY_TOKEN_BUDGET,
+                )
         finally:
             mem_client.close()
 
