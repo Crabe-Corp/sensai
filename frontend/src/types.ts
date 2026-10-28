@@ -65,6 +65,12 @@ export interface ToolInfo {
   visible?: boolean
 }
 
+export interface McpToolSchema {
+  name: string
+  description: string
+  parameters: Record<string, { type?: string; description?: string }>
+}
+
 export interface McpServer {
   id: string
   name: string
@@ -73,6 +79,7 @@ export interface McpServer {
   endpoint: string
   tools_count: number
   tools?: string[]
+  tool_schemas?: McpToolSchema[]
 }
 
 export interface FormQuestion {

@@ -13,7 +13,7 @@ import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { User, Lock, Plug, Plus, ShieldCheck, CheckCircle2, AlertCircle, Trash2, Power, PowerOff, Loader2, Wrench } from 'lucide-react'
 import { api } from '../lib/api'
-import type { McpServer, User as UserType } from '../types'
+import type { McpServer, McpToolSchema, User as UserType } from '../types'
 
 interface SettingsModalProps {
   isOpen: boolean
@@ -21,6 +21,12 @@ interface SettingsModalProps {
   user: UserType
   onUserUpdated: (user: UserType) => void
   initialTab?: 'profile' | 'mcp'
+}
+
+function describeTool(schema?: McpToolSchema): string | undefined {
+  if (!schema) return undefined
+  const params = Object.entries(schema.parameters).map(([name, p]) => `${name}${p.type ? `: ${p.type}` : ''}`)
+  return `${schema.description}\nParamètres : ${params.length ? params.join(', ') : 'aucun'}`
 }
 
 export function SettingsModal({ isOpen, onClose, user, onUserUpdated, initialTab = 'profile' }: SettingsModalProps) {
@@ -108,68 +114,43 @@ export function SettingsModal({ isOpen, onClose, user, onUserUpdated, initialTab
     }
   }
 
-  const handleConnectMcp = async (serverId: string, serverName: string) => {
+  const updateMcpServer = (serverId: string, patch: Partial<McpServer>) =>
+    setMcpServers((prev) => prev.map((s) => (s.id === serverId ? { ...s, ...patch } : s)))
+
+  // Exécute une action sur un serveur MCP en gérant l'indicateur de chargement et le message de statut
+  const runMcpServerAction = async (serverId: string, action: () => Promise<string>, fallbackError: string) => {
     setConnectingServerId(serverId)
     setMcpStatusMsg(null)
     try {
-      const res = await api.connectMcpServer({ server_id: serverId })
-      setMcpServers((prev) =>
-        prev.map((s) =>
-          s.id === serverId
-            ? {
-                ...s,
-                ...res.server,
-                status: 'connected',
-                tools_count: res.tools_count,
-                tools: res.tools,
-              }
-            : s
-        )
-      )
-      setMcpStatusMsg({
-        type: 'success',
-        text: `Serveur "${serverName}" connecté (${res.tools_count} outil(s) découvert(s)).`,
-      })
-    } catch (err: any) {
-      setMcpStatusMsg({
-        type: 'error',
-        text: err.message || `Erreur de connexion au serveur "${serverName}".`,
-      })
+      setMcpStatusMsg({ type: 'success', text: await action() })
+    } catch (err) {
+      setMcpStatusMsg({ type: 'error', text: err instanceof Error && err.message ? err.message : fallbackError })
     } finally {
       setConnectingServerId(null)
     }
   }
 
-  const handleDisconnectMcp = async (serverId: string, serverName: string) => {
-    setConnectingServerId(serverId)
-    setMcpStatusMsg(null)
-    try {
-      await api.disconnectMcpServer(serverId)
-      setMcpServers((prev) =>
-        prev.map((s) =>
-          s.id === serverId
-            ? {
-                ...s,
-                status: 'disconnected',
-                tools_count: 0,
-                tools: [],
-              }
-            : s
-        )
-      )
-      setMcpStatusMsg({
-        type: 'success',
-        text: `Serveur "${serverName}" déconnecté.`,
-      })
-    } catch (err: any) {
-      setMcpStatusMsg({
-        type: 'error',
-        text: err.message || `Erreur de déconnexion du serveur "${serverName}".`,
-      })
-    } finally {
-      setConnectingServerId(null)
-    }
-  }
+  const handleConnectMcp = (serverId: string, serverName: string) =>
+    runMcpServerAction(
+      serverId,
+      async () => {
+        const res = await api.connectMcpServer({ server_id: serverId })
+        updateMcpServer(serverId, { ...res.server, status: 'connected', tools_count: res.tools_count, tools: res.tools })
+        return `Serveur "${serverName}" connecté (${res.tools_count} outil(s) découvert(s)).`
+      },
+      `Erreur de connexion au serveur "${serverName}".`,
+    )
+
+  const handleDisconnectMcp = (serverId: string, serverName: string) =>
+    runMcpServerAction(
+      serverId,
+      async () => {
+        await api.disconnectMcpServer(serverId)
+        updateMcpServer(serverId, { status: 'disconnected', tools_count: 0, tools: [], tool_schemas: [] })
+        return `Serveur "${serverName}" déconnecté.`
+      },
+      `Erreur de déconnexion du serveur "${serverName}".`,
+    )
 
   const handleDeleteMcp = async (serverId: string, serverName: string) => {
     try {
@@ -351,6 +332,7 @@ export function SettingsModal({ isOpen, onClose, user, onUserUpdated, initialTab
                           {srv.tools.map((tName) => (
                             <Badge
                               key={tName}
+                              title={describeTool(srv.tool_schemas?.find((t) => t.name === tName))}
                               variant="outline"
                               className="text-[9px] px-1.5 py-0 border-zinc-800 bg-zinc-900/80 text-zinc-300 font-mono"
                             >
