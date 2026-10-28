@@ -445,9 +445,19 @@ def run_session(
                 print("[Info] Encyclopedia mode activated. Current simulation closed.")
             continue
 
-        cmd_name = command_handler.check_command(user_input)
+        safe_input, _has_confidential_data = mask_pii(user_input)
+
+        cmd_name = command_handler.check_command(safe_input)
         if cmd_name:
-            should_continue = command_handler.execute_command(cmd_name, user_input)
+            if cmd_name in ("/kingdom", "/figure"):
+                parts = safe_input.split(maxsplit=1)
+                target_entity = parts[1].strip() if len(parts) > 1 else ""
+                if target_entity:
+                    is_valid, error_message = validate_input_with_llm(target_entity, client, model)
+                    if not is_valid:
+                        print(f"\nAssistant > {error_message}")
+                        continue
+            should_continue = command_handler.execute_command(cmd_name, safe_input)
             model = command_handler.model
             rag_enabled = command_handler.rag_enabled
             structured_mode = command_handler.structured_mode
@@ -460,9 +470,6 @@ def run_session(
             if not should_continue:
                 break
             continue
-
-
-        safe_input, _has_confidential_data = mask_pii(user_input)
 
         from src.features.pdf import build_pdf_historical_veracity_prompt, detect_and_prepare_pdf_audit
 

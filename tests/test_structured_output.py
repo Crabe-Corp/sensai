@@ -287,7 +287,8 @@ def test_chat_errors_passthrough():
     client.close()
 
 
-def test_cli_kingdom_and_figure_commands(capsys):
+@patch("src.interfaces.cli.main.validate_input_with_llm", return_value=(True, ""))
+def test_cli_kingdom_and_figure_commands(mock_validate, capsys):
     mock_client = MagicMock()
     mock_client.chat_structured.side_effect = [
         KingdomInfo(
@@ -319,7 +320,8 @@ def test_cli_kingdom_and_figure_commands(capsys):
     assert "Standardisation de l'écriture" in captured.out
 
 
-def test_cli_kingdom_structured_error_handling(capsys):
+@patch("src.interfaces.cli.main.validate_input_with_llm", return_value=(True, ""))
+def test_cli_kingdom_structured_error_handling(mock_validate, capsys):
     mock_client = MagicMock()
     mock_client.chat_structured.side_effect = OllamaStructuredOutputError("Format non respecté")
 
@@ -333,6 +335,20 @@ def test_cli_kingdom_structured_error_handling(capsys):
     assert "Format non respecté" in captured.out
 
 
+
+
+@patch("src.interfaces.cli.main.validate_input_with_llm", return_value=(True, ""))
+def test_cli_kingdom_invalid_domain_rejected(mock_validate, capsys):
+    mock_client = MagicMock()
+    with patch("builtins.input", side_effect=["/kingdom Paris", "/exit"]):
+        exit_code = run_session(mock_client, model="qwen2.5:1.5b", host="http://localhost:11434")
+        assert exit_code is None
+
+    mock_client.chat_structured.assert_not_called()
+    captured = capsys.readouterr()
+    assert "[Error] 'Paris' is not a recognized kingdom" in captured.out
+
+
 def test_structured_response_validation():
     data = {"response": "Les Royaumes combattants ont pris fin en 221 av. J.-C."}
     parsed = StructuredResponse.model_validate(data)
@@ -342,11 +358,8 @@ def test_structured_response_validation():
         StructuredResponse.model_validate({})
 
 
-def test_cli_structured_output_direct_query(capsys):
+def test_cli_structured_output_direct_query_rejected_with_guidance(capsys):
     mock_client = MagicMock()
-    mock_client.chat_structured.return_value = StructuredResponse(
-        response="Qin Shi Huang a unifié la Chine en 221 av. J.-C."
-    )
 
     with patch(
         "builtins.input",
@@ -355,11 +368,9 @@ def test_cli_structured_output_direct_query(capsys):
         exit_code = run_session(mock_client, model="qwen2.5:1.5b", host="http://localhost:11434")
         assert exit_code is None
 
-    mock_client.chat_structured.assert_called_once()
-    call_kwargs = mock_client.chat_structured.call_args[1]
-    assert call_kwargs["response_format"] == StructuredResponse
+    mock_client.chat_structured.assert_not_called()
     captured = capsys.readouterr()
-    assert '"response": "Qin Shi Huang a unifié la Chine en 221 av. J.-C."' in captured.out
+    assert "[Info] /structured-output is a mode switch." in captured.out
 
 
 @patch("src.interfaces.cli.main.validate_input_with_llm", return_value=(True, ""))
@@ -392,3 +403,47 @@ def test_cli_structured_output_toggle_mode(mock_validate, capsys):
     assert '"response": "Réponse en mode structuré."' in captured.out
     assert "Structured output mode disabled" in captured.out
     assert "Réponse en streaming." in captured.out
+
+@patch("src.interfaces.cli.main.validate_input_with_llm", return_value=(False, "The imperial advisor refuses to discuss this topic with you."))
+def test_cli_figure_blocked_by_guardrail(mock_validate, capsys):
+    mock_client = MagicMock()
+    with patch("builtins.input", side_effect=["/figure Batman", "/exit"]):
+        exit_code = run_session(mock_client, model="qwen2.5:1.5b", host="http://localhost:11434")
+        assert exit_code is None
+
+    mock_client.chat_structured.assert_not_called()
+    captured = capsys.readouterr()
+    assert "The imperial advisor refuses to discuss this topic with you." in captured.out
+
+
+@patch("src.interfaces.cli.main.validate_input_with_llm", return_value=(False, "The imperial advisor refuses to discuss this topic with you."))
+def test_cli_kingdom_blocked_by_guardrail(mock_validate, capsys):
+    mock_client = MagicMock()
+    with patch("builtins.input", side_effect=["/kingdom Pizza", "/exit"]):
+        exit_code = run_session(mock_client, model="qwen2.5:1.5b", host="http://localhost:11434")
+        assert exit_code is None
+
+    mock_client.chat_structured.assert_not_called()
+    captured = capsys.readouterr()
+    assert "The imperial advisor refuses to discuss this topic with you." in captured.out
+
+
+@patch("src.interfaces.cli.main.validate_input_with_llm", return_value=(True, ""))
+def test_cli_command_pii_masked(mock_validate, capsys):
+    mock_client = MagicMock()
+    mock_client.chat_structured.return_value = HistoricalFigure(
+        name="Li Xin",
+        origin_kingdom="Qin",
+        role="general",
+        notable_facts=["General de Qin"],
+    )
+    with patch("builtins.input", side_effect=["/figure Li Xin test@epitech.eu 0601020304", "/exit"]):
+        exit_code = run_session(mock_client, model="qwen2.5:1.5b", host="http://localhost:11434")
+        assert exit_code is None
+
+    mock_validate.assert_called_once()
+    checked_entity = mock_validate.call_args[0][0]
+    assert "test@epitech.eu" not in checked_entity
+    assert "0601020304" not in checked_entity
+    assert "[DONNÉE MASQUÉE]" in checked_entity
+
