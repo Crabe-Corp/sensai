@@ -4,9 +4,11 @@ Aucun outil n'est (ré)implémenté ici : ils vivent dans src/features/tools et 
 simplement listés puis appelés via le registre par défaut, comme dans le CLI.
 """
 import json
+import secrets
 import sys
+import time
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 # Rend le package `src` importable (racine du dépôt, ou /app dans le conteneur)
 _ROOT = Path(__file__).resolve().parent.parent
@@ -16,12 +18,8 @@ if str(_ROOT) not in sys.path:
 from src.features.tools import ToolExecutor, default_registry  # noqa: E402
 from src.features.tools import builtin, forms, web_search  # noqa: E402,F401  (enregistrent les outils)
 from src.features.tools.forms import normalize_form  # noqa: E402,F401
-from src.features.tools.mcp_client import MCPClient, MCPError  # noqa: E402,F401
-from src.core.fs_tools import (  # noqa: E402
-    clear_action_confirmations,
-    register_action_confirmation,
-    set_confirmation_callback,
-)
+from src.features.tools.mcp_client import MCPClient  # noqa: E402
+from src.core.fs_tools import confirmation_handler  # noqa: E402
 
 # "Structured Output" n'est pas un outil appelé par le modèle : c'est un mode de réponse (JSON)
 STRUCTURED_OUTPUT_IDS = ("structured_output", "Structured Output")
@@ -36,6 +34,7 @@ DESTRUCTIVE_TOOLS = {"write_manuscript_file", "update_kingdom_database"}
 INTERNAL_TOOLS = {FORM_TOOL_NAME}
 
 _executor = ToolExecutor(registry=default_registry)
+_mcp_tool_names: set = set()
 
 # Présentation côté interface (icône lucide + catégorie), purement cosmétique
 _TOOL_UI = {
@@ -62,14 +61,15 @@ _STRUCTURED_OUTPUT_INFO = {
 
 
 def register_mcp_client(client: MCPClient, prefix: str = "") -> List[str]:
-    """Enregistre les outils d'un MCPClient dans default_registry et renvoie la liste de leurs noms."""
-    defs = default_registry.register_mcp_client(client, prefix=prefix)
-    return [d.name for d in defs]
+    """Enregistre les outils d'un client MCP dans le registre et renvoie leurs noms."""
+    names = [d.name for d in default_registry.register_mcp_client(client, prefix=prefix)]
+    _mcp_tool_names.update(names)
+    return names
 
 
 def unregister_mcp_tools(tool_names: List[str]) -> None:
-    """Retire les outils spécifiés du default_registry."""
     default_registry.unregister_tools(tool_names)
+    _mcp_tool_names.difference_update(tool_names)
 
 
 def list_tools() -> List[Dict[str, Any]]:
@@ -77,7 +77,7 @@ def list_tools() -> List[Dict[str, Any]]:
     for tool_def in default_registry.list_tools():
         icon, category = _TOOL_UI.get(
             tool_def.name,
-            ("Wrench", "MCP" if "mcp" in tool_def.name.lower() else "Outils"),
+            ("Wrench", "MCP" if tool_def.name in _mcp_tool_names else "Outils"),
         )
         is_visible = tool_def.name not in INTERNAL_TOOLS
         tools.append({
@@ -111,6 +111,38 @@ def get_ollama_tools(enabled_ids: List[str]) -> List[Dict[str, Any]]:
 
 def run_tool(tool_id: str, args: Dict[str, Any]) -> str:
     return _executor.execute(tool_id, args or {}).to_tool_message_content()
+
+
+def run_tool_confirmed(tool_id: str, args: Dict[str, Any]) -> str:
+    """Exécute un outil destructif dont l'utilisateur a déjà validé l'action côté web."""
+    with confirmation_handler(lambda _summary: True):
+        return run_tool(tool_id, args)
+
+
+# Actions destructives en attente de validation humaine : {token: (user_id, conversation_id, outil, arguments, expiration)}.
+# Le token est généré par le serveur, à usage unique, et lié à l'utilisateur, à la conversation et aux arguments affichés.
+_PENDING_ACTION_TTL = 600
+_pending_actions: Dict[str, tuple] = {}
+
+
+def create_pending_action(user_id: str, conversation_id: str, tool_name: str, args: Dict[str, Any]) -> str:
+    now = time.monotonic()
+    for token in [t for t, entry in _pending_actions.items() if entry[4] < now]:
+        del _pending_actions[token]
+    token = f"act-{secrets.token_urlsafe(12)}"
+    _pending_actions[token] = (user_id, conversation_id, tool_name, dict(args), now + _PENDING_ACTION_TTL)
+    return token
+
+
+def take_pending_action(token: str, user_id: str, conversation_id: str, tool_name: str) -> Optional[Dict[str, Any]]:
+    """Consomme le token et renvoie les arguments validés par l'utilisateur, ou None s'il est invalide."""
+    entry = _pending_actions.get(token)
+    if entry is None or entry[4] < time.monotonic():
+        return None
+    if entry[:3] != (user_id, conversation_id, tool_name):
+        return None
+    del _pending_actions[token]
+    return entry[3]
 
 
 def build_form_block(args: Dict[str, Any]) -> str:

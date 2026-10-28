@@ -1,6 +1,6 @@
 import json
-import os
 import sys
+import time
 from pathlib import Path
 from unittest.mock import patch
 
@@ -14,229 +14,141 @@ _BACKEND_DIR = _ROOT_DIR / "backend"
 if str(_BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(_BACKEND_DIR))
 
-from src.core.db.database import (
-    execute_db_update,
-    get_kingdom_stats,
-    init_database,
-)
+import tools_registry
+from routes.conversation_routes import APPROVAL_PATTERN
+from src.core.db.database import execute_db_update, get_kingdom_stats, init_database
 from src.core.fs_tools import (
     ALLOWED_DIR,
-    agent_read_file,
     agent_write_file,
     ask_human_confirmation,
-    clear_action_confirmations,
-    is_interactive_terminal,
-    register_action_confirmation,
-    set_confirmation_callback,
+    confirmation_handler,
 )
 from src.features.tools import default_registry
 from tools_registry import (
     CONFIRM_BLOCK_LANG,
     DESTRUCTIVE_TOOLS,
     build_confirm_block,
+    create_pending_action,
     run_tool,
+    run_tool_confirmed,
+    take_pending_action,
 )
+
+TEST_FILENAME = "test_hitl_manuscrit.txt"
 
 
 @pytest.fixture(autouse=True)
-def cleanup_hitl_state():
-    """Réinitialise l'état HITL (callbacks, tokens, DB, fichiers de test) avant et après chaque test."""
-    set_confirmation_callback(None)
-    clear_action_confirmations()
-    if "SENSAI_AUTO_CONFIRM" in os.environ:
-        del os.environ["SENSAI_AUTO_CONFIRM"]
+def reset_state():
+    """Base de données, fichier de test et actions en attente remis à zéro avant et après chaque test."""
     init_database(force_reset=True)
-
-    test_file = ALLOWED_DIR / "test_hitl_manuscrit.txt"
+    tools_registry._pending_actions.clear()
+    test_file = ALLOWED_DIR / TEST_FILENAME
     if test_file.exists():
         test_file.unlink()
-
     yield
-
-    set_confirmation_callback(None)
-    clear_action_confirmations()
-    if "SENSAI_AUTO_CONFIRM" in os.environ:
-        del os.environ["SENSAI_AUTO_CONFIRM"]
+    tools_registry._pending_actions.clear()
     if test_file.exists():
         test_file.unlink()
 
 
-def test_fs_non_interactive_does_not_block_and_aborts_by_default():
-    """Vérifie qu'en mode non interactif sans approbation, l'écriture fichier ne bloque pas sur stdin et s'annule."""
-    test_filename = "test_hitl_manuscrit.txt"
-
-    # En environnement de test, sys.stdin n'est pas un tty
-    with patch("src.core.fs_tools.is_interactive_terminal", return_value=False), \
-         patch("builtins.input") as mock_input:
-        res_raw = agent_write_file(test_filename, "Contenu confidentiel de test")
-        res = json.loads(res_raw)
-
-        # Doit refuser sans avoir invoqué input()
-        mock_input.assert_not_called()
-        assert res.get("status") == "aborted"
-        assert "refusé" in res.get("message", "").lower()
-        assert not (ALLOWED_DIR / test_filename).exists()
+def test_console_prompt_is_unchanged_without_handler():
+    """Sans handler (CLI), la confirmation passe toujours par input()."""
+    with patch("builtins.input", side_effect=["O"]):
+        assert ask_human_confirmation("Suppression simulation") is True
+    with patch("builtins.input", side_effect=["N"]):
+        assert ask_human_confirmation("Suppression simulation") is False
 
 
-def test_db_non_interactive_does_not_block_and_aborts_by_default():
-    """Vérifie qu'en mode non interactif sans approbation, la modification DB ne bloque pas et s'annule."""
-    sql = "UPDATE kingdoms SET ruler = 'Usurpateur' WHERE name = 'Qin'"
+def test_handler_replaces_console_prompt_for_files_and_db():
+    summaries = []
 
-    with patch("src.core.fs_tools.is_interactive_terminal", return_value=False), \
-         patch("builtins.input") as mock_input:
-        res_raw = execute_db_update(sql)
-        res = json.loads(res_raw)
-
-        mock_input.assert_not_called()
-        assert res.get("status") == "aborted"
-        # Vérifie que la base de données n'a pas été modifiée
-        qin_stats = get_kingdom_stats("Qin")
-        assert qin_stats["ruler"] == "Ying Zheng"
-
-
-def test_auto_confirm_parameter_allows_write_and_update():
-    """Vérifie que le paramètre explicite auto_confirm=True permet l'écriture sans bloquer."""
-    test_filename = "test_hitl_manuscrit.txt"
-
-    # 1. Écriture fichier avec auto_confirm=True
-    res_raw = agent_write_file(test_filename, "Contenu validé", auto_confirm=True)
-    res = json.loads(res_raw)
-    assert res.get("status") == "success"
-    assert (ALLOWED_DIR / test_filename).exists()
-    assert (ALLOWED_DIR / test_filename).read_text(encoding="utf-8") == "Contenu validé"
-
-    # 2. Mise à jour DB avec auto_confirm=True
-    sql = "UPDATE kingdoms SET ruler = 'Shi Huangdi' WHERE name = 'Qin'"
-    db_res_raw = execute_db_update(sql, auto_confirm=True)
-    db_res = json.loads(db_res_raw)
-    assert db_res.get("status") == "success"
-    assert db_res.get("rows_affected") == 1
-
-    qin_stats = get_kingdom_stats("Qin")
-    assert qin_stats["ruler"] == "Shi Huangdi"
-
-
-def test_auto_confirm_parameter_false_aborts():
-    """Vérifie que auto_confirm=False rejette l'opération explicitement."""
-    test_filename = "test_hitl_manuscrit.txt"
-    res_raw = agent_write_file(test_filename, "Doit être rejeté", auto_confirm=False)
-    res = json.loads(res_raw)
-    assert res.get("status") == "aborted"
-    assert not (ALLOWED_DIR / test_filename).exists()
-
-
-def test_direct_callback_injection():
-    """Vérifie l'injection d'un callback d'approbation ou de rejet à l'exécution."""
-    test_filename = "test_hitl_manuscrit.txt"
-    intercepted_summaries = []
-
-    def approve_callback(summary: str) -> bool:
-        intercepted_summaries.append(summary)
+    def approve(summary: str) -> bool:
+        summaries.append(summary)
         return True
 
-    res_raw = agent_write_file(test_filename, "Par callback approuvé", callback=approve_callback)
-    res = json.loads(res_raw)
-    assert res.get("status") == "success"
-    assert len(intercepted_summaries) == 1
-    assert "Créer un nouveau fichier" in intercepted_summaries[0]
+    with patch("builtins.input") as mock_input, confirmation_handler(approve):
+        file_res = json.loads(agent_write_file(TEST_FILENAME, "Contenu validé"))
+        db_res = json.loads(execute_db_update("UPDATE kingdoms SET ruler = 'Shi Huangdi' WHERE name = 'Qin'"))
 
-    # Test avec un callback rejetant l'écrasement
-    def reject_callback(summary: str) -> bool:
-        intercepted_summaries.append(summary)
-        return False
-
-    res_overwrite = agent_write_file(test_filename, "Nouvelle version", callback=reject_callback)
-    res_ow = json.loads(res_overwrite)
-    assert res_ow.get("status") == "aborted"
-    assert "Écraser le fichier existant" in intercepted_summaries[1]
-    # Le fichier d'origine n'a pas été écrasé
-    assert (ALLOWED_DIR / test_filename).read_text(encoding="utf-8") == "Par callback approuvé"
+    mock_input.assert_not_called()
+    assert file_res["status"] == "success"
+    assert (ALLOWED_DIR / TEST_FILENAME).read_text(encoding="utf-8") == "Contenu validé"
+    assert db_res["status"] == "success"
+    assert get_kingdom_stats("Qin")["ruler"] == "Shi Huangdi"
+    assert "Créer un nouveau fichier" in summaries[0]
+    assert "Exécuter la requête suivante" in summaries[1]
 
 
-def test_global_confirmation_callback():
-    """Vérifie qu'un callback global configuré via set_confirmation_callback est bien invoqué."""
-    log = []
-
-    set_confirmation_callback(lambda summary: log.append(summary) or True)
-
-    sql = "UPDATE kingdoms SET capital = 'NouvelleXianyang' WHERE name = 'Qin'"
-    res_raw = execute_db_update(sql)
-    res = json.loads(res_raw)
-    assert res.get("status") == "success"
-    assert len(log) == 1
-    assert "Exécuter la requête suivante" in log[0]
+def test_handler_can_reject():
+    with confirmation_handler(lambda _summary: False):
+        res = json.loads(agent_write_file(TEST_FILENAME, "Doit être rejeté"))
+    assert res["status"] == "aborted"
+    assert not (ALLOWED_DIR / TEST_FILENAME).exists()
 
 
-def test_token_action_id_mechanism():
-    """Vérifie la confirmation asynchrone par token / action_id pour le backend web."""
-    token_approved = "token_act_ok_123"
-    token_rejected = "token_act_ko_456"
-
-    register_action_confirmation(token_approved, approved=True)
-    register_action_confirmation(token_rejected, approved=False)
-
-    test_filename = "test_hitl_manuscrit.txt"
-
-    # 1. Utilisation du token approuvé
-    res_raw1 = agent_write_file(test_filename, "Texte validé par token", action_id=token_approved)
-    res1 = json.loads(res_raw1)
-    assert res1.get("status") == "success"
-
-    # 2. Utilisation du token refusé
-    res_raw2 = agent_write_file(test_filename, "Texte refusé", action_id=token_rejected)
-    res2 = json.loads(res_raw2)
-    assert res2.get("status") == "aborted"
+def test_handler_is_scoped_to_its_context():
+    """Une fois le bloc terminé, la confirmation redevient interactive."""
+    with confirmation_handler(lambda _summary: True):
+        pass
+    with patch("builtins.input", side_effect=["N"]):
+        res = json.loads(agent_write_file(TEST_FILENAME, "Texte"))
+    assert res["status"] == "aborted"
 
 
-def test_env_var_sensai_auto_confirm(monkeypatch):
-    """Vérifie la prise en compte de la variable d'environnement SENSAI_AUTO_CONFIRM."""
-    test_filename = "test_hitl_manuscrit.txt"
-
-    # Test valeur positive
-    monkeypatch.setenv("SENSAI_AUTO_CONFIRM", "1")
-    res1 = json.loads(agent_write_file(test_filename, "Texte auto-confirmé via env"))
-    assert res1.get("status") == "success"
-
-    # Test valeur négative
-    monkeypatch.setenv("SENSAI_AUTO_CONFIRM", "0")
-    res2 = json.loads(agent_write_file(test_filename, "Texte rejeté via env"))
-    assert res2.get("status") == "aborted"
+def test_destructive_tools_do_not_expose_confirmation_parameters_to_the_llm():
+    """Le LLM ne doit pas pouvoir se confirmer lui-même : aucun paramètre de validation dans le schéma."""
+    for name in DESTRUCTIVE_TOOLS:
+        properties = default_registry.get(name).parameters["properties"]
+        assert not {"auto_confirm", "action_id", "callback"} & set(properties)
 
 
-def test_cli_interactive_tty_fallback():
-    """Vérifie que si un TTY interactif est détecté (mode CLI), input() est bien appelé en fallback."""
-    with patch("src.core.fs_tools.is_interactive_terminal", return_value=True), \
-         patch("builtins.input", side_effect=["O"]):
-        res = ask_human_confirmation("Suppression simulation")
-        assert res is True
-
-    with patch("src.core.fs_tools.is_interactive_terminal", return_value=True), \
-         patch("builtins.input", side_effect=["N"]):
-        res = ask_human_confirmation("Suppression simulation")
-        assert res is False
+def test_llm_supplied_auto_confirm_does_not_bypass_confirmation():
+    with patch("builtins.input", side_effect=["N"]):
+        run_tool("write_manuscript_file", {"filename": TEST_FILENAME, "content": "x", "auto_confirm": True})
+    assert not (ALLOWED_DIR / TEST_FILENAME).exists()
 
 
-def test_tool_registry_write_and_update_with_hitl():
-    """Vérifie que les outils du registre partagé (write_manuscript_file et update_kingdom_database) supportent HITL."""
-    assert "write_manuscript_file" in DESTRUCTIVE_TOOLS
-    assert "update_kingdom_database" in DESTRUCTIVE_TOOLS
+def test_run_tool_confirmed_executes_destructive_tool():
+    raw = run_tool_confirmed("write_manuscript_file", {"filename": TEST_FILENAME, "content": "Tool test ok"})
+    assert json.loads(raw)["status"] == "success"
+    assert (ALLOWED_DIR / TEST_FILENAME).exists()
 
-    test_filename = "test_hitl_manuscrit.txt"
 
-    # 1. Exécution via ToolExecutor sans auto_confirm (doit s'annuler proprement sans bloquer)
-    with patch("src.core.fs_tools.is_interactive_terminal", return_value=False):
-        raw_res = run_tool("write_manuscript_file", {"filename": test_filename, "content": "Tool test"})
-        parsed = json.loads(raw_res)
-        assert parsed.get("status") == "aborted"
+def test_pending_action_is_single_use_and_returns_displayed_args():
+    args = {"filename": TEST_FILENAME, "content": "Version affichée"}
+    token = create_pending_action("u1", "c1", "write_manuscript_file", args)
 
-    # 2. Exécution via ToolExecutor avec auto_confirm=True
-    raw_res_ok = run_tool(
-        "write_manuscript_file",
-        {"filename": test_filename, "content": "Tool test ok", "auto_confirm": True},
-    )
-    parsed_ok = json.loads(raw_res_ok)
-    assert parsed_ok.get("status") == "success"
-    assert (ALLOWED_DIR / test_filename).exists()
+    assert take_pending_action(token, "u1", "c1", "write_manuscript_file") == args
+    assert take_pending_action(token, "u1", "c1", "write_manuscript_file") is None
+
+
+@pytest.mark.parametrize("user_id,conv_id,tool", [
+    ("autre", "c1", "write_manuscript_file"),
+    ("u1", "autre", "write_manuscript_file"),
+    ("u1", "c1", "update_kingdom_database"),
+])
+def test_pending_action_is_bound_to_user_conversation_and_tool(user_id, conv_id, tool):
+    token = create_pending_action("u1", "c1", "write_manuscript_file", {"filename": "a", "content": "b"})
+    assert take_pending_action(token, user_id, conv_id, tool) is None
+    # Un essai invalide ne consomme pas le token légitime
+    assert take_pending_action(token, "u1", "c1", "write_manuscript_file") is not None
+
+
+def test_unknown_or_expired_token_is_rejected():
+    assert take_pending_action("act-inconnu", "u1", "c1", "write_manuscript_file") is None
+
+    token = create_pending_action("u1", "c1", "write_manuscript_file", {"filename": "a", "content": "b"})
+    user_id, conv_id, tool, args, _expiry = tools_registry._pending_actions[token]
+    tools_registry._pending_actions[token] = (user_id, conv_id, tool, args, time.monotonic() - 1)
+    assert take_pending_action(token, "u1", "c1", "write_manuscript_file") is None
+
+
+def test_approval_marker_requires_approval_at_message_start():
+    assert APPROVAL_PATTERN.match("[Confirmation : approuvée] [action_id:act-abc_12-X] J'approuve").group(1) == "act-abc_12-X"
+    # Un refus porte aussi le token mais ne doit jamais valoir approbation
+    assert APPROVAL_PATTERN.match("[Confirmation : refusée] [action_id:act-abc] J'annule") is None
+    assert APPROVAL_PATTERN.match("Voici : [Confirmation : approuvée] [action_id:act-abc]") is None
+    assert APPROVAL_PATTERN.match("[Confirmation : approuvée] sans token") is None
 
 
 def test_build_confirm_block_format():

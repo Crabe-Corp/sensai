@@ -20,15 +20,17 @@ from src.core.ollama_client import ChatMessage, OllamaClient
 from src.features.sec.security import mask_pii, validate_input_with_llm
 from tools_registry import (
     ALL_TOOLS_ID,
-    CONFIRM_BLOCK_LANG,
     DESTRUCTIVE_TOOLS,
     FORM_TOOL_NAME,
     build_confirm_block,
     build_form_block,
+    create_pending_action,
     get_ollama_tools,
     list_tools,
     run_tool,
+    run_tool_confirmed,
     selected_tool_names,
+    take_pending_action,
 )
 
 MAX_TOOL_ROUNDS = 4  # nombre maximal d'allers-retours modèle <-> outils par message
@@ -65,8 +67,6 @@ class ChatMessageRequest(BaseModel):
     model: Optional[str] = None
     tools_enabled: Optional[List[str]] = None
     system_instruction: Optional[str] = None
-    auto_confirm: Optional[bool] = None
-    confirmation_token: Optional[str] = None
 
 
 def estimate_tokens(text: str) -> int:
@@ -687,7 +687,6 @@ def add_member_to_work_conv(
 
 
 @router.post("/{conversation_id}/clearcache")
-@router.post("/{conversation_id}/clear-cache", include_in_schema=False)
 def clear_semantic_cache(
     conversation_id: str,
     user: User = Depends(get_current_user),
@@ -705,6 +704,75 @@ def clear_semantic_cache(
         return {"success": True, "message": "Cache sémantique vidé avec succès"}
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Erreur lors du vidage du cache : {str(exc)}")
+
+
+HISTORY_TOKEN_BUDGET = 2000
+# Le message d'approbation du frontend commence par ce marqueur suivi du token de l'action
+APPROVAL_PATTERN = re.compile(r'^\[Confirmation : approuvée\] \[action_id:([A-Za-z0-9_\-]+)\]')
+
+
+def _describe_destructive_call(tool_name: str, args: dict) -> str:
+    if tool_name == "write_manuscript_file":
+        return f"Écriture dans le fichier {args.get('filename')}"
+    if tool_name == "update_kingdom_database":
+        return f"Mise à jour SQL : {args.get('sql_statement')}"
+    return f"Exécution de l'action {tool_name}"
+
+
+async def _save_and_announce(
+    db: Session,
+    conv: Conversation,
+    user_msg_id: str,
+    content: str,
+    prompt_tokens: int,
+    completion_tokens: int,
+    from_cache: bool = False,
+) -> str:
+    """Enregistre la réponse de l'assistant, la diffuse aux membres et renvoie la ligne NDJSON `done`."""
+    total_tokens = prompt_tokens + completion_tokens
+    assistant_msg_id = str(uuid.uuid4())
+    assistant_msg = Message(
+        id=assistant_msg_id,
+        conversation_id=conv.id,
+        sender_id=None,
+        sender_name="SensAI",
+        role="assistant",
+        content=content,
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        total_tokens=total_tokens,
+    )
+    db.add(assistant_msg)
+    conv.updated_at = datetime.utcnow()
+    db.commit()
+    conv_total_tokens = sum(m.total_tokens for m in conv.messages)
+    cache_flags = {"from_cache": True, "source": "cache"} if from_cache else {}
+
+    await manager.broadcast(conv.id, {
+        "type": "new_message",
+        "message": {
+            "id": assistant_msg_id,
+            "role": "assistant",
+            "sender_name": "SensAI",
+            "content": content,
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "total_tokens": total_tokens,
+            "created_at": assistant_msg.created_at.isoformat(),
+            "conversation_total_tokens": conv_total_tokens,
+            **cache_flags,
+        }
+    })
+    return json.dumps({
+        "type": "done",
+        "message_id": assistant_msg_id,
+        "user_message_id": user_msg_id,
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+        "total_tokens": total_tokens,
+        "conversation_total_tokens": conv_total_tokens,
+        **cache_flags,
+    }) + "\n"
 
 
 @router.post("/{conversation_id}/chat")
@@ -731,6 +799,8 @@ async def chat_stream(
     # Masquage des données sensibles (email, téléphone)
     masked_content, has_pii = mask_pii(req.content)
     effective_content = masked_content if has_pii else req.content
+    approval_match = APPROVAL_PATTERN.match(req.content)
+    approval_token = approval_match.group(1) if approval_match else None
 
     user_tokens = estimate_tokens(effective_content)
     user_msg_id = str(uuid.uuid4())
@@ -749,14 +819,14 @@ async def chat_stream(
     conv.updated_at = datetime.utcnow()
     if conv.title == "Nouvelle conversation":
         clean_prompt = re.sub(
-            r'\[Fichier joint\s*:\s*[^\\\]\(\)]+?(?: \([^)]+\))?\](?:\s*--- Début du contenu de [^\n\r]+ ---\s*[\s\S]*?\s*--- Fin du contenu de [^\n\r]+ ---)?',
+            r'\[Fichier joint\s*:\s*[^\]\(\)]+?(?: \([^)]+\))?\](?:\s*--- Début du contenu de [^\n\r]+ ---\s*[\s\S]*?\s*--- Fin du contenu de [^\n\r]+ ---)?',
             '',
             effective_content
         ).strip()
         if clean_prompt:
             conv.title = clean_prompt[:35] + ("..." if len(clean_prompt) > 35 else "")
         else:
-            file_match = re.search(r'\[Fichier joint\s*:\s*([^\\\]\(\)]+?)', effective_content)
+            file_match = re.search(r'\[Fichier joint\s*:\s*([^\]\(\)]+?)', effective_content)
             if file_match:
                 conv.title = file_match.group(1).strip()[:35]
             else:
@@ -813,19 +883,22 @@ async def chat_stream(
         raw_chat_messages.append(ChatMessage(role=pm.role, content=pm.content))
         total_tokens_calc += (pm.total_tokens or estimate_tokens(pm.content))
 
-    memory_management.consume_tokens(total_tokens_calc)
-
-    try:
+    def compress_history() -> list:
+        memory_management.consume_tokens(total_tokens_calc)
         mem_client = OllamaClient(base_url=OLLAMA_BASE_URL)
         try:
-            managed_messages = memory_management.enforce_token_budget(
+            return memory_management.enforce_token_budget(
                 model=model_to_use,
                 client=mem_client,
                 messages=raw_chat_messages,
-                max_history_tokens=2000,
+                max_history_tokens=HISTORY_TOKEN_BUDGET,
             )
         finally:
             mem_client.close()
+
+    # Appel Ollama synchrone possible (résumé) : hors de la boucle d'événements
+    try:
+        managed_messages = await asyncio.to_thread(compress_history)
     except Exception:
         managed_messages = raw_chat_messages
 
@@ -859,52 +932,11 @@ async def chat_stream(
             refusal_text = refusal_message or "The imperial advisor refuses to discuss this topic with you."
             accumulated_text = refusal_text
             completion_tokens_eval = estimate_tokens(accumulated_text)
-            total_response_tokens = prompt_tokens_eval + completion_tokens_eval
 
             yield json.dumps({"type": "chunk", "content": refusal_text}) + "\n"
-
-            assistant_msg_id = str(uuid.uuid4())
-            assistant_msg = Message(
-                id=assistant_msg_id,
-                conversation_id=conv.id,
-                sender_id=None,
-                sender_name="SensAI",
-                role="assistant",
-                content=accumulated_text,
-                prompt_tokens=prompt_tokens_eval,
-                completion_tokens=completion_tokens_eval,
-                total_tokens=total_response_tokens,
+            yield await _save_and_announce(
+                db, conv, user_msg_id, refusal_text, prompt_tokens_eval, completion_tokens_eval,
             )
-            db.add(assistant_msg)
-            conv.updated_at = datetime.utcnow()
-            db.commit()
-            conv_total_tokens = sum(m.total_tokens for m in conv.messages)
-
-            final_payload = {
-                "type": "done",
-                "message_id": assistant_msg_id,
-                "user_message_id": user_msg_id,
-                "prompt_tokens": prompt_tokens_eval,
-                "completion_tokens": completion_tokens_eval,
-                "total_tokens": total_response_tokens,
-                "conversation_total_tokens": conv_total_tokens,
-            }
-            yield json.dumps(final_payload) + "\n"
-
-            await manager.broadcast(conv.id, {
-                "type": "new_message",
-                "message": {
-                    "id": assistant_msg_id,
-                    "role": "assistant",
-                    "sender_name": "SensAI",
-                    "content": accumulated_text,
-                    "prompt_tokens": prompt_tokens_eval,
-                    "completion_tokens": completion_tokens_eval,
-                    "total_tokens": total_response_tokens,
-                    "created_at": assistant_msg.created_at.isoformat(),
-                    "conversation_total_tokens": conv_total_tokens
-                }
-            })
             return
 
         # Interrogation du cache sémantique vectoriel ([A6])
@@ -921,7 +953,6 @@ async def chat_stream(
 
         if cached_response and cached_response.strip():
             completion_tokens_eval = estimate_tokens(cached_response)
-            total_response_tokens = prompt_tokens_eval + completion_tokens_eval
 
             yield json.dumps({
                 "type": "chunk",
@@ -929,52 +960,10 @@ async def chat_stream(
                 "from_cache": True,
                 "source": "cache",
             }) + "\n"
-
-            assistant_msg_id = str(uuid.uuid4())
-            assistant_msg = Message(
-                id=assistant_msg_id,
-                conversation_id=conv.id,
-                sender_id=None,
-                sender_name="SensAI",
-                role="assistant",
-                content=cached_response,
-                prompt_tokens=prompt_tokens_eval,
-                completion_tokens=completion_tokens_eval,
-                total_tokens=total_response_tokens,
+            yield await _save_and_announce(
+                db, conv, user_msg_id, cached_response, prompt_tokens_eval, completion_tokens_eval,
+                from_cache=True,
             )
-            db.add(assistant_msg)
-            conv.updated_at = datetime.utcnow()
-            db.commit()
-            conv_total_tokens = sum(m.total_tokens for m in conv.messages)
-
-            final_payload = {
-                "type": "done",
-                "message_id": assistant_msg_id,
-                "user_message_id": user_msg_id,
-                "prompt_tokens": prompt_tokens_eval,
-                "completion_tokens": completion_tokens_eval,
-                "total_tokens": total_response_tokens,
-                "conversation_total_tokens": conv_total_tokens,
-                "from_cache": True,
-                "source": "cache",
-            }
-            yield json.dumps(final_payload) + "\n"
-
-            await manager.broadcast(conv.id, {
-                "type": "new_message",
-                "message": {
-                    "id": assistant_msg_id,
-                    "role": "assistant",
-                    "sender_name": "SensAI",
-                    "content": cached_response,
-                    "prompt_tokens": prompt_tokens_eval,
-                    "completion_tokens": completion_tokens_eval,
-                    "total_tokens": total_response_tokens,
-                    "created_at": assistant_msg.created_at.isoformat(),
-                    "conversation_total_tokens": conv_total_tokens,
-                    "from_cache": True,
-                }
-            })
             return
 
         ollama_payload = {
@@ -1063,40 +1052,28 @@ async def chat_stream(
                                 form_sent = True
                                 break
 
+                            # Les outils sont synchrones (réseau, SQL, fichiers) : hors de la boucle d'événements
                             if t_name in DESTRUCTIVE_TOOLS:
-                                token_match = re.search(r'\[(?:Token|action_id):\s*([a-zA-Z0-9_\-]+)\]', req.content)
-                                user_confirmed = (
-                                    getattr(req, "auto_confirm", None) is True
-                                    or "[Confirmation : approuvée]" in req.content
-                                    or "[Confirmation : oui]" in req.content
-                                    or bool(token_match)
+                                # Seul un token émis par le serveur pour cet utilisateur, cette conversation et cet outil
+                                # débloque l'action ; elle s'exécute avec les arguments que l'utilisateur a vus.
+                                approved_args = (
+                                    take_pending_action(approval_token, user.id, conv.id, t_name)
+                                    if approval_token else None
                                 )
-                                if user_confirmed:
-                                    t_args["auto_confirm"] = True
-                                    if token_match:
-                                        t_args["action_id"] = token_match.group(1)
-                                    elif getattr(req, "confirmation_token", None):
-                                        t_args["action_id"] = req.confirmation_token
-                                else:
-                                    action_id = f"act-{uuid.uuid4().hex[:8]}"
-                                    summary = f"Exécution de l'action {t_name}"
-                                    if t_name == "write_manuscript_file":
-                                        summary = f"Écriture dans le fichier {t_args.get('filename')}"
-                                    elif t_name == "update_kingdom_database":
-                                        summary = f"Mise à jour SQL : {t_args.get('sql_statement')}"
+                                if approved_args is None:
                                     confirm_block = build_confirm_block(
-                                        summary=summary,
+                                        summary=_describe_destructive_call(t_name, t_args),
                                         tool_name=t_name,
-                                        action_id=action_id,
+                                        action_id=create_pending_action(user.id, conv.id, t_name, t_args),
                                         details=t_args,
                                     )
                                     accumulated_text += confirm_block
                                     yield json.dumps({"type": "chunk", "content": confirm_block}) + "\n"
                                     form_sent = True
                                     break
-
-                            # Les outils sont synchrones (réseau, SQL, fichiers) : hors de la boucle d'événements
-                            tool_output = await asyncio.to_thread(run_tool, t_name, t_args)
+                                tool_output = await asyncio.to_thread(run_tool_confirmed, t_name, approved_args)
+                            else:
+                                tool_output = await asyncio.to_thread(run_tool, t_name, t_args)
                             info_text = f"\n\n*[Outil exécuté : {t_name}]*\n```json\n{tool_output}\n```\n\n"
                             accumulated_text += info_text
                             yield json.dumps({"type": "chunk", "content": info_text}) + "\n"
@@ -1139,11 +1116,12 @@ async def chat_stream(
             accumulated_text = empty_msg
             yield json.dumps({"type": "chunk", "content": empty_msg}) + "\n"
 
-        total_response_tokens = prompt_tokens_eval + completion_tokens_eval
-
-        # Enregistrement dans le cache sémantique après génération réussie ([A6])
+        # Enregistrement dans le cache sémantique après génération réussie ([A6]).
+        # Les réponses à usage unique (confirmation, formulaire, sortie d'outil) ne doivent jamais être rejouées.
         if (
             accumulated_text.strip()
+            and "```sensai-" not in accumulated_text
+            and "[Outil exécuté" not in accumulated_text
             and not accumulated_text.startswith("[Erreur")
             and not accumulated_text.startswith("[Connexion")
             and not accumulated_text.startswith("[Le modèle")
@@ -1158,48 +1136,9 @@ async def chat_stream(
             except Exception:
                 pass
 
-        assistant_msg_id = str(uuid.uuid4())
-        assistant_msg = Message(
-            id=assistant_msg_id,
-            conversation_id=conv.id,
-            sender_id=None,
-            sender_name="SensAI",
-            role="assistant",
-            content=accumulated_text,
-            prompt_tokens=prompt_tokens_eval,
-            completion_tokens=completion_tokens_eval,
-            total_tokens=total_response_tokens,
+        yield await _save_and_announce(
+            db, conv, user_msg_id, accumulated_text, prompt_tokens_eval, completion_tokens_eval,
         )
-        db.add(assistant_msg)
-        conv.updated_at = datetime.utcnow()
-        db.commit()
-        conv_total_tokens = sum(m.total_tokens for m in conv.messages)
-
-        final_payload = {
-            "type": "done",
-            "message_id": assistant_msg_id,
-            "user_message_id": user_msg_id,
-            "prompt_tokens": prompt_tokens_eval,
-            "completion_tokens": completion_tokens_eval,
-            "total_tokens": total_response_tokens,
-            "conversation_total_tokens": conv_total_tokens,
-        }
-        yield json.dumps(final_payload) + "\n"
-
-        await manager.broadcast(conv.id, {
-            "type": "new_message",
-            "message": {
-                "id": assistant_msg_id,
-                "role": "assistant",
-                "sender_name": "SensAI",
-                "content": accumulated_text,
-                "prompt_tokens": prompt_tokens_eval,
-                "completion_tokens": completion_tokens_eval,
-                "total_tokens": total_response_tokens,
-                "created_at": assistant_msg.created_at.isoformat(),
-                "conversation_total_tokens": conv_total_tokens
-            }
-        })
 
     return StreamingResponse(event_generator(), media_type="application/x-ndjson")
 
