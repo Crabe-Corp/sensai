@@ -47,7 +47,6 @@ TEST_INPUTS = [
     "/history",
     "/kingdom Qin",
     "/figure Qin Shi Huang",
-    "/structured-output Quelle est la capitale de Qin ?",
     "/structured-output on",
     "Résume en cinq mots la période des Royaumes Combattants.",
     "/structured-output off",

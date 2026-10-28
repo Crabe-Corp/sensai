@@ -342,11 +342,8 @@ def test_structured_response_validation():
         StructuredResponse.model_validate({})
 
 
-def test_cli_structured_output_direct_query(capsys):
+def test_cli_structured_output_direct_query_rejected_with_guidance(capsys):
     mock_client = MagicMock()
-    mock_client.chat_structured.return_value = StructuredResponse(
-        response="Qin Shi Huang a unifié la Chine en 221 av. J.-C."
-    )
 
     with patch(
         "builtins.input",
@@ -355,11 +352,9 @@ def test_cli_structured_output_direct_query(capsys):
         exit_code = run_session(mock_client, model="qwen2.5:1.5b", host="http://localhost:11434")
         assert exit_code is None
 
-    mock_client.chat_structured.assert_called_once()
-    call_kwargs = mock_client.chat_structured.call_args[1]
-    assert call_kwargs["response_format"] == StructuredResponse
+    mock_client.chat_structured.assert_not_called()
     captured = capsys.readouterr()
-    assert '"response": "Qin Shi Huang a unifié la Chine en 221 av. J.-C."' in captured.out
+    assert "[Info] /structured-output is a mode switch." in captured.out
 
 
 @patch("src.interfaces.cli.main.validate_input_with_llm", return_value=(True, ""))

@@ -6,7 +6,7 @@ from typing import Any
 from src.core import singleton_token
 from src.core.debug import is_debug, set_debug
 from src.core.ollama_client import (ChatMessage, OllamaClient, OllamaError, OllamaStructuredOutputError,)
-from src.core.schemas import HistoricalFigure, KingdomInfo, StructuredResponse
+from src.core.schemas import HistoricalFigure, KingdomInfo
 from src.features.memory import (ArtifactManager, ChatSession, ProfileManager, SessionManager, UserProfile,)
 from src.features.prompt import (Persona, PersonaManager, PromptVersion, PromptVersioningEngine, default_versioning_engine,)
 from src.features.tools.artifact_tool import (ARTIFACT_SYSTEM_INSTRUCTION, get_active_artifact, set_active_artifact,)
@@ -134,7 +134,7 @@ class Commands:
         print("  /mcp [status|connect|disconnect] : Manage connection to external MCP server")
         print("  /kingdom [name]           : Generate kingdom details in strict JSON format")
         print("  /figure [name]            : Generate historical figure details in strict JSON format")
-        print("  /structured-output [msg]  : Enable/disable JSON mode or submit a single structured request")
+        print("  /structured-output [on|off] : Enable or disable JSON structured mode")
         print("  /artifact [reset|save [path]] : Display, reset or export session artifact")
         print("  /export [pdf|md] [path]   : Export conversation or artifact as PDF or Markdown")
         print("  /simulation               : Enter in the simulation mode of the agent")
@@ -426,8 +426,8 @@ class Commands:
             print(f"[Info] Current status : {'Enabled' if self.active_tools is not None else 'Disabled'}")
 
     def enable_structured_output(self, user_prompt: str = "") -> None:
-        """Active/désactive le mode JSON strict ou soumet une requête ponctuelle.
-                PARAMS: - user_prompt - STR: requête ponctuelle ou bascule ('on', 'off')
+        """Active ou désactive le mode JSON structuré de la session.
+                PARAMS: - user_prompt - STR: bascule ('on', 'off') ou vide pour inverser l'état
                 RETURN: None"""
         parts = user_prompt.split(maxsplit=1)
         arg = parts[1].strip() if len(parts) > 1 and parts[1].strip() else None
@@ -448,31 +448,10 @@ class Commands:
             print("[Info] Structured output mode disabled.")
             return
 
-        if not self.client:
-            print("[Error] Ollama client not initialized.")
-            return
-
-        query = arg
-        try:
-            result = self.client.chat_structured(
-                model=self.model,
-                messages=[ChatMessage(role="user", content=query)],
-                response_format=StructuredResponse,
-            )
-            print(json.dumps(result.model_dump(), ensure_ascii=False))
-            self.history.append(ChatMessage(role="user", content=query))
-            self.history.append(ChatMessage(role="assistant", content=result.response))
-            if self.current_session:
-                self.current_session.messages = list(self.history)
-                self.current_session.metadata.model = self.model
-                if self.session_manager:
-                    self.session_manager.save_session(self.current_session)
-                if self.artifact_manager:
-                    self.artifact_manager.save_artifact(self.current_session.metadata.session_id, get_active_artifact())
-        except OllamaStructuredOutputError as exc:
-            print(f"[Structured Output Error] {exc}")
-        except OllamaError as exc:
-            print(f"[Error] {exc}")
+        print(
+            "[Info] /structured-output is a mode switch. Usage: /structured-output [on|off]. "
+            "Enable it and ask your question directly in the chat to benefit from RAG and history."
+        )
 
     def manage_artifact(self, user_prompt: str = "") -> None:
         """Affiche, réinitialise ou sauvegarde le livrable Markdown d'état.
