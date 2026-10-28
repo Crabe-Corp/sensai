@@ -4,13 +4,14 @@ from src.core.debug import debug_print
 
 
 def consume_tokens(amount: int, is_context: bool = False) -> None:
-    """Incrémente le compteur de tokens consommés et met à jour le contexte actif si demandé.
-            PARAMS: - amount - INT: quantité de tokens consommés par l'appel (métrique Ollama)
-                    - is_context - BOOL: indique si cet appel représente le contexte de chat principal
-            RETURN: None"""
-    singleton_token.budget_tokens += amount
+    """Incrémente le budget avec uniquement les NOUVEAUX tokens réels."""
     if is_context:
+        nouveaux_tokens = amount - singleton_token.context_tokens
+        if nouveaux_tokens > 0:
+            singleton_token.budget_tokens += nouveaux_tokens
         singleton_token.context_tokens = amount
+    else:
+        singleton_token.budget_tokens += amount
 
 
 consommer_tokens = consume_tokens
