@@ -185,6 +185,10 @@ def test_run_session_tools_commands(capsys):
     assert "get_kingdom_info" in captured.out
     assert "MCP tools enabled" in captured.out or "Outils MCP activés" in captured.out
     assert "MCP tools disabled" in captured.out or "Outils MCP désactivés" in captured.out
+    assert ("Outils enregistrés" in captured.out or "Registered tools" in captured.out)
+    assert "get_kingdom_info" in captured.out
+    assert ("Outils MCP activés" in captured.out or "MCP tools enabled" in captured.out)
+    assert ("Outils MCP désactivés" in captured.out or "MCP tools disabled" in captured.out)
 
 
 def test_run_session_mcp_status_and_disconnect(capsys):
@@ -195,6 +199,8 @@ def test_run_session_mcp_status_and_disconnect(capsys):
     captured = capsys.readouterr()
     assert "No external MCP server connected" in captured.out or "Aucun serveur MCP externe connecté" in captured.out
     assert "No MCP server was connected" in captured.out or "Aucun serveur MCP n'était connecté" in captured.out
+    assert ("Aucun serveur MCP externe connecté" in captured.out or "No external MCP server connected" in captured.out)
+    assert ("Aucun serveur MCP n'était connecté" in captured.out or "No MCP server was connected" in captured.out)
 
 
 def test_interfaces_cli_main_direct_import():
