@@ -84,7 +84,7 @@ def build_mock_client_and_engine():
     mock_client.base_url = "http://localhost:11434"
     mock_client.list_models.return_value = ["qwen2.5:3b", "llama3:latest", "mistral:latest"]
 
-    def fake_chat_structured(model: str, messages: list[Any], response_format: type[Any]):
+    def fake_chat_structured(model: str, messages: list[Any], response_format: type[Any], track_as_context=False, **kwargs):
         if response_format is KingdomInfo:
             return KingdomInfo(
                 nom="Qin",

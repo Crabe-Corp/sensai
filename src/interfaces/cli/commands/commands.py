@@ -6,7 +6,7 @@ from typing import Any
 from src.core import singleton_token
 from src.core.debug import is_debug, set_debug
 from src.core.ollama_client import (ChatMessage, OllamaClient, OllamaError, OllamaStructuredOutputError,)
-from src.core.schemas import HistoricalFigure, KingdomInfo
+from src.core.schemas import HistoricalFigure, KingdomInfo, StructuredResponse
 from src.features.memory import (ArtifactManager, ChatSession, ProfileManager, SessionManager, UserProfile,)
 from src.features.prompt import (Persona, PersonaManager, PromptVersion, PromptVersioningEngine, default_versioning_engine,)
 from src.features.sec.security import mask_pii
