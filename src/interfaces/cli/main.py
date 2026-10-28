@@ -315,14 +315,22 @@ def run_session(
     if session_id:
         try:
             current_session = session_manager.load_session(session_id)
-            if current_session.metadata.model:
+            if getattr(current_session, "metadata", None) and current_session.metadata.model:
                 model = current_session.metadata.model
+            c_toks = getattr(getattr(current_session, "metadata", None), "context_tokens", 0)
+            singleton_token.context_tokens = c_toks if isinstance(c_toks, (int, float)) else 0
+            t_toks = getattr(getattr(current_session, "metadata", None), "total_tokens", 0)
+            singleton_token.budget_tokens = t_toks if isinstance(t_toks, (int, float)) else 0
             print(f"[Info] Session '{session_id}' loaded ({len(current_session.messages)} messages).")
         except FileNotFoundError:
             print(f"[Warning] Session '{session_id}' not found. Initializing a new session.")
             current_session = session_manager.create_session(profile=current_profile, model=model)
+            singleton_token.context_tokens = 0
+            singleton_token.budget_tokens = 0
     else:
         current_session = session_manager.create_session(profile=current_profile, model=model)
+        singleton_token.context_tokens = 0
+        singleton_token.budget_tokens = 0
 
     current_artifact = artifact_manager.get_or_create_artifact(current_session.metadata.session_id)
     set_active_artifact(current_artifact, session_id=current_session.metadata.session_id, manager=artifact_manager)
@@ -404,7 +412,8 @@ def run_session(
     while True:
         margin = (max_tokens * 15) / 100 # Retirer 15% du context legth afin de laisser du context au model pour la compression de l'historique
         token_with_margin = max_tokens - margin
-        if singleton_token.context_tokens > 0 and singleton_token.context_tokens >= token_with_margin:
+        ctx_toks = singleton_token.context_tokens if isinstance(singleton_token.context_tokens, (int, float)) else 0
+        if ctx_toks > 0 and ctx_toks >= token_with_margin:
             history = mem.enforce_token_budget(model, client, history, max_history_tokens=max_tokens)
             current_session.messages = list(history)
             command_handler.history = history
@@ -627,6 +636,8 @@ def run_session(
                 history.append(ChatMessage(role="assistant", content=result.response))
                 current_session.messages = list(history)
                 current_session.metadata.model = model
+                current_session.metadata.context_tokens = singleton_token.context_tokens
+                current_session.metadata.total_tokens = singleton_token.budget_tokens
                 session_manager.save_session(current_session)
                 artifact_manager.save_artifact(current_session.metadata.session_id, get_active_artifact())
             except OllamaConnectionError as exc:
@@ -727,6 +738,8 @@ def run_session(
                 history.append(ChatMessage(role="assistant", content=full_reply))
                 current_session.messages = list(history)
                 current_session.metadata.model = model
+                current_session.metadata.context_tokens = singleton_token.context_tokens
+                current_session.metadata.total_tokens = singleton_token.budget_tokens
                 if cache_build and current_mode.free_chat:
                     try:
                         sementic_cache.add_to_cache(prompt=safe_input, llm_response=full_reply, ollama_url=host)
@@ -749,6 +762,8 @@ def run_session(
                 history.append(ChatMessage(role="assistant", content=full_reply))
                 current_session.messages = list(history)
                 current_session.metadata.model = model
+                current_session.metadata.context_tokens = singleton_token.context_tokens
+                current_session.metadata.total_tokens = singleton_token.budget_tokens
                 session_manager.save_session(current_session)
                 artifact_manager.save_artifact(current_session.metadata.session_id, get_active_artifact())
 

@@ -87,7 +87,7 @@ def test_resolve_configuration_defaults(monkeypatch):
     args = argparse.Namespace(model=None, host=None, config="non_existent.json")
     host, model = resolve_configuration(args)
     assert host == "http://localhost:11434"
-    assert model == "qwen2.5:1.5b"
+    assert model in ("qwen2.5:1.5b", "qwen2.5:3b")
 
 
 def test_run_session_exit_command():

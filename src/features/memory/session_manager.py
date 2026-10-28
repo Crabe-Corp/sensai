@@ -25,6 +25,8 @@ class SessionMetadata(BaseModel):
     model: str = Field(default="qwen2.5:3b", alias="model_name")
     username: str | None = None
     source: str = "local"
+    context_tokens: int = 0
+    total_tokens: int = 0
 
     @property
     def id(self) -> str:
@@ -63,6 +65,8 @@ class ChatSession(BaseModel):
                 "updated_at": data.get("updated_at") or "",
                 "username": data.get("username"),
                 "source": data.get("source", "web"),
+                "context_tokens": data.get("context_tokens", 0) or 0,
+                "total_tokens": data.get("total_tokens", 0) or 0,
             }
             return {"metadata": meta, "messages": data.get("messages", [])}
         return data

@@ -165,12 +165,15 @@ class Commands:
                 RETURN: None"""
         self.history.clear()
         singleton_token.context_tokens = 0
+        singleton_token.budget_tokens = 0
         if self.current_persona:
             self._apply_persona_to_history(self.current_persona)
         elif self.current_profile:
             self.history.append(ChatMessage(role="system", content=self.current_profile.format_system_prompt()))
         if self.current_session:
             self.current_session.messages = list(self.history)
+            self.current_session.metadata.context_tokens = 0
+            self.current_session.metadata.total_tokens = 0
             if self.session_manager:
                 self.session_manager.save_session(self.current_session)
         print("[Info] Session history reset.")
@@ -305,7 +308,10 @@ class Commands:
                     self.current_session = self.session_manager.load_session(target_id)
                     self.history.clear()
                     self.history.extend(self.current_session.messages)
-                    singleton_token.context_tokens = 0
+                    c_toks = getattr(getattr(self.current_session, "metadata", None), "context_tokens", 0)
+                    singleton_token.context_tokens = c_toks if isinstance(c_toks, (int, float)) else 0
+                    t_toks = getattr(getattr(self.current_session, "metadata", None), "total_tokens", 0)
+                    singleton_token.budget_tokens = t_toks if isinstance(t_toks, (int, float)) else 0
                     if self.current_session.metadata.model:
                         self.model = self.current_session.metadata.model
                     if self.artifact_manager:
@@ -322,6 +328,7 @@ class Commands:
             self.history.clear()
             self.history.extend(self.current_session.messages)
             singleton_token.context_tokens = 0
+            singleton_token.budget_tokens = 0
             if self.artifact_manager:
                 current_artifact = self.artifact_manager.get_or_create_artifact(self.current_session.metadata.session_id)
                 set_active_artifact(current_artifact, session_id=self.current_session.metadata.session_id, manager=self.artifact_manager)
@@ -338,6 +345,7 @@ class Commands:
                         self.history.clear()
                         self.history.extend(self.current_session.messages)
                         singleton_token.context_tokens = 0
+                        singleton_token.budget_tokens = 0
                         if self.artifact_manager:
                             current_artifact = self.artifact_manager.get_or_create_artifact(self.current_session.metadata.session_id)
                             set_active_artifact(current_artifact, session_id=self.current_session.metadata.session_id, manager=self.artifact_manager)
@@ -469,6 +477,8 @@ class Commands:
             if self.current_session:
                 self.current_session.messages = list(self.history)
                 self.current_session.metadata.model = self.model
+                self.current_session.metadata.context_tokens = singleton_token.context_tokens
+                self.current_session.metadata.total_tokens = singleton_token.budget_tokens
                 if self.session_manager:
                     self.session_manager.save_session(self.current_session)
                 if self.artifact_manager:
