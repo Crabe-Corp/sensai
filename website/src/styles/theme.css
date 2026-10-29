@@ -1,0 +1,58 @@
+/* Thème Dark Obsidian épuré pour SensAI (Direction artistique Linear / Dub.co) */
+
+:root {
+  --sl-color-accent-low: #18191d;
+  --sl-color-accent: #3b82f6;
+  --sl-color-accent-high: #93c5fd;
+  --sl-color-white: #fafafa;
+  --sl-color-gray-1: #e4e4e7;
+  --sl-color-gray-2: #a1a1aa;
+  --sl-color-gray-3: #71717a;
+  --sl-color-gray-4: #3f3f46;
+  --sl-color-gray-5: #27272a;
+  --sl-color-gray-6: #18181b;
+  --sl-color-black: #09090b;
+}
+
+:root[data-theme='light'] {
+  --sl-color-accent-low: #eff6ff;
+  --sl-color-accent: #2563eb;
+  --sl-color-accent-high: #1d4ed8;
+  --sl-color-white: #09090b;
+  --sl-color-gray-1: #18181b;
+  --sl-color-gray-2: #27272a;
+  --sl-color-gray-3: #52525b;
+  --sl-color-gray-4: #a1a1aa;
+  --sl-color-gray-5: #e4e4e7;
+  --sl-color-gray-6: #f4f4f5;
+  --sl-color-gray-7: #fafafa;
+  --sl-color-black: #ffffff;
+}
+
+/* Polices & Typographie système moderne */
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  letter-spacing: -0.01em;
+}
+
+/* Bordures fines et nettes */
+.sidebar-pane, .header {
+  border-color: #27272a !important;
+}
+
+/* Tableaux sobres */
+table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 1.5rem 0;
+}
+
+th, td {
+  border: 1px solid #27272a;
+  padding: 0.6rem 0.9rem;
+  font-size: 0.9rem;
+}
+
+th {
+  background-color: #121316;
+}
