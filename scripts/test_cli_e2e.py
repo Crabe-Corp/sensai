@@ -82,9 +82,9 @@ def build_mock_client_and_engine():
             RETURN: tuple contenant le client simulé et la fonction fake_run_stream"""
     mock_client = MagicMock(spec=OllamaClient)
     mock_client.base_url = "http://localhost:11434"
-    mock_client.list_models.return_value = ["qwen2.5:1.5b", "llama3:latest", "mistral:latest"]
+    mock_client.list_models.return_value = ["qwen2.5:3b", "llama3:latest", "mistral:latest"]
 
-    def fake_chat_structured(model: str, messages: list[Any], response_format: type[Any]):
+    def fake_chat_structured(model: str, messages: list[Any], response_format: type[Any], track_as_context=False, **kwargs):
         if response_format is KingdomInfo:
             return KingdomInfo(
                 nom="Qin",
@@ -190,7 +190,7 @@ def run_e2e_test(live_mode: bool = False) -> tuple[str, list[tuple[str, bool, st
                 with patch("sys.stdout", captured_stdout), patch("builtins.input", lambda _: next(input_generator)):
                     run_session(
                         client=real_client,
-                        model="qwen2.5:1.5b",
+                        model="qwen2.5:3b",
                         host="http://localhost:11434",
                         tools=None,
                         profile_name="default",
@@ -204,7 +204,7 @@ def run_e2e_test(live_mode: bool = False) -> tuple[str, list[tuple[str, bool, st
                 with patch("src.interfaces.cli.main.ConversationEngine.run_stream", side_effect=fake_stream):
                     run_session(
                         client=mock_client,
-                        model="qwen2.5:1.5b",
+                        model="qwen2.5:3b",
                         host="http://localhost:11434",
                         tools=None,
                         profile_name="default",

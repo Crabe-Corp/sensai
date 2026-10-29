@@ -178,7 +178,7 @@ def save_conversation(
     """Enregistre ou met à jour une conversation et ses messages."""
     meta = payload.get("metadata", payload)
     title = meta.get("title") or payload.get("title")
-    model_name = meta.get("model") or meta.get("model_name") or payload.get("model_name") or "qwen2.5:1.5b"
+    model_name = meta.get("model") or meta.get("model_name") or payload.get("model_name") or "qwen2.5:3b"
     raw_messages = payload.get("messages", [])
 
     conv = db.query(Conversation).filter(Conversation.id == conversation_id).first()

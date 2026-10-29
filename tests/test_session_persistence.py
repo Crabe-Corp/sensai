@@ -244,6 +244,8 @@ class TestCliIntegrationPersistence:
 
         sess1 = sm.create_session(profile=None, model="qwen2.5:1.5b", title="Ancienne Guerre")
         sess1.add_message(ChatMessage(role="user", content="Souvenir de combat"))
+        sess1.metadata.context_tokens = 150
+        sess1.metadata.total_tokens = 150
         sm.save_session(sess1)
 
         inputs = [
@@ -251,6 +253,7 @@ class TestCliIntegrationPersistence:
             "/session new Campagne_Nord",
             f"/session load {sess1.metadata.session_id}",
             "/history",
+            "/budget",
             "/session delete session_inconnue",
             "/exit",
         ]
@@ -269,6 +272,7 @@ class TestCliIntegrationPersistence:
         assert "Campagne_Nord" in captured.out
         assert f"Session '{sess1.metadata.session_id}' loaded successfully" in captured.out
         assert "1 message(s) in memory" in captured.out
+        assert "Token budget : 150" in captured.out
 
     def test_cli_profile_commands_show_and_load(self, tmp_path: Path, capsys):
         sm = SessionManager(storage_dir=tmp_path / "sessions")

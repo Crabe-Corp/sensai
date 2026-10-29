@@ -9,7 +9,7 @@ from src.RAG.RAG_embedding import COLLECTION_NAME, get_embedding, get_bm25_model
 logger = logging.getLogger(__name__)
 
 
-def extract_character(prompt: str, ollama_url: str = "http://localhost:11434", ollama_model: str = "qwen2.5:1.5b") -> str | None:
+def extract_character(prompt: str, ollama_url: str = "http://localhost:11434", ollama_model: str = "qwen2.5:3b") -> str | None:
     """Extrait le nom du personnage historique principal mentionné dans la question.
             PARAMS: - prompt - STR: texte de la requête utilisateur
                     - ollama_url - STR: adresse racine du serveur Ollama
@@ -71,7 +71,7 @@ def retrieve_rag_context(
     qdrant_host: str = "localhost",
     qdrant_port: int = 6333,
     ollama_url: str = "http://localhost:11434",
-    ollama_model: str = "qwen2.5:1.5b",
+    ollama_model: str = "qwen2.5:3b",
     min_sources: int = 2,
     fallback_web: bool = False,
     return_count: bool = False,

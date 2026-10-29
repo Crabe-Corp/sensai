@@ -140,7 +140,7 @@ def get_metadata(text):
 
     try:
         response = requests.post("http://localhost:11434/api/generate", json={
-            "model": "qwen2.5:1.5b",
+            "model": "qwen2.5:3b",
             # possibilité de modifier ce filtre pour ajouter des precision si par exemple on veut aussi le pays
             "prompt": f"Extraire le personnage historique principal de ce texte. Retourne UNIQUEMENT un format JSON valide strict, par exemple: {{\"personnage_principal\": \"Li Xin\"}}. S'il n'y en a pas, retourne {{\"personnage_principal\": \"Aucun\"}}. Texte : {text}",
             "stream": False,

@@ -197,7 +197,7 @@ def test_cli_artifact_interactive_commands(tmp_path: Path, capsys: pytest.Captur
     mock_session_mgr = MagicMock()
     mock_session = MagicMock()
     mock_session.metadata.session_id = session_id
-    mock_session.metadata.model = "qwen2.5:1.5b"
+    mock_session.metadata.model = "qwen2.5:3b"
     mock_session.messages = []
     mock_session_mgr.load_session.return_value = mock_session
     mock_session_mgr.create_session.return_value = mock_session
@@ -215,7 +215,7 @@ def test_cli_artifact_interactive_commands(tmp_path: Path, capsys: pytest.Captur
     with patch("builtins.input", side_effect=user_inputs):
         run_session(
             client=mock_client,
-            model="qwen2.5:1.5b",
+            model="qwen2.5:3b",
             host="http://localhost:11434",
             tools=True,
             session_id=session_id,
