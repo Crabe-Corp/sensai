@@ -30,8 +30,15 @@ FORM_TOOL_NAME = "ask_user_form"
 FORM_BLOCK_LANG = "sensai-form"
 CONFIRM_BLOCK_LANG = "sensai-confirm"
 DESTRUCTIVE_TOOLS = {"write_manuscript_file", "update_kingdom_database"}
+# Outils en lecture seule que l'IA utilise quand elle en a besoin : toujours actifs, sans réglage utilisateur
+READ_ONLY_TOOLS = {
+    "read_manuscript_file",
+    "search_historical_archives",
+    "get_kingdom_info",
+    "query_kingdom_database",
+}
 # Outils internes actifs par défaut pour l'IA, masqués dans les contrôles utilisateur
-INTERNAL_TOOLS = {FORM_TOOL_NAME}
+INTERNAL_TOOLS = {FORM_TOOL_NAME} | READ_ONLY_TOOLS
 
 _executor = ToolExecutor(registry=default_registry)
 _mcp_tool_names: set = set()
