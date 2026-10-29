@@ -162,7 +162,7 @@ def get_dense_embedding(prompt: str, ollama_url: str = "http://localhost:11434")
         return None
 
 
-def get_qdrant_client(host: str = "localhost", port: int = 6333):
+def get_qdrant_client(host: str = os.getenv("QDRANT_HOST", "localhost"), port: int = 6333):
     """Retrieve active Qdrant client instance or initialize if needed.
             PARAMS: - host - STR: Qdrant host
                     - port - INT: Qdrant port
@@ -173,7 +173,7 @@ def get_qdrant_client(host: str = "localhost", port: int = 6333):
     return _qdrant_client
 
 
-def create_cache(collection: str = "SEMENTIC_CACHE", host: str = "localhost", port: int = 6333):
+def create_cache(collection: str = "SEMENTIC_CACHE", host: str = os.getenv("QDRANT_HOST", "localhost"), port: int = 6333):
     """Initialize Qdrant collection for semantic cache if needed.
             PARAMS: - collection - STR: collection name
                     - host - STR: Qdrant host address

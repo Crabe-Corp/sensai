@@ -1078,9 +1078,6 @@ async def chat_stream(
                                 tool_output = await asyncio.to_thread(run_tool_confirmed, t_name, approved_args)
                             else:
                                 tool_output = await asyncio.to_thread(run_tool, t_name, t_args)
-                            info_text = f"\n\n*[Outil exécuté : {t_name}]*\n```json\n{tool_output}\n```\n\n"
-                            accumulated_text += info_text
-                            yield json.dumps({"type": "chunk", "content": info_text}) + "\n"
 
                             history.append({"role": "tool", "tool_name": t_name, "content": tool_output})
 
@@ -1125,7 +1122,6 @@ async def chat_stream(
         if (
             accumulated_text.strip()
             and "```sensai-" not in accumulated_text
-            and "[Outil exécuté" not in accumulated_text
             and not accumulated_text.startswith("[Erreur")
             and not accumulated_text.startswith("[Connexion")
             and not accumulated_text.startswith("[Le modèle")
