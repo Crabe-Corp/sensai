@@ -224,7 +224,7 @@ def rework_response_stream(
         messages.append({"role": "system", "content": system_prompt})
     messages.append({"role": "user", "content": prompt})
 
-    yield from client.chat_stream(model=model, messages=messages)
+    yield from client.chat_stream(model=model, messages=messages, track_as_context=False)
 
 
 # Backward compatibility alias
@@ -298,6 +298,7 @@ def rework_structured_response(
         model=model,
         messages=[{"role": "user", "content": prompt}],
         response_format=response_format,
+        track_as_context=False,
     )
 
 

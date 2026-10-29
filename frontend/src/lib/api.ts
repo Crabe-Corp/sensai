@@ -1,4 +1,4 @@
-import type { Conversation, Message, ToolInfo, McpServer, User } from '../types'
+import type { Conversation, Message, ToolInfo, McpServer, User, Persona } from '../types'
 
 const TOKEN_KEY = 'sensai_auth_token'
 
@@ -155,9 +155,19 @@ export const api = {
     return response.json()
   },
 
+  async clearCache(conversationId: string): Promise<{ success: boolean; message: string }> {
+    return apiFetch<{ success: boolean; message: string }>(`/api/conversations/${conversationId}/clearcache`, {
+      method: 'POST',
+    })
+  },
+
   // Models & Tools
   async getModels(): Promise<{ models: string[]; default: string }> {
     return apiFetch<{ models: string[]; default: string }>('/api/models')
+  },
+
+  async getPersonas(): Promise<Persona[]> {
+    return apiFetch<Persona[]>('/api/models/personas')
   },
 
   async getTools(): Promise<ToolInfo[]> {
@@ -193,6 +203,53 @@ export const api = {
     })
   },
 
+  async getMcpStatus(serverId?: string): Promise<{
+    connected: boolean
+    status?: string
+    tools_count?: number
+    tools?: string[]
+    connected_servers?: string[]
+    servers?: McpServer[]
+  }> {
+    const query = serverId ? `?server_id=${encodeURIComponent(serverId)}` : ''
+    return apiFetch<{
+      connected: boolean
+      status?: string
+      tools_count?: number
+      tools?: string[]
+      connected_servers?: string[]
+      servers?: McpServer[]
+    }>(`/api/mcp/status${query}`)
+  },
+
+  async connectMcpServer(data: { server_id?: string; command?: string; endpoint?: string }): Promise<{
+    success: boolean
+    server_id: string
+    status: string
+    tools_count: number
+    tools: string[]
+    server: McpServer
+  }> {
+    return apiFetch<{
+      success: boolean
+      server_id: string
+      status: string
+      tools_count: number
+      tools: string[]
+      server: McpServer
+    }>('/api/mcp/connect', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  },
+
+  async disconnectMcpServer(serverId?: string): Promise<{ success: boolean; server_id?: string; status?: string; message?: string }> {
+    return apiFetch<{ success: boolean; server_id?: string; status?: string; message?: string }>('/api/mcp/disconnect', {
+      method: 'POST',
+      body: JSON.stringify(serverId ? { server_id: serverId } : {}),
+    })
+  },
+
   async branchConversation(
     conversationId: string,
     messageId: string,
@@ -221,7 +278,7 @@ export const api = {
     conversationId: string,
     params: { content: string; model?: string; tools_enabled?: string[]; system_instruction?: string },
     onChunk: (chunk: string) => void,
-    onDone: (data: { message_id: string; user_message_id?: string; prompt_tokens: number; completion_tokens: number; total_tokens: number; conversation_total_tokens: number }) => void,
+    onDone: (data: { message_id: string; user_message_id?: string; prompt_tokens: number; completion_tokens: number; total_tokens: number; conversation_total_tokens: number; from_cache?: boolean }) => void,
     onError: (err: Error) => void,
     signal?: AbortSignal,
     onAbort?: (accumulatedText: string) => void,

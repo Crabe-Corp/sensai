@@ -8,6 +8,7 @@ if str(_BACKEND_DIR) not in sys.path:
 from backend.tools_registry import (
     FORM_TOOL_NAME,
     INTERNAL_TOOLS,
+    READ_ONLY_TOOLS,
     list_tools,
     selected_tool_names,
 )
@@ -34,6 +35,22 @@ def test_list_tools_visibility():
 
     assert "structured_output" in tools_by_id
     assert tools_by_id["structured_output"]["visible"] is True
+
+
+def test_read_only_tools_are_active_by_default_and_hidden():
+    tools_by_id = {t["id"]: t for t in list_tools()}
+    selected = selected_tool_names([])
+    for name in READ_ONLY_TOOLS:
+        assert tools_by_id[name]["visible"] is False
+        assert name in selected
+
+
+def test_write_and_external_tools_stay_opt_in():
+    selected = selected_tool_names([])
+    for name in ("web_search", "write_manuscript_file", "update_kingdom_database", "generate_pdf_document"):
+        assert name not in selected
+    tools_by_id = {t["id"]: t for t in list_tools()}
+    assert tools_by_id["write_manuscript_file"]["visible"] is True
 
 
 def test_selected_tool_names_always_includes_internal_tools():

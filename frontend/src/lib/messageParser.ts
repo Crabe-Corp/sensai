@@ -1,4 +1,4 @@
-import type { MessageAttachment, FormSpec } from '../types'
+import type { MessageAttachment, FormSpec, ConfirmationSpec } from '../types'
 
 export interface ParsedAttachment {
   name: string
@@ -97,4 +97,44 @@ export function formatFormAnswers(form: FormSpec, answers: Record<string, string
       return `- ${q.label} : ${typeof value === 'boolean' ? (value ? 'Oui' : 'Non') : value}`
     })
   return `Réponses au formulaire « ${form.title} » :\n${lines.join('\n')}`
+}
+
+
+// --- Confirmations d'actions sensibles (Human-in-the-Loop [A3]) ---
+
+const CONFIRM_BLOCK_PATTERN = /```sensai-confirm\n([\s\S]*?)\n```/
+
+export interface ParsedConfirmMessage {
+  text: string
+  confirmation: ConfirmationSpec | null
+}
+
+export function parseConfirmMessage(content: string): ParsedConfirmMessage {
+  if (!content) return { text: '', confirmation: null }
+
+  const match = CONFIRM_BLOCK_PATTERN.exec(content)
+  if (match) {
+    try {
+      const data = JSON.parse(match[1])
+      const summary = data.summary || data.title || data.message || "Confirmation requise pour une action destructive"
+      const confirmation: ConfirmationSpec = {
+        action_id: data.action_id || data.id,
+        tool_name: data.tool_name || data.tool,
+        summary,
+        action_type: data.action_type || (data.tool_name === 'write_manuscript_file' ? 'file_write' : 'db_update'),
+        details: data.details,
+      }
+      return { text: content.replace(CONFIRM_BLOCK_PATTERN, '').trim(), confirmation }
+    } catch {
+      return { text: content, confirmation: null }
+    }
+  }
+
+  return { text: content, confirmation: null }
+}
+
+export function stripConfirmBlock(content: string): { text: string; confirmPending: boolean } {
+  const start = content.indexOf('```sensai-confirm')
+  if (start === -1) return { text: content, confirmPending: false }
+  return { text: content.slice(0, start).trim(), confirmPending: true }
 }

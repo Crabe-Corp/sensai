@@ -15,6 +15,7 @@ from src.core.db.database import init_database
 from src.core import memory_management as mem, singleton_token
 from src.core.debug import debug_print, is_debug, set_debug
 from src.core import sementic_cache
+from src.core import sementic_cache as semantic_cache
 from src.core.engine import (
     ConversationEngine,
     EngineEvent,
@@ -66,7 +67,7 @@ from src.interfaces.cli.commands.commands import Command, Commands, command
 
 DEFAULT_CONFIG_PATH = Path("config.json")
 DEFAULT_HOST = "http://localhost:11434"
-DEFAULT_MODEL = "qwen2.5:1.5b"
+DEFAULT_MODEL = "qwen2.5:3b"
 
 def load_config_file(config_path: Path) -> dict[str, Any]:
     """Charge et lit le fichier de configuration JSON s'il existe sur le disque.
@@ -121,7 +122,7 @@ def parse_arguments(argv: list[str] | None = None) -> argparse.Namespace:
         "--model",
         type=str,
         default=None,
-        help="Nom du modèle Ollama à utiliser (ex: qwen2.5:1.5b, llama3, mistral).",
+        help="Nom du modèle Ollama à utiliser (ex: qwen2.5:3b, llama3, mistral).",
     )
     parser.add_argument(
         "-H",
@@ -314,14 +315,22 @@ def run_session(
     if session_id:
         try:
             current_session = session_manager.load_session(session_id)
-            if current_session.metadata.model:
+            if getattr(current_session, "metadata", None) and current_session.metadata.model:
                 model = current_session.metadata.model
-            print(f"[Info] Session '{session_id}' chargée ({len(current_session.messages)} messages).")
+            c_toks = getattr(getattr(current_session, "metadata", None), "context_tokens", 0)
+            singleton_token.context_tokens = c_toks if isinstance(c_toks, (int, float)) else 0
+            t_toks = getattr(getattr(current_session, "metadata", None), "total_tokens", 0)
+            singleton_token.budget_tokens = t_toks if isinstance(t_toks, (int, float)) else 0
+            print(f"[Info] Session '{session_id}' loaded ({len(current_session.messages)} messages).")
         except FileNotFoundError:
             print(f"[Warning] Session '{session_id}' not found. Initializing a new session.")
             current_session = session_manager.create_session(profile=current_profile, model=model)
+            singleton_token.context_tokens = 0
+            singleton_token.budget_tokens = 0
     else:
         current_session = session_manager.create_session(profile=current_profile, model=model)
+        singleton_token.context_tokens = 0
+        singleton_token.budget_tokens = 0
 
     current_artifact = artifact_manager.get_or_create_artifact(current_session.metadata.session_id)
     set_active_artifact(current_artifact, session_id=current_session.metadata.session_id, manager=artifact_manager)
@@ -403,7 +412,8 @@ def run_session(
     while True:
         margin = (max_tokens * 15) / 100 # Retirer 15% du context legth afin de laisser du context au model pour la compression de l'historique
         token_with_margin = max_tokens - margin
-        if singleton_token.budget_tokens >= token_with_margin:
+        ctx_toks = singleton_token.context_tokens if isinstance(singleton_token.context_tokens, (int, float)) else 0
+        if ctx_toks > 0 and ctx_toks >= token_with_margin:
             history = mem.enforce_token_budget(model, client, history, max_history_tokens=max_tokens)
             current_session.messages = list(history)
             command_handler.history = history
@@ -444,9 +454,19 @@ def run_session(
                 print("[Info] Encyclopedia mode activated. Current simulation closed.")
             continue
 
-        cmd_name = command_handler.check_command(user_input)
+        safe_input, _has_confidential_data = mask_pii(user_input)
+
+        cmd_name = command_handler.check_command(safe_input)
         if cmd_name:
-            should_continue = command_handler.execute_command(cmd_name, user_input)
+            if cmd_name in ("/kingdom", "/figure"):
+                parts = safe_input.split(maxsplit=1)
+                target_entity = parts[1].strip() if len(parts) > 1 else ""
+                if target_entity:
+                    is_valid, error_message = validate_input_with_llm(target_entity, client, model)
+                    if not is_valid:
+                        print(f"\nAssistant > {error_message}")
+                        continue
+            should_continue = command_handler.execute_command(cmd_name, safe_input)
             model = command_handler.model
             rag_enabled = command_handler.rag_enabled
             structured_mode = command_handler.structured_mode
@@ -460,8 +480,16 @@ def run_session(
                 break
             continue
 
+        from src.features.pdf import build_pdf_historical_veracity_prompt, detect_and_prepare_pdf_audit
 
-        safe_input, _has_confidential_data = mask_pii(user_input)
+        pdf_audit = detect_and_prepare_pdf_audit(safe_input)
+        if pdf_audit is not None:
+            _pdf_path, pdf_instruction, pdf_info = pdf_audit
+            print(
+                f"[PDF Detected] '{pdf_info.file_name}' ({pdf_info.extracted_pages}/{pdf_info.total_pages} page(s), "
+                f"{len(pdf_info.content)} chars) — Historical veracity audit..."
+            )
+            safe_input = build_pdf_historical_veracity_prompt(pdf_info, pdf_instruction)
 
         if current_mode.free_chat:
             is_valid, error_message = validate_input_with_llm(safe_input, client, model)
@@ -470,7 +498,9 @@ def run_session(
                 continue
 
         augmented_input = safe_input
-        if cache_build and current_mode.free_chat:
+        rag_found = False
+
+        if cache_build and current_mode.free_chat and pdf_audit is None:
             try:
                 cache_result = sementic_cache.get_info_cache(prompt=safe_input, ollama_url=host, model=model)
                 if cache_result is not None and is_french_text(cache_result):
@@ -492,38 +522,97 @@ def run_session(
         if rag_enabled and current_mode.free_chat:
             try:
                 from src.RAG.retriever import retrieve_rag_context
-                rag_ctx = retrieve_rag_context(safe_input, ollama_url=host, ollama_model=model)
+                rag_query = (
+                    f"{pdf_audit[1]} {pdf_audit[2].file_name} {pdf_audit[2].content[:250]}".strip()
+                    if pdf_audit is not None
+                    else safe_input
+                )
+                rag_res = retrieve_rag_context(
+                    rag_query,
+                    ollama_url=host,
+                    ollama_model=model,
+                    fallback_web=True,
+                    return_count=True,
+                )
+                if isinstance(rag_res, tuple):
+                    rag_ctx, source_count = rag_res
+                else:
+                    rag_ctx = rag_res
+                    source_count = rag_ctx.count("[Source :") if rag_ctx else 0
+
                 if rag_ctx:
-                    debug_print("[RAG] Historical context injected from chronicles.")
-                    augmented_input = (
-                        f"You are an expert strategic advisor on the 7 Warring States of Ancient China.\n\n"
-                        f"HISTORICAL DOCUMENTS:\n"
-                        f"======================\n"
-                        f"{rag_ctx}\n"
-                        f"======================\n\n"
-                        f"RESPONSE INSTRUCTIONS:\n"
-                        f"1. CONTEXT USAGE: Synthesize and respond directly by relying on the historical facts attested in the documents above to enlighten the Lord.\n"
-                        f"2. HANDLING MISSING INFORMATION: If and only if the documents above contain absolutely NO information to answer the question, respond only with 'My chronicles do not mention this information.' NEVER use this phrase if you provide any relevant facts or partial answers in your response.\n"
-                        f"3. ARMY SIZE CORRECTION: The ancient texts (Shiji and Zhan Guo Ce) contain classical translation conventions. If they mention Chinese army sizes in tens of thousands (e.g., 20,000 or 60,000), it stems from the Chinese numeral unit 'Wan' (10,000). Always multiply these military counts by 10 (e.g., 200,000) to reflect historical reality.\n"
-                        f"4. ANTI-CONFUSION: The documents may relate stories of multiple different generals (e.g., Li Xin, Han Xin, Wang Jian). Do NOT mix their accounts. Only answer with facts explicitly associated with the topic requested by the Lord.\n"
-                        f"5. LANGUAGE: You must ALWAYS formulate your entire response in English.\n\n"
-                        f"Lord's Question: {safe_input}"
-                    )
+                    rag_found = True
+                    if source_count >= 2:
+                        debug_print(f"[RAG] Historical context sufficient ({source_count} sources found in chronicles).")
+                        augmented_input = (
+                            f"You are an expert strategic advisor on the 7 Warring States of Ancient China.\n\n"
+                            f"HISTORICAL DOCUMENTS (archives locales fournies ci-dessous ({source_count} sources trouvées)):\n"
+                            f"======================\n"
+                            f"{rag_ctx}\n"
+                            f"======================\n\n"
+                            f"RESPONSE INSTRUCTIONS:\n"
+                            f"1. CONTEXT USAGE: Synthesize and respond directly by relying on the historical facts attested in the documents above to enlighten the Lord. Call the 'web_search' tool only if you judge it necessary.\n"
+                            f"2. HANDLING MISSING INFORMATION: If and only if the documents above contain absolutely NO information to answer the question, respond only with 'My chronicles do not mention this information.' NEVER use this phrase if you provide any relevant facts or partial answers in your response.\n"
+                            f"3. ARMY SIZE CORRECTION: The ancient texts (Shiji and Zhan Guo Ce) contain classical translation conventions. If they mention Chinese army sizes in tens of thousands (e.g., 20,000 or 60,000), it stems from the Chinese numeral unit 'Wan' (10,000). Always multiply these military counts by 10 (e.g., 200,000) to reflect historical reality.\n"
+                            f"4. ANTI-CONFUSION: The documents may relate stories of multiple different generals (e.g., Li Xin, Han Xin, Wang Jian). Do NOT mix their accounts. Only answer with facts explicitly associated with the topic requested by the Lord.\n"
+                            f"5. LANGUAGE: You must ALWAYS formulate your entire response in English.\n\n"
+                            f"Lord's Question: {safe_input}"
+                        )
+                    elif source_count == 1:
+                        debug_print("[RAG] Sources locales parcellaires (1 seule source). Complément automatique via recherche Web...")
+                        augmented_input = (
+                            f"You are an expert strategic advisor on the 7 Warring States of Ancient China.\n\n"
+                            f"### ARCHIVES ET SOURCES COMPLÉMENTAIRES :\n"
+                            f"======================\n"
+                            f"{rag_ctx}\n"
+                            f"======================\n\n"
+                            f"RESPONSE INSTRUCTIONS:\n"
+                            f"1. CONTEXT USAGE: Les archives locales ne contiennent qu'une seule source très partielle. Ne te limite pas à une réponse courte de 3 lignes ! Utilize both local chronicle excerpts and Web search findings to develop a rich, structured answer.\n"
+                            f"2. HANDLING MISSING INFORMATION: If and only if the documents above contain absolutely NO information to answer the question, respond only with 'My chronicles do not mention this information.' NEVER use this phrase if you provide any relevant facts or partial answers in your response.\n"
+                            f"3. ARMY SIZE CORRECTION: The ancient texts (Shiji and Zhan Guo Ce) contain classical translation conventions. If they mention Chinese army sizes in tens of thousands (e.g., 20,000 or 60,000), it stems from the Chinese numeral unit 'Wan' (10,000). Always multiply these military counts by 10 (e.g., 200,000) to reflect historical reality.\n"
+                            f"4. ANTI-CONFUSION: The documents may relate stories of multiple different generals (e.g., Li Xin, Han Xin, Wang Jian). Do NOT mix their accounts. Only answer with facts explicitly associated with the topic requested by the Lord.\n"
+                            f"5. LANGUAGE: You must ALWAYS formulate your entire response in English.\n\n"
+                            f"Lord's Question: {safe_input}"
+                        )
+                    else:
+                        debug_print("[RAG] Aucune archive locale trouvée. Bascule automatique sur la recherche Web...")
+                        augmented_input = (
+                            f"You are an expert strategic advisor on the 7 Warring States of Ancient China.\n\n"
+                            f"### INFORMATIONS WEB :\n"
+                            f"======================\n"
+                            f"{rag_ctx}\n"
+                            f"======================\n\n"
+                            f"RESPONSE INSTRUCTIONS:\n"
+                            f"1. CONTEXT USAGE: Aucune archive locale n'a été trouvée pour cette question. Rely on the Web search findings above to formulate a complete and documented answer.\n"
+                            f"2. ARMY SIZE CORRECTION: If army sizes are mentioned in tens of thousands, remember the classical Chinese numeral unit 'Wan' (10,000) and multiply by 10 (e.g., 200,000) to reflect historical reality.\n"
+                            f"3. ANTI-CONFUSION: Do not mix stories of different historical figures. Only answer with facts explicitly associated with the requested topic.\n"
+                            f"4. LANGUAGE: You must ALWAYS formulate your entire response in English.\n\n"
+                            f"Lord's Question: {safe_input}"
+                        )
             except Exception:
                 pass
 
-
-        user_msg = ChatMessage(role="user", content=augmented_input)
+        if not rag_found and active_tools is not None:
+            augmented_input = (
+                f"{safe_input}\n\n"
+                f"[Système : Aucune archive locale n'a été trouvée dans les chroniques historiques pour cette question. "
+                f"Utilise l'outil 'web_search' pour rechercher les informations manquantes si nécessaire.]"
+            )
+        user_msg = ChatMessage(role="user", content=safe_input)
         history.append(user_msg)
 
         if structured_mode and current_mode.free_chat:
             sys.stdout.write("\nAssistant > ")
             sys.stdout.flush()
             try:
+                structured_messages = list(history)
+                if augmented_input != safe_input and structured_messages and structured_messages[-1].role == "user":
+                    structured_messages[-1] = ChatMessage(role="user", content=augmented_input)
                 result = client.chat_structured(
                     model=model,
-                    messages=list(history),
+                    messages=structured_messages,
                     response_format=StructuredResponse,
+                    track_as_context=True,
                 )
                 eval_res = auto_evaluation.evaluate_ai_response(
                     client=client,
@@ -554,6 +643,8 @@ def run_session(
                 history.append(ChatMessage(role="assistant", content=result.response))
                 current_session.messages = list(history)
                 current_session.metadata.model = model
+                current_session.metadata.context_tokens = singleton_token.context_tokens
+                current_session.metadata.total_tokens = singleton_token.budget_tokens
                 session_manager.save_session(current_session)
                 artifact_manager.save_artifact(current_session.metadata.session_id, get_active_artifact())
             except OllamaConnectionError as exc:
@@ -575,6 +666,8 @@ def run_session(
         engine = engines[current_mode.name]
         mode_tools = current_mode.registry if current_mode.force_tools else active_tools
         call_messages = build_call_messages(current_mode, history)
+        if augmented_input != safe_input and call_messages and call_messages[-1].role == "user":
+            call_messages[-1] = ChatMessage(role="user", content=augmented_input)
 
         response_chunks: list[str] = []
         try:
@@ -652,6 +745,8 @@ def run_session(
                 history.append(ChatMessage(role="assistant", content=full_reply))
                 current_session.messages = list(history)
                 current_session.metadata.model = model
+                current_session.metadata.context_tokens = singleton_token.context_tokens
+                current_session.metadata.total_tokens = singleton_token.budget_tokens
                 if cache_build and current_mode.free_chat:
                     try:
                         sementic_cache.add_to_cache(prompt=safe_input, llm_response=full_reply, ollama_url=host)
@@ -674,6 +769,8 @@ def run_session(
                 history.append(ChatMessage(role="assistant", content=full_reply))
                 current_session.messages = list(history)
                 current_session.metadata.model = model
+                current_session.metadata.context_tokens = singleton_token.context_tokens
+                current_session.metadata.total_tokens = singleton_token.budget_tokens
                 session_manager.save_session(current_session)
                 artifact_manager.save_artifact(current_session.metadata.session_id, get_active_artifact())
 
@@ -749,7 +846,6 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as e:
         print(f"[Error creating cache] {e}")
         cache_build = False
-        return 1
 
     mcp_cmd = args.mcp_server or os.getenv("SENSAI_MCP_SERVER") or file_cfg.get("mcp_server")
     tools_flag = (

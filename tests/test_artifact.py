@@ -197,7 +197,7 @@ def test_cli_artifact_interactive_commands(tmp_path: Path, capsys: pytest.Captur
     mock_session_mgr = MagicMock()
     mock_session = MagicMock()
     mock_session.metadata.session_id = session_id
-    mock_session.metadata.model = "qwen2.5:1.5b"
+    mock_session.metadata.model = "qwen2.5:3b"
     mock_session.messages = []
     mock_session_mgr.load_session.return_value = mock_session
     mock_session_mgr.create_session.return_value = mock_session
@@ -215,7 +215,7 @@ def test_cli_artifact_interactive_commands(tmp_path: Path, capsys: pytest.Captur
     with patch("builtins.input", side_effect=user_inputs):
         run_session(
             client=mock_client,
-            model="qwen2.5:1.5b",
+            model="qwen2.5:3b",
             host="http://localhost:11434",
             tools=True,
             session_id=session_id,
@@ -224,10 +224,10 @@ def test_cli_artifact_interactive_commands(tmp_path: Path, capsys: pytest.Captur
         )
 
     captured = capsys.readouterr().out
-    assert "LIVRABLE — Fiche du Royaume de Qin" in captured
+    assert "ARTIFACT — Fiche du Royaume de Qin" in captured
     assert "Ying Zheng" in captured
-    assert "exporté avec succès" in captured
+    assert "exported successfully" in captured
     assert export_file.is_file()
     assert "Ying Zheng" in export_file.read_text(encoding="utf-8")
-    assert "Livrable réinitialisé" in captured
-    assert "Livrable vide pour le moment" in captured
+    assert "Artifact reset" in captured
+    assert "Empty artifact for now" in captured

@@ -1,5 +1,6 @@
 import json
 import os
+from pathlib import Path
 from typing import List, Optional
 from fastapi import APIRouter, Depends
 import httpx
@@ -11,6 +12,7 @@ from security import get_current_user
 from tools_registry import ALL_TOOLS_ID, list_tools
 
 router = APIRouter(prefix="/api/models", tags=["models"])
+PERSONAS_FILE = Path(__file__).resolve().parents[2] / "configs" / "personas.json"
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://ia:11434")
 
 
@@ -46,6 +48,29 @@ async def get_available_models():
 def get_available_tools():
     """Renvoie la liste des outils créés main dans le repo."""
     return list_tools()
+
+
+@router.get("/personas")
+def get_available_personas():
+    """Personas proposées dans l'interface : configs/personas.json, complétées par celles du CLI (PersonaManager)."""
+    personas: List[dict] = []
+    if PERSONAS_FILE.is_file():
+        personas = json.loads(PERSONAS_FILE.read_text(encoding="utf-8"))
+
+    from src.features.prompt.persona_manager import PersonaManager
+
+    manager = PersonaManager()
+    known_ids = {p["id"] for p in personas}
+    for persona_id in manager.list_personas():
+        if persona_id not in known_ids:
+            persona = manager.load_persona(persona_id)
+            personas.append({
+                "id": persona_id,
+                "name": persona.name,
+                "description": persona.description,
+                "system_prompt": persona.system_prompt,
+            })
+    return personas
 
 
 @router.get("/config")
@@ -98,4 +123,3 @@ def update_user_model_config(
         "temperature": pref.temperature,
         "active_tools": cleaned_tools
     }
-

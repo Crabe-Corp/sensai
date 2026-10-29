@@ -8,10 +8,10 @@ _active_session_id: str | None = None
 _active_manager: ArtifactManager | None = None
 
 ARTIFACT_SYSTEM_INSTRUCTION = (
-    "You have access to a live state and deliverable document (artifact) associated with this session. "
-    "Keep this deliverable up to date by calling the 'update_artifact' tool whenever key information, "
-    "a kingdom's characteristics, a strategic decision, or a timeline needs to be recorded or modified. "
-    "Do not rewrite the entire document at once: apply targeted section modifications ('update', 'append', 'delete'). "
+    "You have access to tools including a live deliverable document ('update_artifact') and a PDF generator ('generate_pdf_document'). "
+    "Keep the deliverable up to date by calling the 'update_artifact' tool when recording key facts. "
+    "When the user asks to create, produce, or export a PDF, invoke the 'generate_pdf_document' tool with an appropriate filename, title, and formatted content. "
+    "Do not rewrite the entire deliverable at once: apply targeted section modifications. "
     "Always respond in English."
 )
 
