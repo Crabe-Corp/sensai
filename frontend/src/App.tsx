@@ -350,6 +350,7 @@ export function App() {
           completion_tokens: doneData.completion_tokens,
           total_tokens: doneData.total_tokens,
           created_at: new Date().toISOString(),
+          from_cache: doneData.from_cache,
         }
 
         setMessages((prev) => [...prev, finalAssistantMsg])
@@ -582,6 +583,7 @@ export function App() {
           systemInstruction={systemInstruction}
           onSystemInstructionChange={setSystemInstruction}
           totalTokens={activeConversation?.total_tokens || 0}
+          conversationId={activeConversation?.id}
         />
       </div>
 
