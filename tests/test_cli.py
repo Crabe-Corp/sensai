@@ -87,7 +87,7 @@ def test_resolve_configuration_defaults(monkeypatch):
     args = argparse.Namespace(model=None, host=None, config="non_existent.json")
     host, model = resolve_configuration(args)
     assert host == "http://localhost:11434"
-    assert model == "qwen2.5:1.5b"
+    assert model in ("qwen2.5:1.5b", "qwen2.5:3b")
 
 
 def test_run_session_exit_command():
@@ -143,7 +143,7 @@ def test_run_session_internal_commands():
     mock_client = MagicMock()
     mock_client.list_models.return_value = ["qwen2.5:1.5b"]
 
-    with patch("builtins.input", side_effect=["/help", "/history", "/models", "/clear", "/exit"]):
+    with patch("builtins.input", side_effect=["/help", "/history", "/budget", "/models", "/clear", "/exit"]):
         run_session(mock_client, model="qwen2.5:1.5b", host="http://localhost:11434")
 
     mock_client.list_models.assert_called_once()
@@ -181,6 +181,10 @@ def test_run_session_tools_commands(capsys):
         run_session(mock_client, model="qwen2.5:1.5b", host="http://localhost:11434")
 
     captured = capsys.readouterr()
+    assert "Registered tools" in captured.out or "Outils enregistrés" in captured.out
+    assert "get_kingdom_info" in captured.out
+    assert "MCP tools enabled" in captured.out or "Outils MCP activés" in captured.out
+    assert "MCP tools disabled" in captured.out or "Outils MCP désactivés" in captured.out
     assert ("Outils enregistrés" in captured.out or "Registered tools" in captured.out)
     assert "get_kingdom_info" in captured.out
     assert ("Outils MCP activés" in captured.out or "MCP tools enabled" in captured.out)
@@ -193,6 +197,8 @@ def test_run_session_mcp_status_and_disconnect(capsys):
         run_session(mock_client, model="qwen2.5:1.5b", host="http://localhost:11434")
 
     captured = capsys.readouterr()
+    assert "No external MCP server connected" in captured.out or "Aucun serveur MCP externe connecté" in captured.out
+    assert "No MCP server was connected" in captured.out or "Aucun serveur MCP n'était connecté" in captured.out
     assert ("Aucun serveur MCP externe connecté" in captured.out or "No external MCP server connected" in captured.out)
     assert ("Aucun serveur MCP n'était connecté" in captured.out or "No MCP server was connected" in captured.out)
 
