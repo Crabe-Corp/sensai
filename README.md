@@ -1,7 +1,5 @@
 # SENSAI — Assistant IA Modulaire et Agentique
 
----
-
 ## 1. Contexte et Univers Pédagogique
 
 SENSAI s'inscrit dans le cadre historique de la Chine antique durant la période des Sept Royaumes Combattants (*Zhanguo*, 475 av. J.-C. – 221 av. J.-C.) : Qin, Chu, Qi, Zhao, Wei, Han et Yan.
@@ -321,12 +319,3 @@ sensai/
 ├── tests/                    # Ensemble des suites de tests automatisés Pytest
 └── USER_STORIES.md           # Spécifications fonctionnelles et critères d'acceptation
 ```
-
----
-
-## 9. Mentions Légales et Licence
-
-Projet développé dans le cadre du cursus académique **Epitech Digital & Technologies**.
-
-- **Auteurs** : Équipe SensAI (Crabe-Corp)
-- **Licence** : Logiciel distribué sous les termes de la licence MIT. Consultez le fichier [`LICENSE`](LICENSE) pour plus de détails.
