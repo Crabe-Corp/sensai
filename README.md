@@ -94,8 +94,8 @@ Le système implémente l'ensemble des modules requis par le référentiel d'év
 ### 5.1. Clonage du Répertoire
 
 ```bash
-git clone git@github.com:Crabe-Corp/sensai.git
-cd sensai
+git clone git@github.com:EpitechPGE3-2026/G-AIA-500-LIL-5-1-sensai-8.git
+cd G-AIA-500-LIL-5-1-sensai-8
 ```
 
 ### 5.2. Configuration de l'Environnement
