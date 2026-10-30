@@ -38,7 +38,9 @@ class AgentMode:
 def _enter_sim(args: list[str]) -> str:
     seed = int(args[0]) if args and args[0].isdigit() else None
     sim = sim_tools.start(seed)
-    return f"[Simulation] New game (seed {sim.seed}).\n{sim.render_table()}"
+    return (f"The age of the Warring States begins. The seven kingdoms muster their armies (seed {sim.seed}):\n"
+            f"{sim.render_table()}\n"
+            "Give your orders, my lord. For example: 'Qin attacks Zhao'.")
 
 MODES: dict[str, AgentMode] = {
     "encyclopedia": AgentMode("encyclopedia", "", default_registry),

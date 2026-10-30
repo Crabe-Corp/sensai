@@ -26,7 +26,7 @@ def confirm_simple(question: str) -> bool:
 
 def review_changes(title: str, changes: list[Change]) -> list[Change]:
     """Show the diff and return the accepted changes (empty list = full refusal)."""
-    print(f"\n[APPROVAL REQUIRED] {title}")
+    print(f"\n{title}")
     for i, c in enumerate(changes, 1):
         print(f"  {i:>2}. {c.render()}")
     while True:
@@ -37,6 +37,7 @@ def review_changes(title: str, changes: list[Change]) -> list[Change]:
         if choice in ("A"):
             return changes
         if choice == "N":
+            print(f"\nno changes has been applied")
             return []
         if choice == "S":
             try:

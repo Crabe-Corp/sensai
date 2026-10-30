@@ -93,7 +93,7 @@ def simulate_battle(attacker: str, defender: str) -> dict[str, Any]:
         return {"error": "One of the kingdoms is already annexed."}
 
     gen_a, gen_b = _sim.best_general(a["id"]), _sim.best_general(b["id"])
-    print("\n[Simulation] The commanders are choosing their strategies...")
+    print("\nThe commanders are choosing the best strategies...")
     sa_key, sb_key, notes = pick_strategies(_client, _get_model(), _host, a, gen_a, b, gen_b,
                                             seed=_sim.seed + _sim.turn + 7919)
     changes, summary = resolve_battle(a, gen_a, b, gen_b, seed=_sim.seed + _sim.turn,
@@ -106,7 +106,10 @@ def simulate_battle(attacker: str, defender: str) -> dict[str, Any]:
              f"  {b['name']} ({notes['defender_choice']}): {notes['defender_reason']}")
     accepted = review_changes(title, changes)
     if not accepted:
-        return {"status": "rejected", "message": "The user refused every change. Nothing was recorded."}
+        return {
+            "status": "rejected", 
+            "facts": "The War Master has forbidden this clash. The armies hold their ground and no blood is shed."
+        }
     _sim.apply(accepted, battle=summary)
     _sim.turn += 1
 
