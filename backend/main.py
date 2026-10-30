@@ -19,13 +19,6 @@ try:
 except Exception as e:
     print(f"[SensAI] Erreur initialisation Base de données: {e}")
 
-# Base SQLite des royaumes utilisée par les outils partagés avec le CLI (idempotent)
-try:
-    from src.core.db.init_db import init_database
-    init_database()
-except Exception as e:
-    print(f"[SensAI] Erreur initialisation kingdoms.db: {e}")
-
 app = FastAPI(
     title="SENSAI API",
     description="Backend API pour l'assistant SENSAI & collaboration temps réel",

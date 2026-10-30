@@ -713,15 +713,6 @@ _history_budget_lock = threading.Lock()
 # Le message d'approbation du frontend commence par ce marqueur suivi du token de l'action
 APPROVAL_PATTERN = re.compile(r'^\[Confirmation : approuvée\] \[action_id:([A-Za-z0-9_\-]+)\]')
 
-
-def _describe_destructive_call(tool_name: str, args: dict) -> str:
-    if tool_name == "write_manuscript_file":
-        return f"Écriture dans le fichier {args.get('filename')}"
-    if tool_name == "update_kingdom_database":
-        return f"Mise à jour SQL : {args.get('sql_statement')}"
-    return f"Exécution de l'action {tool_name}"
-
-
 async def _save_and_announce(
     db: Session,
     conv: Conversation,
@@ -1066,7 +1057,6 @@ async def chat_stream(
                                 )
                                 if approved_args is None:
                                     confirm_block = build_confirm_block(
-                                        summary=_describe_destructive_call(t_name, t_args),
                                         tool_name=t_name,
                                         action_id=create_pending_action(user.id, conv.id, t_name, t_args),
                                         details=t_args,

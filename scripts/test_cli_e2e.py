@@ -116,16 +116,6 @@ def build_mock_client_and_engine():
         last_msg = messages[-1]
         content = last_msg.content if hasattr(last_msg, "content") else str(last_msg)
 
-        if "renseignement sur le royaume de qin" in content.lower():
-            args = {"kingdom_name": "Qin"}
-            yield ToolCallEvent(tool_name="get_kingdom_info", arguments=args)
-            res = tool_executor.execute("get_kingdom_info", args)
-            yield ToolResultEvent(tool_name="get_kingdom_info", result=res.result, is_error=not res.success)
-            reply = f"Voici les données d'archives sur Qin : Capitale Xianyang, armée active."
-            for tok in reply.split():
-                yield TokenChunkEvent(token=tok + " ")
-            return
-
         if "armée de terre cuite" in content.lower() or "recherche sur le web" in content.lower():
             args = {"query": "armée de terre cuite Xi'an", "max_results": 2}
             yield ToolCallEvent(tool_name="web_search", arguments=args)
@@ -259,11 +249,6 @@ def run_e2e_test(live_mode: bool = False) -> tuple[str, list[tuple[str, bool, st
         "Sorties Structurées [T5] - Cas 3 : /structured-output",
         ("Mode sortie structurée activé" in raw_output or "Structured output mode enabled" in raw_output) and '"response":' in raw_output,
         "Schéma StructuredResponse générique validé",
-    ))
-    checks.append((
-        "Outils & Web [T3] : get_kingdom_info & web_search",
-        "get_kingdom_info" in raw_output and "web_search" in raw_output,
-        "Interception et exécution d'outils en temps réel",
     ))
     checks.append((
         "Protocole MCP [T1] : /mcp connect & outils externes",
