@@ -80,16 +80,18 @@ class Simulation:
         with self.conn:
             self.conn.execute("INSERT INTO sim_log(turn, kind, detail) VALUES (?,?,?)", (self.turn, kind, detail))
 
-    def apply(self, changes: list[Change]) -> int:
+    def apply(self, changes: list[Change], battle: dict | None = None) -> int:
         for c in changes:
             if (err := validate(c)):
                 raise ValueError(err)
+        battle_json = json.dumps(battle, ensure_ascii=False) if battle is not None else None
         with self.conn:
             for c in changes:
                 key_col, _ = WHITELIST[c.table]
                 self.conn.execute(f"UPDATE {c.table} SET {c.field} = ? WHERE {key_col} = ?", (c.new, c.key))
-                self.conn.execute("INSERT INTO sim_log(turn, kind, detail) VALUES (?, 'change', ?)",
-                                  (self.turn, c.render()))
+                self.conn.execute("INSERT INTO sim_log(turn, kind, detail) VALUES (?, 'change', ?)", (self.turn, c.render()))
+            if battle_json is not None:
+                self.conn.execute("INSERT INTO sim_log(turn, kind, detail) VALUES (?, 'battle', ?)", (self.turn, battle_json))
         return len(changes)
 
     def facts(self) -> dict:
