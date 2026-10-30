@@ -38,7 +38,7 @@ def reset_state():
 
 def test_console_prompt_is_unchanged_without_handler():
     """Sans handler (CLI), la confirmation passe toujours par input()."""
-    with patch("builtins.input", side_effect=["O"]):
+    with patch("builtins.input", side_effect=["Y"]):
         assert confirm_simple("Suppression simulation") is True
     with patch("builtins.input", side_effect=["N"]):
         assert confirm_simple("Suppression simulation") is False
