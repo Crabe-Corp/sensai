@@ -21,7 +21,6 @@ from src.core.ollama_client import ChatMessage, OllamaClient
 from src.features.sec.security import mask_pii, validate_input_with_llm
 from tools_registry import (
     ALL_TOOLS_ID,
-    DESTRUCTIVE_TOOLS,
     FORM_TOOL_NAME,
     build_confirm_block,
     build_form_block,
@@ -32,7 +31,11 @@ from tools_registry import (
     run_tool_confirmed,
     selected_tool_names,
     take_pending_action,
+    DESTRUCTIVE_TOOLS,
 )
+
+# Outils nécessitant une confirmation humaine avant exécution
+_DESTRUCTIVE_TOOLS = DESTRUCTIVE_TOOLS
 
 MAX_TOOL_ROUNDS = 4  # nombre maximal d'allers-retours modèle <-> outils par message
 
@@ -713,15 +716,6 @@ _history_budget_lock = threading.Lock()
 # Le message d'approbation du frontend commence par ce marqueur suivi du token de l'action
 APPROVAL_PATTERN = re.compile(r'^\[Confirmation : approuvée\] \[action_id:([A-Za-z0-9_\-]+)\]')
 
-
-def _describe_destructive_call(tool_name: str, args: dict) -> str:
-    if tool_name == "write_manuscript_file":
-        return f"Écriture dans le fichier {args.get('filename')}"
-    if tool_name == "update_kingdom_database":
-        return f"Mise à jour SQL : {args.get('sql_statement')}"
-    return f"Exécution de l'action {tool_name}"
-
-
 async def _save_and_announce(
     db: Session,
     conv: Conversation,
@@ -1057,7 +1051,7 @@ async def chat_stream(
                                 break
 
                             # Les outils sont synchrones (réseau, SQL, fichiers) : hors de la boucle d'événements
-                            if t_name in DESTRUCTIVE_TOOLS:
+                            if t_name in _DESTRUCTIVE_TOOLS:
                                 # Seul un token émis par le serveur pour cet utilisateur, cette conversation et cet outil
                                 # débloque l'action ; elle s'exécute avec les arguments que l'utilisateur a vus.
                                 approved_args = (
@@ -1066,7 +1060,6 @@ async def chat_stream(
                                 )
                                 if approved_args is None:
                                     confirm_block = build_confirm_block(
-                                        summary=_describe_destructive_call(t_name, t_args),
                                         tool_name=t_name,
                                         action_id=create_pending_action(user.id, conv.id, t_name, t_args),
                                         details=t_args,

@@ -121,7 +121,7 @@ export function parseConfirmMessage(content: string): ParsedConfirmMessage {
         action_id: data.action_id || data.id,
         tool_name: data.tool_name || data.tool,
         summary,
-        action_type: data.action_type || (data.tool_name === 'write_manuscript_file' ? 'file_write' : 'db_update'),
+        action_type: data.action_type,
         details: data.details,
       }
       return { text: content.replace(CONFIRM_BLOCK_PATTERN, '').trim(), confirmation }
