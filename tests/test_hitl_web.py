@@ -14,16 +14,18 @@ if str(_BACKEND_DIR) not in sys.path:
 
 import tools_registry
 from routes.conversation_routes import APPROVAL_PATTERN
+from src.features.simulation.human_verif import confirm_simple
+from src.features.simulation.tools import simulation_registry
 from src.features.tools import default_registry
 from tools_registry import (
     CONFIRM_BLOCK_LANG,
+    DESTRUCTIVE_TOOLS,
     build_confirm_block,
     create_pending_action,
     run_tool,
     run_tool_confirmed,
     take_pending_action,
 )
-from src.features.simulation.human_verif import confirm_simple
 
 
 @pytest.fixture(autouse=True)
@@ -45,7 +47,9 @@ def test_console_prompt_is_unchanged_without_handler():
 def test_destructive_tools_do_not_expose_confirmation_parameters_to_the_llm():
     """Le LLM ne doit pas pouvoir se confirmer lui-même : aucun paramètre de validation dans le schéma."""
     for name in DESTRUCTIVE_TOOLS:
-        properties = default_registry.get(name).parameters["properties"]
+        tool_def = default_registry.get(name) or simulation_registry.get(name)
+        assert tool_def is not None
+        properties = tool_def.parameters["properties"]
         assert not {"auto_confirm", "action_id", "callback"} & set(properties)
 
 

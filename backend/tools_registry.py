@@ -29,6 +29,7 @@ ALL_TOOLS_ID = "mcp_runner"
 FORM_TOOL_NAME = "ask_user_form"
 FORM_BLOCK_LANG = "sensai-form"
 CONFIRM_BLOCK_LANG = "sensai-confirm"
+DESTRUCTIVE_TOOLS = {"write_battle_report"}
 # Outils en lecture seule que l'IA utilise quand elle en a besoin : toujours actifs, sans réglage utilisateur
 READ_ONLY_TOOLS = {
     "search_historical_archives",

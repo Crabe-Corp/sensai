@@ -53,7 +53,7 @@ TEST_INPUTS = [
     "Donne-moi les informations de renseignement sur le royaume de Qin.",
     "Recherche sur le web les dernières découvertes sur l'armée de terre cuite.",
     "/mcp status",
-    "/mcp connect python -m src.features.tools.mcp_server_demo",
+    f"/mcp connect {sys.executable} -m src.features.tools.mcp_server_demo",
     "/tools",
     "Calcule l'approvisionnement en grain pour 50000 soldats de Qin pendant 3 mois.",
     "Quels sont les détails de la bataille de Changping ?",

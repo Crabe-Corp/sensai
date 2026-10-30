@@ -31,10 +31,11 @@ from tools_registry import (
     run_tool_confirmed,
     selected_tool_names,
     take_pending_action,
+    DESTRUCTIVE_TOOLS,
 )
 
 # Outils nécessitant une confirmation humaine avant exécution
-_DESTRUCTIVE_TOOLS = {"write_battle_report"}
+_DESTRUCTIVE_TOOLS = DESTRUCTIVE_TOOLS
 
 MAX_TOOL_ROUNDS = 4  # nombre maximal d'allers-retours modèle <-> outils par message
 
