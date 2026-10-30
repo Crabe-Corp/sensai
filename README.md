@@ -1,9 +1,5 @@
 # SENSAI — Assistant IA Modulaire et Agentique
 
-> Projet académique Epitech Tek3 GIA (Génération d'Intelligence Artificielle)  
-> Conception et implémentation d'un système conversationnel agentique autonome, souverain et modulaire, réalisé sans framework LLM (sans LangChain, LlamaIndex ou Haystack).  
-> L'intégralité des interactions avec le modèle s'effectue via des requêtes HTTP natives adressées à l'API locale d'Ollama.
-
 ---
 
 ## 1. Contexte et Univers Pédagogique
