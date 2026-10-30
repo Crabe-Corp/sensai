@@ -1,15 +1,21 @@
 def build_report(facts: dict, analysis: str) -> str:
-    """Assemble le rapport : bilan chiffré (issu de la base) puis analyse tactique (rédigée par le LLM)."""
-    out = [f"# Rapport de simulation (seed {facts['seed']})", "", f"Batailles jouées : {facts['turns']}", "", "## Batailles"]
+    """Assemble the report: figures and strategies (from the database), then the tactical analysis (written by the LLM)."""
+    out = [f"# Simulation report (seed {facts['seed']})", "", f"Battles played: {facts['turns']}", "", "## Battles"]
     for i, b in enumerate(facts["battles"], 1):
-        pertes = ", ".join(f"{k} {v:,}" for k, v in b["casualties"].items())
-        fell = f", général tombé : {b['general_fallen']}" if b["general_fallen"] else ""
-        out.append(f"{i}. {b['winner']} bat {b['loser']} (probabilité attaquant {b['p_attacker']:.0%}), pertes : {pertes}{fell}")
-    out += ["", "## Généraux tombés"]
-    out += [f"- {g['name']} ({g['kingdom_id']})" for g in facts["fallen"]] or ["- Aucun"]
-    out += ["", "## État final", "| Royaume | Troupes | Moral | Or | Statut |", "|---|---|---|---|---|"]
+        losses = ", ".join(f"{k} {v:,}" for k, v in b["casualties"].items())
+        fell = f", general fallen: {b['general_fallen']}" if b["general_fallen"] else ""
+        out.append(f"{i}. {b['winner']} beat {b['loser']} (attacker win probability {b['p_attacker']:.0%}), losses: {losses}{fell}")
+        if b.get("matchup"):
+            out.append(f"   - Strategies: {b['matchup']}")
+        c = b.get("commanders")
+        if c:
+            out.append(f"   - Commanders' reasoning (written by the model, choice made by '{c['attacker_choice']}' / '{c['defender_choice']}'): "
+                       f"{b['attacker']}: {c['attacker_reason']} | {b['defender']}: {c['defender_reason']}")
+    out += ["", "## Fallen generals"]
+    out += [f"- {g['name']} ({g['kingdom_id']})" for g in facts["fallen"]] or ["- None"]
+    out += ["", "## Final state", "| Kingdom | Troops | Morale | Gold | Status |", "|---|---|---|---|---|"]
     out += [f"| {k['name']} | {k['troops']:,} | {k['morale']} | {k['gold']:,} | {k['status']} |" for k in facts["kingdoms"]]
-    out += ["", "## Analyse tactique", "",
-            "> Section rédigée par le modèle de langage : ses interprétations ne sont pas vérifiées. Seuls les chiffres des sections précédentes proviennent de la base.",
+    out += ["", "## Tactical analysis", "",
+            "> Section written by the language model: its interpretations are not verified. Only the figures and strategies above come from the simulation.",
             "", analysis.strip(), ""]
     return "\n".join(out)

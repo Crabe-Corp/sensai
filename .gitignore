@@ -64,3 +64,4 @@ exports/*.md
 !exports/.gitkeep
 
 /battle_reports
+src/features/simulation/bench.py
