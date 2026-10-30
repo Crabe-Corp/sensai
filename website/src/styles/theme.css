@@ -1,0 +1,167 @@
+/* Thème Dark Obsidian épuré pour SensAI (Direction artistique Linear / Dub.co) */
+
+:root {
+  --sl-color-accent-low: #18191d;
+  --sl-color-accent: #3b82f6;
+  --sl-color-accent-high: #93c5fd;
+  --sl-color-white: #fafafa;
+  --sl-color-gray-1: #e4e4e7;
+  --sl-color-gray-2: #a1a1aa;
+  --sl-color-gray-3: #71717a;
+  --sl-color-gray-4: #3f3f46;
+  --sl-color-gray-5: #27272a;
+  --sl-color-gray-6: #18181b;
+  --sl-color-black: #09090b;
+}
+
+:root[data-theme='light'] {
+  --sl-color-accent-low: #eff6ff;
+  --sl-color-accent: #2563eb;
+  --sl-color-accent-high: #1d4ed8;
+  --sl-color-white: #09090b;
+  --sl-color-gray-1: #18181b;
+  --sl-color-gray-2: #27272a;
+  --sl-color-gray-3: #52525b;
+  --sl-color-gray-4: #a1a1aa;
+  --sl-color-gray-5: #e4e4e7;
+  --sl-color-gray-6: #f4f4f5;
+  --sl-color-gray-7: #fafafa;
+  --sl-color-black: #ffffff;
+}
+
+/* Polices & Typographie système moderne */
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  letter-spacing: -0.01em;
+}
+
+/* Bordures fines et nettes */
+.sidebar-pane, .header {
+  border-color: #27272a !important;
+}
+
+/* Tableaux sobres */
+table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 1.5rem 0;
+}
+
+th, td {
+  border: 1px solid #27272a;
+  padding: 0.6rem 0.9rem;
+  font-size: 0.9rem;
+}
+
+th {
+  background-color: #121316;
+}
+
+/* Styles pour les schémas Mermaid */
+pre.mermaid {
+  background-color: #121316 !important;
+  border: 1px solid #27272a !important;
+  border-radius: 6px !important;
+  padding: 1.5rem !important;
+  display: flex !important;
+  justify-content: center !important;
+  align-items: center !important;
+  margin: 2rem 0 !important;
+  overflow-x: auto !important;
+  color: #f4f4f5 !important;
+  cursor: zoom-in !important;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  position: relative;
+}
+
+pre.mermaid:hover {
+  border-color: #3b82f6 !important;
+  box-shadow: 0 4px 20px rgba(59, 130, 246, 0.12);
+}
+
+pre.mermaid svg {
+  max-width: 100% !important;
+  height: auto !important;
+  pointer-events: none;
+}
+
+/* Modal Lightbox pour agrandir les diagrammes au clic */
+#mermaid-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+
+#mermaid-modal.active {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.mermaid-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(9, 9, 11, 0.88);
+  backdrop-filter: blur(8px);
+}
+
+.mermaid-modal-content {
+  position: relative;
+  z-index: 100000;
+  width: 92vw;
+  max-width: 1200px;
+  max-height: 88vh;
+  background: #121316;
+  border: 1px solid #27272a;
+  border-radius: 8px;
+  padding: 2.5rem 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: auto;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+}
+
+.mermaid-modal-svg {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+  height: 100%;
+}
+
+.mermaid-modal-svg svg {
+  max-width: 100% !important;
+  max-height: 75vh !important;
+  width: auto !important;
+  height: auto !important;
+}
+
+.mermaid-modal-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  background: #18181b;
+  border: 1px solid #27272a;
+  color: #a1a1aa;
+  border-radius: 6px;
+  width: 32px;
+  height: 32px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  line-height: 1;
+  transition: color 0.15s, background-color 0.15s;
+}
+
+.mermaid-modal-close:hover {
+  color: #fafafa;
+  background: #27272a;
+}
