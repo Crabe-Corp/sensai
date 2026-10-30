@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { ShieldAlert, FilePen, DatabaseZap, Check, X } from 'lucide-react'
+import { ShieldAlert, FilePen, Check, X } from 'lucide-react'
 import type { ConfirmationSpec } from '../types'
 
 interface ConfirmationCardProps {

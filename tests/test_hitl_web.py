@@ -17,7 +17,6 @@ from routes.conversation_routes import APPROVAL_PATTERN
 from src.features.tools import default_registry
 from tools_registry import (
     CONFIRM_BLOCK_LANG,
-    DESTRUCTIVE_TOOLS,
     build_confirm_block,
     create_pending_action,
     run_tool,
