@@ -61,6 +61,8 @@ from src.features.tools.mcp_client import MCPClient, MCPError
 from src.features.tools.registry import default_registry
 from src.features.simulation.human_verif import confirm_simple
 from src.features.simulation.modes import MODES, AgentMode
+from src.features.simulation import tools as sim_tools
+from src.features.simulation.grounding import settle_reply
 import requests
 from src.core import auto_evaluation
 from src.interfaces.cli.commands.commands import Command, Commands, command
@@ -196,11 +198,11 @@ def print_banner(
 ) -> None:
     """Affiche la bannière d'accueil de la CLI avec les paramètres de connexion actifs.
             PARAMS: - model - STR: nom du modèle Ollama en cours d'utilisation
-                    - host - STR: URL du serveur Ollama
-                    - tools_enabled - BOOL: indicateur d'activation du support des outils
-                    - profile_name - STR | NONE: nom du profil utilisateur actif
-                    - persona_name - STR | NONE: nom de la persona active
-                    - session_id - STR | NONE: identifiant de la session courante
+- host - STR: URL du serveur Ollama
+- tools_enabled - BOOL: indicateur d'activation du support des outils
+- profile_name - STR | NONE: nom du profil utilisateur actif
+- persona_name - STR | NONE: nom de la persona active
+- session_id - STR | NONE: identifiant de la session courante
             RETURN: None"""
 
     print("=" * 60)
@@ -240,11 +242,14 @@ def is_french_text(text: str) -> bool:
 def build_call_messages(mode: AgentMode, history: list[ChatMessage]) -> list[ChatMessage]:
     """Construit la liste de messages envoyée au modèle pour le mode courant.
             PARAMS: - mode - AGENTMODE: mode d'agent actif
-                    - history - LIST[CHATMESSAGE]: historique de la session
+- history - LIST[CHATMESSAGE]: historique de la session
             RETURN: liste de messages (le prompt système du mode remplace les autres messages système)"""
 
     if mode.system_prompt:
-        messages = [ChatMessage(role="system", content=mode.system_prompt)] + [m for m in history if m.role != "system"]
+        recent = [m for m in history if m.role != "system"]
+    if mode.force_tools:
+        recent = recent[-1:]
+        messages = [ChatMessage(role="system", content=mode.system_prompt)] + recent
     else:
         messages = list(history)
 
@@ -279,19 +284,19 @@ def run_session(
 ) -> None:
     """Gère la boucle interactive du chatbot CLI, l'historique et les commandes slash.
             PARAMS: - client - OLLAMACLIENT: instance active du client HTTP Ollama
-                    - model - STR: nom du modèle Ollama à utiliser
-                    - host - STR: URL du serveur Ollama
-                    - tools - ANY: registre ou outils optionnels à exposer au LLM
-                    - mcp_server_cmd - STR | NONE: commande de démarrage d'un serveur MCP externe
-                    - session_id - STR | NONE: identifiant d'une session à restaurer
-                    - profile_name - STR | NONE: nom du profil utilisateur à charger
-                    - persona_name - STR | NONE: nom ou fichier de la persona à charger
-                    - session_manager - SESSIONMANAGER | NONE: gestionnaire de sessions persistant
-                    - profile_manager - PROFILEMANAGER | NONE: gestionnaire de profils utilisateur
-                    - artifact_manager - ARTIFACTMANAGER | NONE: gestionnaire de livrables d'état
-                    - persona_manager - PERSONAMANAGER | NONE: gestionnaire de personas
-                    - versioning_engine - PROMPTVERSIONINGENGINE | NONE: moteur de versioning de prompts
-                    - cache_build - BOOL: indicateur d'activation du cache sémantique
+- model - STR: nom du modèle Ollama à utiliser
+- host - STR: URL du serveur Ollama
+- tools - ANY: registre ou outils optionnels à exposer au LLM
+- mcp_server_cmd - STR | NONE: commande de démarrage d'un serveur MCP externe
+- session_id - STR | NONE: identifiant d'une session à restaurer
+- profile_name - STR | NONE: nom du profil utilisateur à charger
+- persona_name - STR | NONE: nom ou fichier de la persona à charger
+- session_manager - SESSIONMANAGER | NONE: gestionnaire de sessions persistant
+- profile_manager - PROFILEMANAGER | NONE: gestionnaire de profils utilisateur
+- artifact_manager - ARTIFACTMANAGER | NONE: gestionnaire de livrables d'état
+- persona_manager - PERSONAMANAGER | NONE: gestionnaire de personas
+- versioning_engine - PROMPTVERSIONINGENGINE | NONE: moteur de versioning de prompts
+- cache_build - BOOL: indicateur d'activation du cache sémantique
             RETURN: None"""
 
     session_manager = session_manager or SessionManager()
@@ -447,9 +452,8 @@ def run_session(
             current_mode = target
             if current_mode.on_enter:
                 print(current_mode.on_enter(mode_args))
-                print("[Info] Automatic RAG and structured output disabled in this mode.")
                 if any(tag in model for tag in (":0.5b", ":1.5b")):
-                    print(f"[Tip] {model} might have issues calling tools: try '/model qwen2.5:7b' if needed.")
+                    debug_print(f"[Tip] {model} might have issues calling tools: try '/model qwen2.5:7b' if needed.")
             else:
                 print("[Info] Encyclopedia mode activated. Current simulation closed.")
             continue
@@ -491,11 +495,10 @@ def run_session(
             )
             safe_input = build_pdf_historical_veracity_prompt(pdf_info, pdf_instruction)
 
-        if current_mode.free_chat:
-            is_valid, error_message = validate_input_with_llm(safe_input, client, model)
-            if not is_valid:
-                print(f"\nAssistant > {error_message}")
-                continue
+        is_valid, error_message = validate_input_with_llm(safe_input, client, model)
+        if not is_valid:
+            print(f"\nAssistant > {error_message}")
+            continue
 
         augmented_input = safe_input
         rag_found = False
@@ -660,16 +663,20 @@ def run_session(
                 print(f"\n[Error] {exc}")
             continue
 
-        sys.stdout.write("\nAssistant > ")
-        sys.stdout.flush()
+        simulation_turn = current_mode.force_tools
+        if not simulation_turn:
+            sys.stdout.write("\nAssistant > ")
+            sys.stdout.flush()
 
         engine = engines[current_mode.name]
         mode_tools = current_mode.registry if current_mode.force_tools else active_tools
         call_messages = build_call_messages(current_mode, history)
+        sim_tools.configure(client, lambda: model, host)
         if augmented_input != safe_input and call_messages and call_messages[-1].role == "user":
             call_messages[-1] = ChatMessage(role="user", content=augmented_input)
 
         response_chunks: list[str] = []
+        tool_results: list[dict] = []
         try:
             for event in engine.run_stream(
                 messages=call_messages,
@@ -677,32 +684,46 @@ def run_session(
                 tools=mode_tools,
             ):
                 if isinstance(event, TokenChunkEvent):
-                    sys.stdout.write(event.token)
-                    sys.stdout.flush()
                     response_chunks.append(event.token)
+                    if not simulation_turn:
+                        sys.stdout.write(event.token)
+                        sys.stdout.flush()
                 elif isinstance(event, ToolCallEvent):
                     args_repr = json.dumps(event.arguments, ensure_ascii=False)
-                    sys.stdout.write(f"\n[Outil appelé] {event.tool_name}({args_repr})\n")
                     sys.stdout.flush()
                 elif isinstance(event, ToolResultEvent):
-                    if event.is_error:
-                        sys.stdout.write(f"[Erreur outil] {event.result}\n")
-                    else:
-                        preview = (
-                            json.dumps(event.result, ensure_ascii=False)
-                            if isinstance(event.result, (dict, list))
-                            else str(event.result)
-                        )
-                        if len(preview) > 140:
-                            preview = preview[:137] + "..."
-                        sys.stdout.write(f"[Résultat outil] {preview}\n")
-                    sys.stdout.flush()
+                    if isinstance(event.result, dict):
+                        tool_results.append(event.result)
+                        
+                    if not simulation_turn:
+                        if event.is_error:
+                            sys.stdout.write(f"[Erreur outil] {event.result}\n")
+                        else:
+                            preview = (
+                                json.dumps(event.result, ensure_ascii=False)
+                                if isinstance(event.result, (dict, list))
+                                else str(event.result)
+                            )
+                            if len(preview) > 140:
+                                preview = preview[:137] + "..."
+                            sys.stdout.write(f"[Résultat outil] {preview}\n")
+                        sys.stdout.flush()
                 elif isinstance(event, ErrorEvent):
-                    print(f"\n[Error] {event.error}")
+                    if not simulation_turn:
+                        print(f"\n[Error] {event.error}")
+                    else:
+                        debug_print(f"\n[Error] {event.error}")
 
             print()
             full_reply = "".join(response_chunks).strip()
-            if full_reply and current_mode.free_chat:
+
+            if simulation_turn:
+                full_reply, problems = settle_reply(full_reply, tool_results, sim_tools.kingdom_names())
+                for problem in problems:
+                    debug_print(f"[Check] {problem}")
+                if full_reply:
+                    print(f"\nAssistant > {full_reply}")
+            elif full_reply and current_mode.free_chat:
                 eval_res = auto_evaluation.evaluate_ai_response(
                     client=client,
                     model=model,
@@ -741,7 +762,9 @@ def run_session(
                     except Exception as err:
                         debug_print(f"\n[Auto-Evaluation] Error during response rework: {err}")
 
-            if full_reply:
+            if simulation_turn and not full_reply:
+                history.pop()
+            elif full_reply:
                 history.append(ChatMessage(role="assistant", content=full_reply))
                 current_session.messages = list(history)
                 current_session.metadata.model = model
@@ -765,7 +788,7 @@ def run_session(
         except KeyboardInterrupt:
             print("\n[Generation interrupted by user]")
             full_reply = "".join(response_chunks).strip()
-            if full_reply:
+            if full_reply and not simulation_turn:
                 history.append(ChatMessage(role="assistant", content=full_reply))
                 current_session.messages = list(history)
                 current_session.metadata.model = model
@@ -773,6 +796,8 @@ def run_session(
                 current_session.metadata.total_tokens = singleton_token.budget_tokens
                 session_manager.save_session(current_session)
                 artifact_manager.save_artifact(current_session.metadata.session_id, get_active_artifact())
+            else:
+                history.pop()
 
     if current_mode.on_exit:
         current_mode.on_exit()

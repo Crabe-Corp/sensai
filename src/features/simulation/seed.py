@@ -1,12 +1,11 @@
-"""Conditions de départ de la simulation.
+"""Starting conditions of the simulation.
 
-Les effectifs respectent les proportions des sources antiques (souvent gonflées) ; l'or est une valeur
-d'équilibrage, pas un chiffre historique. Les généraux viennent d'époques différentes (de Tian Dan à
-Wang Jian) : c'est un "et si" assumé. Han et Yan n'ont pas de général : ils se battent avec une
-compétence par défaut.
+Troop numbers follow the proportions of the ancient sources (often inflated); gold is a balancing
+value, not a historical figure. Generals come from different eras (from Tian Dan to Wang Jian):
+an assumed "what if". Han and Yan have no general: they fight with a default skill.
 """
 
-# (id, nom, troupes, moral, or)
+# (id, name, troops, morale, gold)
 KINGDOMS = [
     ("qin", "Qin", 600_000, 90, 3_000_000),
     ("chu", "Chu", 500_000, 80, 2_000_000),
@@ -17,7 +16,7 @@ KINGDOMS = [
     ("yan", "Yan", 150_000, 65, 700_000),
 ]
 
-# (nom, id du royaume, compétence tactique, statut)
+# (name, kingdom id, tactical skill, status)
 GENERALS = [
     ("Wang Jian", "qin", 95, "active"),
     ("Meng Wu", "qin", 80, "active"),

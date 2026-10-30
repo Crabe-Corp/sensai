@@ -6,7 +6,7 @@ from src.core.ollama_client import OllamaClient, ChatMessage
 
 class SecurityDecision(BaseModel):
     is_valid: bool = Field(
-        description="True si le message concerne l'histoire OU s'il s'agit d'une demande de recherche générique sans sujet précis (ex: 'cherche sur internet', 'plus d'infos sur lui'). False UNIQUEMENT si un sujet explicitement moderne (jeux, cuisine) ou des insultes sont mentionnés."
+        description="True if the message is about history OR if it is a generic search request without a specific topic (e.g., “search the internet,” “more info about him”). False ONLY if an explicitly modern topic (games, cooking) or insults are mentioned."
     )
 
 def mask_pii(text: str) -> Tuple[str, bool]:
