@@ -1,7 +1,7 @@
 ---
 title: "Guide du Contributeur"
 description: "Conventions de code, contributeurs, standards de test et cycle de vie des PRs."
-editUrl: "https://github.com/Crabe-Corp/sensai/edit/dev/docs/contributing.md"
+editUrl: "https://github.com/Crabe-Corp/sensai/edit/dev/docs/fr/contributing.md"
 sidebar:
   order: 1
 ---
@@ -9,18 +9,18 @@ Bienvenue dans l'équipe des contributeurs de **SensAI** ! Ce document résume l
 
 ---
 
-## 👥 Équipe du Projet
+## Équipe du Projet
 
-| Contributeur | Profil GitHub | Rôle |
+| Contributeur | Profil GitHub | Rôle & Responsabilités |
 | :--- | :--- | :--- |
-| **Lucas Lhomme** | [@LucasLhomme](https://github.com/LucasLhomme) | Lead Architect / Core Developer |
-| **Graig Ware** | [@graigware](https://github.com/graigware) | Core Contributor |
-| **Jawed Lahrouri** | [@jawedlahrouri](https://github.com/jawedlahrouri) | Core Contributor |
-| **Jo Birck** | [@jobirck](https://github.com/jobirck) | Contributor / Project Owner |
+| **Lucas** | [@LucasLhomme](https://github.com/LucasLhomme) | Front et Backend, UX |
+| **Jawed** | [@jawedlahrouri](https://github.com/jawedlahrouri) | Core et tools |
+| **Grégoire** | [@graigware](https://github.com/graigware) | Sécurité et gestion de la mémoire et des données |
+| **Joseph** | [@jobirck](https://github.com/jobirck) | Connaissance et évaluation |
 
 ---
 
-## 📐 Standards de Code & Architecture
+## Standards de Code & Architecture
 
 ### 1. Python (Backend & Moteur Core)
 
@@ -46,7 +46,7 @@ Si vous développez des extensions natives ou des bibliothèques C++ pour SensAI
 
 ---
 
-## 🧪 Tests & Qualité
+## Tests & Qualité
 
 Avant d'ouvrir une Pull Request, assurez-vous que l'ensemble de la suite de tests est au vert :
 
@@ -62,7 +62,7 @@ npm run build
 
 ---
 
-## 🔄 Cycle de Vie d'une Pull Request (PR Checklist)
+## Cycle de Vie d'une Pull Request (PR Checklist)
 
 1. **Branche de travail :** Créez une branche explicite à partir de `dev` (ex: `feature/nom-de-feature` ou `fix/nom-du-bug`).
 2. **Commits atomiques :** Utilisez la convention des commits conventionnels (ex: `feat(core): ...`, `fix(web): ...`, `docs: ...`).

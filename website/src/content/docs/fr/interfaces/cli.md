@@ -1,7 +1,7 @@
 ---
 title: "Guide du CLI SensAI"
 description: "Commandes, options, modes /encyclopedia et /simulation."
-editUrl: "https://github.com/Crabe-Corp/sensai/edit/dev/docs/cli.md"
+editUrl: "https://github.com/Crabe-Corp/sensai/edit/dev/docs/fr/cli.md"
 sidebar:
   order: 1
 ---
@@ -9,7 +9,7 @@ Le terminal en ligne de commande (CLI) est le cœur historique et le moteur d'ex
 
 ---
 
-## 💻 Lancement et Options
+## Lancement et Options
 
 Pour démarrer la CLI, exécutez le module principal depuis la racine du dépôt :
 
@@ -31,18 +31,18 @@ python -m src.interfaces.cli.main [OPTIONS]
 
 ---
 
-## ⚔️ Modes de Fonctionnement
+## Modes de Fonctionnement
 
 Le CLI propose deux modes fondamentaux accessibles par commandes slash :
 
-```mermaid
+<pre class="mermaid">
 stateDiagram-v2
-    [*] --> Encyclopedia : Lancement par défaut
-    Encyclopedia --> Simulation : /simulation [seed]
-    Simulation --> Encyclopedia : /encyclopedia
-    Encyclopedia --> [*] : /exit
-    Simulation --> [*] : /exit
-```
+    [*] --&gt; Encyclopedia : Lancement par défaut
+    Encyclopedia --&gt; Simulation : /simulation [seed]
+    Simulation --&gt; Encyclopedia : /encyclopedia
+    Encyclopedia --&gt; [*] : /exit
+    Simulation --&gt; [*] : /exit
+</pre>
 
 ### 1. Le Mode Encyclopédie (`/encyclopedia`) — Mode par défaut
 
@@ -64,7 +64,7 @@ Le mode simulation transforme l'agent en **Maître de Guerre (*War Master*)** d'
 
 ---
 
-## 📜 Commandes Disponibles en Session
+## Commandes Disponibles en Session
 
 | Commande | Description |
 | :--- | :--- |

@@ -4,7 +4,7 @@ L'interface web de SensAI offre un cockpit moderne, fluide et réactif pour dial
 
 ---
 
-## 🎨 Direction Artistique & Design System
+## Direction Artistique & Design System
 
 L'interface utilisateur de SensAI adopte une direction artistique sobre, technique et haut de gamme, fortement inspirée des standards de **Linear.app** et **Dub.co** :
 
@@ -15,27 +15,27 @@ L'interface utilisateur de SensAI adopte une direction artistique sobre, techniq
 
 ---
 
-## 🛠️ Stack Technique
+## Stack Technique
 
 ```mermaid
-graph LR
-    subgraph Client [Navigateur Frontend]
-        React[React 19]
-        Vite[Vite 8]
-        Tailwind[Tailwind CSS v4]
-        shadcn[shadcn / UI]
-        Lucide[Lucide React Icons]
+flowchart LR
+    subgraph Client ["Navigateur Frontend"]
+        React["React 19"]
+        Vite["Vite 8"]
+        Tailwind["Tailwind CSS v4"]
+        shadcn["shadcn / UI"]
+        Lucide["Lucide React Icons"]
     end
 
-    subgraph API [FastAPI Backend]
-        Auth[Auth JWT]
-        Streaming[NDJSON Streaming SSE]
-        ConvRoutes[Conversation Routes]
-        ToolBridge[Tools Bridge]
+    subgraph API ["FastAPI Backend"]
+        Auth["Auth JWT"]
+        Streaming["NDJSON Streaming SSE"]
+        ConvRoutes["Conversation Routes"]
+        ToolBridge["Tools Bridge"]
     end
 
-    Client -->|HTTP / Bearer Token| Auth
-    Client -->|POST /messages/stream| Streaming
+    Client -->|"HTTP / Bearer Token"| Auth
+    Client -->|"POST /messages/stream"| Streaming
     Streaming --> ConvRoutes
     ConvRoutes --> ToolBridge
 ```
@@ -51,7 +51,7 @@ graph LR
 
 ---
 
-## 🖥️ Fonctionnalités Clés de l'Interface
+## Fonctionnalités Clés de l'Interface
 
 1. **Streaming fluide des réponses (SSE / NDJSON) :** Les tokens générés par Ollama s'affichent mot à mot sans blocage de l'interface, avec détection automatique de la fin du flux.
 2. **Gestionnaire de Modèles :** Sélection dynamique du modèle d'inférence (ex: `qwen2.5:7b`, `qwen2.5:3b`, `llama3:8b`) avec persistance par utilisateur.

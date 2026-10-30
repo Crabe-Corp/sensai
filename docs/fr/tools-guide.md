@@ -4,7 +4,7 @@ SensAI intègre une architecture modulaire permettant d'étendre facilement les 
 
 ---
 
-## 🛠️ Créer un Outil Natif avec le décorateur `@tool`
+## Créer un Outil Natif avec le décorateur `@tool`
 
 Tous les outils natifs de SensAI résident dans le module `src/features/tools/`. Pour créer un nouvel outil :
 
@@ -72,7 +72,7 @@ Dans `backend/tools_registry.py` :
 
 ---
 
-## 🌐 Intégration d'un Serveur MCP Externe
+## Intégration d'un Serveur MCP Externe
 
 SensAI implémente le client standard **Model Context Protocol (MCP)** (`src/features/tools/mcp_client.py`) pour communiquer avec des serveurs MCP sur l'entrée/sortie standard (`stdio`).
 
@@ -131,7 +131,7 @@ Le backend instancie le client MCP, négocie le protocole `initialize`, découvr
 
 ---
 
-## 🔒 Bonnes Pratiques de Sécurité pour les Outils
+## Bonnes Pratiques de Sécurité pour les Outils
 
 1. **Jamais d'exécution SQL brute :** Utiliser des requêtes paramétrées avec SQLite pour éviter les injections SQL (`sqlite3` / SQLAlchemy).
 2. **Confinement de fichiers (Path Traversal) :** Valider systématiquement que les chemins de fichiers restent contenus dans les répertoires autorisés (`manuscrit_royaumes/`, `exports/`).

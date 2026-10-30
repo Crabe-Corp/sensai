@@ -4,7 +4,7 @@ Ce document détaille les mécanismes internes de communication entre le fronten
 
 ---
 
-## ⚡ Protocole de Streaming NDJSON (`/messages/stream`)
+## Protocole de Streaming NDJSON (/messages/stream)
 
 La communication conversationnelle s'appuie sur une requête HTTP `POST` envoyée à `/api/conversations/{id}/messages/stream` renvoyant une réponse au format `application/x-ndjson` (Newline Delimited JSON).
 
@@ -20,26 +20,26 @@ sequenceDiagram
     participant Tools as Tool Registry / MCP
 
     User->>Front: Envoie un prompt
-    Front->>API: POST /messages/stream {content, tools, model}
-    API-->>Front: {"type": "start", "user_message_id": "uuid"}
+    Front->>API: POST /messages/stream
+    API-->>Front: Événement start (user_message_id)
     
     alt Validation Guardrail Échouée
-        API-->>Front: {"type": "chunk", "content": "Refus diplomatique..."}
-        API-->>Front: {"type": "end", "message_id": "uuid", "tokens": {...}}
+        API-->>Front: Chunk de refus diplomatique
+        API-->>Front: Événement end (clôture)
     else Cache Sémantique Trouvé
-        API-->>Front: {"type": "chunk", "content": "...", "from_cache": true}
-        API-->>Front: {"type": "end", "message_id": "uuid", "from_cache": true}
+        API-->>Front: Chunk réponse depuis le cache
+        API-->>Front: Événement end (from_cache: true)
     else Génération avec Appel d'Outil
         API->>LLM: Inférence avec historique compressé
-        LLM-->>API: Tool Call: calculate_grain_supply
-        API->>Tools: Exécution synchrone dans asyncio.to_thread
-        Tools-->>API: Résultat JSON
-        API->>LLM: Poursuite de la génération avec le retour de l'outil
+        LLM-->>API: Déclenchement d'outil (Tool Call)
+        API->>Tools: Exécution synchrone (asyncio.to_thread)
+        Tools-->>API: Résultat d'exécution JSON
+        API->>LLM: Poursuite de la génération avec le résultat
         loop Streaming des Tokens
-            LLM-->>API: Delta token
-            API-->>Front: {"type": "chunk", "content": "texte..."}
+            LLM-->>API: Token delta
+            API-->>Front: Chunk de texte incrémental
         end
-        API-->>Front: {"type": "end", "message_id": "uuid", "tokens": {...}}
+        API-->>Front: Événement end (métriques de tokens)
     end
 ```
 
@@ -51,7 +51,7 @@ sequenceDiagram
 
 ---
 
-## 📋 Formulaires Dynamiques Interactifs (`ask_user_form`)
+## Formulaires Dynamiques Interactifs (ask_user_form)
 
 Lorsque le modèle estime qu'il lui manque des paramètres indispensables pour exécuter une tâche (ex: armée cible, durée de campagne, nom de manuscrit), il émet un appel à l'outil interne `ask_user_form`.
 
@@ -81,7 +81,7 @@ Le composant de message dans le frontend intercepte les blocs de langage `sensai
 
 ---
 
-## 🛡️ Human-in-the-Loop & Confirmation Sécurisée (`sensai-confirm`)
+## Human-in-the-Loop & Confirmation Sécurisée (sensai-confirm)
 
 Les outils ayant un impact persistant sur le disque ou les données sont classés comme **actions destructives** :
 - `write_manuscript_file` (création ou écrasement de fichier markdown).
@@ -106,7 +106,7 @@ Les outils ayant un impact persistant sur le disque ou les données sont classé
 
 ---
 
-## 🧠 Gestion du Budget de Tokens & Compression Sémantique
+## Gestion du Budget de Tokens & Compression Sémantique
 
 Afin de ne pas saturer la fenêtre de contexte des modèles locaux (`qwen2.5` ou `llama3`), le backend intègre un gestionnaire de budget de tokens (`memory_management.py`) :
 

@@ -1,42 +1,37 @@
----
-title: "Vue d'ensemble & Vision"
-description: "Introduction générale au projet SensAI, ses objectifs et ses composants."
-editUrl: "https://github.com/Crabe-Corp/sensai/edit/dev/docs/README.md"
-sidebar:
-  order: 1
----
+# SensAI — Documentation & Architecture
+
 > Assistant IA modulaire, agentique et souverain, inspiré de l'époque des Sept Royaumes Combattants de la Chine antique.
 
 SensAI est un système d'intelligence artificielle complet combinant un moteur CLI réactif pour l'exploration historique et la simulation tactique, un backend asynchrone FastAPI à haute performance, et une interface web moderne sous React 19 et shadcn/ui.
 
 ---
 
-## 🏛️ Vue d'ensemble du projet
+## Vue d'ensemble du projet
 
 SensAI est conçu autour de 6 piliers architecturaux majeurs :
 
 ```mermaid
-graph TD
-    User([Utilisateur]) -->|Terminal| CLI[SensAI CLI]
-    User -->|Navigateur| Web[SensAI Web Frontend]
-    Web -->|REST / SSE Streaming| API[FastAPI Backend]
+flowchart TD
+    User(["Utilisateur"]) -->|Terminal| CLI["SensAI CLI"]
+    User -->|Navigateur| Web["SensAI Web Frontend"]
+    Web -->|"REST / SSE Streaming"| API["FastAPI Backend"]
     
-    CLI --> Core[SensAI Engine & Orchestrator]
+    CLI --> Core["SensAI Engine & Orchestrator"]
     API --> Core
     
-    subgraph Services & Intelligence
-        Core --> LLM[Ollama Local Engine]
-        Core --> Guard[LLM Security Guardrail]
-        Core --> RAG[Vector RAG - Qdrant]
-        Core --> Cache[Semantic Cache - Vector & Intent]
-        Core --> Registry[Tools Registry & MCP Client]
-        Core --> Memory[Token Budgeting & Compression]
+    subgraph Services ["Services & Intelligence"]
+        Core --> LLM["Ollama Local Engine"]
+        Core --> Guard["LLM Security Guardrail"]
+        Core --> RAG["Vector RAG - Qdrant"]
+        Core --> Cache["Semantic Cache - Vector & Intent"]
+        Core --> Registry["Tools Registry & MCP Client"]
+        Core --> Memory["Token Budgeting & Compression"]
     end
     
-    Registry --> SQLite[(SQLite - kingdoms.db)]
-    Registry --> Files[Manuscrits & Exports PDF]
-    Registry --> MCP[Serveur MCP Externe]
-    Registry --> WebSearch[Web Search - DuckDuckGo / Wiki]
+    Registry --> SQLite[("SQLite - kingdoms.db")]
+    Registry --> Files["Manuscrits & Exports PDF"]
+    Registry --> MCP["Serveur MCP Externe"]
+    Registry --> WebSearch["Web Search - DuckDuckGo / Wiki"]
 ```
 
 ### Principaux sous-systèmes
@@ -50,7 +45,7 @@ graph TD
 
 ---
 
-## 🚀 Démarrage Rapide
+## Démarrage Rapide
 
 ### Prérequis
 

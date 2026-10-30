@@ -1,7 +1,7 @@
 ---
 title: "Architecture Globale"
 description: "Architecture des systèmes SensAI, flux de données et composants."
-editUrl: "https://github.com/Crabe-Corp/sensai/edit/dev/docs/README.md"
+editUrl: "https://github.com/Crabe-Corp/sensai/edit/dev/docs/fr/README.md"
 sidebar:
   order: 2
 ---
@@ -11,33 +11,33 @@ SensAI est un système d'intelligence artificielle complet combinant un moteur C
 
 ---
 
-## 🏛️ Vue d'ensemble du projet
+## Vue d'ensemble du projet
 
 SensAI est conçu autour de 6 piliers architecturaux majeurs :
 
-```mermaid
-graph TD
-    User([Utilisateur]) -->|Terminal| CLI[SensAI CLI]
-    User -->|Navigateur| Web[SensAI Web Frontend]
-    Web -->|REST / SSE Streaming| API[FastAPI Backend]
+<pre class="mermaid">
+flowchart TD
+    User(["Utilisateur"]) --&gt;|Terminal| CLI["SensAI CLI"]
+    User --&gt;|Navigateur| Web["SensAI Web Frontend"]
+    Web --&gt;|"REST / SSE Streaming"| API["FastAPI Backend"]
     
-    CLI --> Core[SensAI Engine & Orchestrator]
-    API --> Core
+    CLI --&gt; Core["SensAI Engine &amp; Orchestrator"]
+    API --&gt; Core
     
-    subgraph Services & Intelligence
-        Core --> LLM[Ollama Local Engine]
-        Core --> Guard[LLM Security Guardrail]
-        Core --> RAG[Vector RAG - Qdrant]
-        Core --> Cache[Semantic Cache - Vector & Intent]
-        Core --> Registry[Tools Registry & MCP Client]
-        Core --> Memory[Token Budgeting & Compression]
+    subgraph Services ["Services &amp; Intelligence"]
+        Core --&gt; LLM["Ollama Local Engine"]
+        Core --&gt; Guard["LLM Security Guardrail"]
+        Core --&gt; RAG["Vector RAG - Qdrant"]
+        Core --&gt; Cache["Semantic Cache - Vector &amp; Intent"]
+        Core --&gt; Registry["Tools Registry &amp; MCP Client"]
+        Core --&gt; Memory["Token Budgeting &amp; Compression"]
     end
     
-    Registry --> SQLite[(SQLite - kingdoms.db)]
-    Registry --> Files[Manuscrits & Exports PDF]
-    Registry --> MCP[Serveur MCP Externe]
-    Registry --> WebSearch[Web Search - DuckDuckGo / Wiki]
-```
+    Registry --&gt; SQLite[("SQLite - kingdoms.db")]
+    Registry --&gt; Files["Manuscrits &amp; Exports PDF"]
+    Registry --&gt; MCP["Serveur MCP Externe"]
+    Registry --&gt; WebSearch["Web Search - DuckDuckGo / Wiki"]
+</pre>
 
 ### Principaux sous-systèmes
 
@@ -50,7 +50,7 @@ graph TD
 
 ---
 
-## 🚀 Démarrage Rapide
+## Démarrage Rapide
 
 ### Prérequis
 

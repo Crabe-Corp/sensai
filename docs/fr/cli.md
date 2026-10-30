@@ -4,7 +4,7 @@ Le terminal en ligne de commande (CLI) est le cœur historique et le moteur d'ex
 
 ---
 
-## 💻 Lancement et Options
+## Lancement et Options
 
 Pour démarrer la CLI, exécutez le module principal depuis la racine du dépôt :
 
@@ -26,7 +26,7 @@ python -m src.interfaces.cli.main [OPTIONS]
 
 ---
 
-## ⚔️ Modes de Fonctionnement
+## Modes de Fonctionnement
 
 Le CLI propose deux modes fondamentaux accessibles par commandes slash :
 
@@ -59,7 +59,7 @@ Le mode simulation transforme l'agent en **Maître de Guerre (*War Master*)** d'
 
 ---
 
-## 📜 Commandes Disponibles en Session
+## Commandes Disponibles en Session
 
 | Commande | Description |
 | :--- | :--- |

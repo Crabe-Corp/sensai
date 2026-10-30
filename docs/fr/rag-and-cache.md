@@ -1,15 +1,10 @@
----
-title: "RAG & Cache Sémantique"
-description: "Vectorisation Qdrant des manuscrits historiques et cache sémantique à deux niveaux."
-editUrl: "https://github.com/Crabe-Corp/sensai/edit/dev/docs/rag-and-cache.md"
-sidebar:
-  order: 2
----
+# RAG Vectoriel & Cache Sémantique
+
 SensAI intègre deux sous-systèmes vectoriels haute performance propulsés par la base de données vectorielle **Qdrant** et le modèle d'embeddings local **`nomic-embed-text`**.
 
 ---
 
-## 📚 Le Système RAG (Retrieval-Augmented Generation)
+## Le Système RAG (Retrieval-Augmented Generation)
 
 Le RAG permet à l'agent de fonder ses raisonnements sur des archives historiques authentiques issues de la période des Royaumes Combattants :
 - **Shiji (Mémoires Historiques)** de Sima Qian (Annales des Cinq Empereurs, biographies de Bian Que, maisons héréditaires).
@@ -18,12 +13,12 @@ Le RAG permet à l'agent de fonder ses raisonnements sur des archives historique
 
 ```mermaid
 flowchart LR
-    A[Question Utilisateur] --> B[Embedding nomic-embed-text]
-    B --> C[(Qdrant: MANUSCRITS_HISTORIQUES)]
-    C -->|Top-K Fragments| D[Filtrage & Reranking]
-    D --> E[Chroniques Authentiques]
-    E --> F[Prompt Conseiller Impérial]
-    F --> G[Génération LLM Riche & sourcée]
+    A["Question Utilisateur"] --> B["Embedding nomic-embed-text"]
+    B --> C[("Qdrant: MANUSCRITS_HISTORIQUES")]
+    C -->|Top-K Fragments| D["Filtrage & Reranking"]
+    D --> E["Chroniques Authentiques"]
+    E --> F["Prompt Conseiller Impérial"]
+    F --> G["Génération LLM Riche & sourcée"]
 ```
 
 ### 1. Ingestion et Vectorisation (`src/RAG/RAG_embedding.py`)
@@ -49,7 +44,7 @@ Lors de la requête :
 
 ---
 
-## ⚡ Le Cache Sémantique (`src/core/sementic_cache.py`)
+## Le Cache Sémantique (`src/core/sementic_cache.py`)
 
 Le cache sémantique évite de solliciter le LLM pour des questions redondantes ou reformulées, réduisant le temps de réponse à moins de **15 millisecondes**.
 
@@ -57,20 +52,20 @@ Le cache sémantique évite de solliciter le LLM pour des questions redondantes 
 
 ```mermaid
 flowchart TD
-    Q[Nouvelle Question] --> N[Normalisation & Nettoyage]
-    N --> V[Embedding nomic-embed-text]
-    V --> S[(Qdrant: SEMENTIC_CACHE)]
-    S -->|Calcul Similarité Cosinus| C{Score Cosinus}
+    Q["Nouvelle Question"] --> N["Normalisation & Nettoyage"]
+    N --> V["Embedding nomic-embed-text"]
+    V --> S[("Qdrant: SEMENTIC_CACHE")]
+    S -->|Calcul Similarité Cosinus| C{"Score Cosinus"}
     
-    C -->|Score >= 0.80| Direct[Cache HIT Immédiat]
-    C -->|0.65 <= Score < 0.80| Intent[Vérification d'Intention LLM]
-    C -->|Score < 0.65| Miss[Cache MISS -> Inférence LLM]
+    C -->|Score >= 0.80| Direct["Cache HIT Immédiat"]
+    C -->|0.65 <= Score < 0.80| Intent["Vérification d'Intention LLM"]
+    C -->|Score < 0.65| Miss["Cache MISS -> Inférence LLM"]
     
-    Intent -->|Même intention = True| ValidHit[Cache HIT Confirmé]
+    Intent -->|Même intention = True| ValidHit["Cache HIT Confirmé"]
     Intent -->|Même intention = False| Miss
     
-    Miss --> LLM[Génération LLM]
-    LLM --> Save[Enregistrement dans le Cache]
+    Miss --> LLM["Génération LLM"]
+    LLM --> Save["Enregistrement dans le Cache"]
 ```
 
 ### 1. Normalisation du Prompt (`normalize_prompt`)

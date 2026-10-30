@@ -1,8 +1,8 @@
 # Contributeurs
 
-Membres associes a ce projet via Zeus :
+Membres associés au projet SensAI :
 
-- [@graigware](https://github.com/graigware) (contributor)
-- [@jawedlahrouri](https://github.com/jawedlahrouri) (contributor)
-- [@LucasLhomme](https://github.com/LucasLhomme) (contributor)
-- [@jobirck](https://github.com/jobirck) (contributor/owner)
+- **Lucas** : [@LucasLhomme](https://github.com/LucasLhomme) — Front et Backend, UX
+- **Jawed** : [@jawedlahrouri](https://github.com/jawedlahrouri) — Core et tools
+- **Grégoire** : [@graigware](https://github.com/graigware) — Sécurité et gestion de la mémoire et des données
+- **Joseph** : [@jobirck](https://github.com/jobirck) — Connaissance et évaluation
