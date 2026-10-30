@@ -22,7 +22,7 @@ RULES = (
 
 def check(path: str, op: str, size: int = 0) -> tuple[bool, str]:
     """Deny-by-default. Returns (allowed, reason); the reason is sent back to the LLM."""
-    target = (PROJECT_ROOT / path).resolve()  # resolves .., symlinks, and neutralises absolute paths
+    target = (PROJECT_ROOT / path).resolve()
     allowed_dirs = ", ".join(f"{r.directory}/" for r in RULES)
     ok, reason = False, f"'{path}' is outside the allowed folders ({allowed_dirs})."
     for r in RULES:

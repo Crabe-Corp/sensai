@@ -61,6 +61,8 @@ from src.features.tools.mcp_client import MCPClient, MCPError
 from src.features.tools.registry import default_registry
 from src.features.simulation.human_verif import confirm_simple
 from src.features.simulation.modes import MODES, AgentMode
+from src.features.simulation import tools as sim_tools
+from src.features.simulation.grounding import settle_reply
 import requests
 from src.core import auto_evaluation
 from src.interfaces.cli.commands.commands import Command, Commands, command
@@ -244,7 +246,10 @@ def build_call_messages(mode: AgentMode, history: list[ChatMessage]) -> list[Cha
             RETURN: liste de messages (le prompt système du mode remplace les autres messages système)"""
 
     if mode.system_prompt:
-        messages = [ChatMessage(role="system", content=mode.system_prompt)] + [m for m in history if m.role != "system"]
+        recent = [m for m in history if m.role != "system"]
+    if mode.force_tools:
+        recent = recent[-1:]
+        messages = [ChatMessage(role="system", content=mode.system_prompt)] + recent
     else:
         messages = list(history)
 
@@ -447,7 +452,6 @@ def run_session(
             current_mode = target
             if current_mode.on_enter:
                 print(current_mode.on_enter(mode_args))
-                print("[Info] Automatic RAG and structured output disabled in this mode.")
                 if any(tag in model for tag in (":0.5b", ":1.5b")):
                     print(f"[Tip] {model} might have issues calling tools: try '/model qwen2.5:7b' if needed.")
             else:
@@ -491,11 +495,10 @@ def run_session(
             )
             safe_input = build_pdf_historical_veracity_prompt(pdf_info, pdf_instruction)
 
-        if current_mode.free_chat:
-            is_valid, error_message = validate_input_with_llm(safe_input, client, model)
-            if not is_valid:
-                print(f"\nAssistant > {error_message}")
-                continue
+        is_valid, error_message = validate_input_with_llm(safe_input, client, model)
+        if not is_valid:
+            print(f"\nAssistant > {error_message}")
+            continue
 
         augmented_input = safe_input
         rag_found = False
@@ -660,16 +663,20 @@ def run_session(
                 print(f"\n[Error] {exc}")
             continue
 
-        sys.stdout.write("\nAssistant > ")
-        sys.stdout.flush()
+        simulation_turn = current_mode.force_tools
+        if not simulation_turn:
+            sys.stdout.write("\nAssistant > ")
+            sys.stdout.flush()
 
         engine = engines[current_mode.name]
         mode_tools = current_mode.registry if current_mode.force_tools else active_tools
         call_messages = build_call_messages(current_mode, history)
+        sim_tools.configure(client, lambda: model, host)
         if augmented_input != safe_input and call_messages and call_messages[-1].role == "user":
             call_messages[-1] = ChatMessage(role="user", content=augmented_input)
 
         response_chunks: list[str] = []
+        tool_results: list[dict] = []
         try:
             for event in engine.run_stream(
                 messages=call_messages,
@@ -677,9 +684,10 @@ def run_session(
                 tools=mode_tools,
             ):
                 if isinstance(event, TokenChunkEvent):
-                    sys.stdout.write(event.token)
-                    sys.stdout.flush()
                     response_chunks.append(event.token)
+                    if not simulation_turn:
+                        sys.stdout.write(event.token)
+                        sys.stdout.flush()
                 elif isinstance(event, ToolCallEvent):
                     args_repr = json.dumps(event.arguments, ensure_ascii=False)
                     sys.stdout.write(f"\n[Outil appelé] {event.tool_name}({args_repr})\n")
@@ -688,6 +696,8 @@ def run_session(
                     if event.is_error:
                         sys.stdout.write(f"[Erreur outil] {event.result}\n")
                     else:
+                        if isinstance(event.result, dict):
+                            tool_results.append(event.result)
                         preview = (
                             json.dumps(event.result, ensure_ascii=False)
                             if isinstance(event.result, (dict, list))
@@ -702,7 +712,14 @@ def run_session(
 
             print()
             full_reply = "".join(response_chunks).strip()
-            if full_reply and current_mode.free_chat:
+
+            if simulation_turn:
+                full_reply, problems = settle_reply(full_reply, tool_results, sim_tools.kingdom_names())
+                for problem in problems:
+                    print(f"[Check] {problem}")
+                if full_reply:
+                    print(f"\nAssistant > {full_reply}")
+            elif full_reply and current_mode.free_chat:
                 eval_res = auto_evaluation.evaluate_ai_response(
                     client=client,
                     model=model,
@@ -741,7 +758,9 @@ def run_session(
                     except Exception as err:
                         debug_print(f"\n[Auto-Evaluation] Error during response rework: {err}")
 
-            if full_reply:
+            if simulation_turn and not full_reply:
+                history.pop()
+            elif full_reply:
                 history.append(ChatMessage(role="assistant", content=full_reply))
                 current_session.messages = list(history)
                 current_session.metadata.model = model
@@ -765,7 +784,7 @@ def run_session(
         except KeyboardInterrupt:
             print("\n[Generation interrupted by user]")
             full_reply = "".join(response_chunks).strip()
-            if full_reply:
+            if full_reply and not simulation_turn:
                 history.append(ChatMessage(role="assistant", content=full_reply))
                 current_session.messages = list(history)
                 current_session.metadata.model = model
@@ -773,6 +792,8 @@ def run_session(
                 current_session.metadata.total_tokens = singleton_token.budget_tokens
                 session_manager.save_session(current_session)
                 artifact_manager.save_artifact(current_session.metadata.session_id, get_active_artifact())
+            else:
+                history.pop()
 
     if current_mode.on_exit:
         current_mode.on_exit()
