@@ -3,6 +3,41 @@ import starlight from '@astrojs/starlight';
 import { BASE, REPO_BRANCH, REPO_URL, SITE } from './site.config.mjs';
 
 const mermaidScript = `
+function setupMermaidZoom() {
+  let modal = document.getElementById('mermaid-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'mermaid-modal';
+    modal.innerHTML = \`
+      <div class="mermaid-modal-backdrop"></div>
+      <div class="mermaid-modal-content">
+        <div class="mermaid-modal-svg"></div>
+        <button class="mermaid-modal-close" type="button" aria-label="Fermer">✕</button>
+      </div>
+    \`;
+    document.body.appendChild(modal);
+
+    const closeModal = () => modal.classList.remove('active');
+    modal.querySelector('.mermaid-modal-backdrop').addEventListener('click', closeModal);
+    modal.querySelector('.mermaid-modal-close').addEventListener('click', closeModal);
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeModal();
+    });
+  }
+
+  document.querySelectorAll('pre.mermaid').forEach((block) => {
+    if (block.dataset.zoomAttached) return;
+    block.dataset.zoomAttached = 'true';
+    block.addEventListener('click', () => {
+      const svg = block.querySelector('svg');
+      if (!svg) return;
+      const target = modal.querySelector('.mermaid-modal-svg');
+      target.innerHTML = svg.outerHTML;
+      modal.classList.add('active');
+    });
+  });
+}
+
 async function renderMermaid() {
   const blocks = document.querySelectorAll('pre.mermaid:not([data-processed="true"])');
   if (blocks.length) {
@@ -33,12 +68,16 @@ async function renderMermaid() {
       });
       try {
         await m.run({ nodes: Array.from(blocks) });
+        setupMermaidZoom();
       } catch (err) {
         console.error('Mermaid render error:', err);
       }
     }
+  } else {
+    setupMermaidZoom();
   }
 }
+
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', renderMermaid);
 } else {

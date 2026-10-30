@@ -69,9 +69,99 @@ pre.mermaid {
   margin: 2rem 0 !important;
   overflow-x: auto !important;
   color: #f4f4f5 !important;
+  cursor: zoom-in !important;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  position: relative;
+}
+
+pre.mermaid:hover {
+  border-color: #3b82f6 !important;
+  box-shadow: 0 4px 20px rgba(59, 130, 246, 0.12);
 }
 
 pre.mermaid svg {
   max-width: 100% !important;
   height: auto !important;
+  pointer-events: none;
+}
+
+/* Modal Lightbox pour agrandir les diagrammes au clic */
+#mermaid-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+
+#mermaid-modal.active {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.mermaid-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(9, 9, 11, 0.88);
+  backdrop-filter: blur(8px);
+}
+
+.mermaid-modal-content {
+  position: relative;
+  z-index: 100000;
+  width: 92vw;
+  max-width: 1200px;
+  max-height: 88vh;
+  background: #121316;
+  border: 1px solid #27272a;
+  border-radius: 8px;
+  padding: 2.5rem 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: auto;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+}
+
+.mermaid-modal-svg {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+  height: 100%;
+}
+
+.mermaid-modal-svg svg {
+  max-width: 100% !important;
+  max-height: 75vh !important;
+  width: auto !important;
+  height: auto !important;
+}
+
+.mermaid-modal-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  background: #18181b;
+  border: 1px solid #27272a;
+  color: #a1a1aa;
+  border-radius: 6px;
+  width: 32px;
+  height: 32px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  line-height: 1;
+  transition: color 0.15s, background-color 0.15s;
+}
+
+.mermaid-modal-close:hover {
+  color: #fafafa;
+  background: #27272a;
 }
