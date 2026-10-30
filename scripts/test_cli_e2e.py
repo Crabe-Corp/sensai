@@ -17,7 +17,6 @@ if str(PROJECT_ROOT) not in sys.path:
 
 import httpx
 
-from src.core.db.database import init_database
 from src.core.engine import TokenChunkEvent, ToolCallEvent, ToolResultEvent
 from src.core.ollama_client import ChatMessage, OllamaClient
 from src.core.schemas import HistoricalFigure, KingdomInfo, StructuredResponse
@@ -157,7 +156,6 @@ def run_e2e_test(live_mode: bool = False) -> tuple[str, list[tuple[str, bool, st
     """Exécute l'ensemble du scénario de test de bout en bout de la CLI et consigne les résultats.
             PARAMS: - live_mode - BOOL: exécute en conditions réelles avec Ollama si True
             RETURN: tuple contenant la sortie textuelle brute et la liste des vérifications"""
-    init_database()
     captured_stdout = io.StringIO()
     checks: list[tuple[str, bool, str]] = []
 

@@ -35,7 +35,7 @@ export function ConfirmationCard({
     onReject(`[Confirmation : refusée]${tokenPart} J'annule et refuse l'opération : ${confirmation.summary}`)
   }
 
-  const getIcon = () => {    if (isDb) return <DatabaseZap className="w-3.5 h-3.5 text-zinc-300" />
+  const getIcon = () => {
     if (isFile) return <FilePen className="w-3.5 h-3.5 text-zinc-300" />
     return <ShieldAlert className="w-3.5 h-3.5 text-zinc-300" />
   }

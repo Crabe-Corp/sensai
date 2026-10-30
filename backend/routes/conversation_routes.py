@@ -21,7 +21,6 @@ from src.core.ollama_client import ChatMessage, OllamaClient
 from src.features.sec.security import mask_pii, validate_input_with_llm
 from tools_registry import (
     ALL_TOOLS_ID,
-    DESTRUCTIVE_TOOLS,
     FORM_TOOL_NAME,
     build_confirm_block,
     build_form_block,
@@ -33,6 +32,9 @@ from tools_registry import (
     selected_tool_names,
     take_pending_action,
 )
+
+# Outils nécessitant une confirmation humaine avant exécution
+_DESTRUCTIVE_TOOLS = {"write_battle_report"}
 
 MAX_TOOL_ROUNDS = 4  # nombre maximal d'allers-retours modèle <-> outils par message
 
@@ -1048,7 +1050,7 @@ async def chat_stream(
                                 break
 
                             # Les outils sont synchrones (réseau, SQL, fichiers) : hors de la boucle d'événements
-                            if t_name in DESTRUCTIVE_TOOLS:
+                            if t_name in _DESTRUCTIVE_TOOLS:
                                 # Seul un token émis par le serveur pour cet utilisateur, cette conversation et cet outil
                                 # débloque l'action ; elle s'exécute avec les arguments que l'utilisateur a vus.
                                 approved_args = (
