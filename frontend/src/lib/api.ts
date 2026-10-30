@@ -1,4 +1,4 @@
-import type { Conversation, Message, ToolInfo, McpServer, User } from '../types'
+import type { Conversation, Message, ToolInfo, McpServer, User, Persona } from '../types'
 
 const TOKEN_KEY = 'sensai_auth_token'
 
@@ -6,6 +6,15 @@ export const authStorage = {
   getToken: (): string | null => localStorage.getItem(TOKEN_KEY),
   setToken: (token: string) => localStorage.setItem(TOKEN_KEY, token),
   clearToken: () => localStorage.removeItem(TOKEN_KEY),
+}
+
+export const UNAUTHORIZED_EVENT = 'sensai:unauthorized'
+
+// Token expiré/invalide : on le purge et on prévient l'application pour revenir à l'écran de connexion
+function handleUnauthorized(endpoint: string) {
+  if (endpoint.startsWith('/api/auth/login') || endpoint.startsWith('/api/auth/register')) return
+  authStorage.clearToken()
+  window.dispatchEvent(new Event(UNAUTHORIZED_EVENT))
 }
 
 async function apiFetch<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
@@ -24,6 +33,7 @@ async function apiFetch<T>(endpoint: string, options: RequestInit = {}): Promise
   })
 
   if (!response.ok) {
+    if (response.status === 401) handleUnauthorized(endpoint)
     let errorDetail = 'Une erreur est survenue'
     try {
       const errJson = await response.json()
@@ -145,9 +155,19 @@ export const api = {
     return response.json()
   },
 
+  async clearCache(conversationId: string): Promise<{ success: boolean; message: string }> {
+    return apiFetch<{ success: boolean; message: string }>(`/api/conversations/${conversationId}/clearcache`, {
+      method: 'POST',
+    })
+  },
+
   // Models & Tools
   async getModels(): Promise<{ models: string[]; default: string }> {
     return apiFetch<{ models: string[]; default: string }>('/api/models')
+  },
+
+  async getPersonas(): Promise<Persona[]> {
+    return apiFetch<Persona[]>('/api/models/personas')
   },
 
   async getTools(): Promise<ToolInfo[]> {
@@ -174,6 +194,59 @@ export const api = {
     return apiFetch<{ success: boolean; server: McpServer }>('/api/mcp/servers', {
       method: 'POST',
       body: JSON.stringify(data),
+    })
+  },
+
+  async deleteMcpServer(serverId: string): Promise<{ success: boolean; message?: string }> {
+    return apiFetch<{ success: boolean; message?: string }>(`/api/mcp/servers/${serverId}`, {
+      method: 'DELETE',
+    })
+  },
+
+  async getMcpStatus(serverId?: string): Promise<{
+    connected: boolean
+    status?: string
+    tools_count?: number
+    tools?: string[]
+    connected_servers?: string[]
+    servers?: McpServer[]
+  }> {
+    const query = serverId ? `?server_id=${encodeURIComponent(serverId)}` : ''
+    return apiFetch<{
+      connected: boolean
+      status?: string
+      tools_count?: number
+      tools?: string[]
+      connected_servers?: string[]
+      servers?: McpServer[]
+    }>(`/api/mcp/status${query}`)
+  },
+
+  async connectMcpServer(data: { server_id?: string; command?: string; endpoint?: string }): Promise<{
+    success: boolean
+    server_id: string
+    status: string
+    tools_count: number
+    tools: string[]
+    server: McpServer
+  }> {
+    return apiFetch<{
+      success: boolean
+      server_id: string
+      status: string
+      tools_count: number
+      tools: string[]
+      server: McpServer
+    }>('/api/mcp/connect', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  },
+
+  async disconnectMcpServer(serverId?: string): Promise<{ success: boolean; server_id?: string; status?: string; message?: string }> {
+    return apiFetch<{ success: boolean; server_id?: string; status?: string; message?: string }>('/api/mcp/disconnect', {
+      method: 'POST',
+      body: JSON.stringify(serverId ? { server_id: serverId } : {}),
     })
   },
 
@@ -205,7 +278,7 @@ export const api = {
     conversationId: string,
     params: { content: string; model?: string; tools_enabled?: string[]; system_instruction?: string },
     onChunk: (chunk: string) => void,
-    onDone: (data: { message_id: string; user_message_id?: string; prompt_tokens: number; completion_tokens: number; total_tokens: number; conversation_total_tokens: number }) => void,
+    onDone: (data: { message_id: string; user_message_id?: string; prompt_tokens: number; completion_tokens: number; total_tokens: number; conversation_total_tokens: number; from_cache?: boolean }) => void,
     onError: (err: Error) => void,
     signal?: AbortSignal,
     onAbort?: (accumulatedText: string) => void,
@@ -225,6 +298,10 @@ export const api = {
       })
 
       if (!response.ok) {
+        if (response.status === 401) {
+          handleUnauthorized(`/api/conversations/${conversationId}/chat`)
+          throw new Error('Session expirée, veuillez vous reconnecter')
+        }
         throw new Error(`Erreur HTTP: ${response.status}`)
       }
 

@@ -7,8 +7,21 @@ import { SettingsModal } from './components/SettingsModal'
 import { ModelsModal } from './components/ModelsModal'
 import { WorkInviteModal } from './components/WorkInviteModal'
 import { DeleteConversationModal } from './components/DeleteConversationModal'
-import { api, authStorage } from './lib/api'
-import type { Conversation, Message, User, AttachedFile } from './types'
+import { api, authStorage, UNAUTHORIZED_EVENT } from './lib/api'
+import type { Conversation, Message, User, AttachedFile, ToolInfo } from './types'
+
+// Ne garde que les outils connus et visibles du backend ; l'ancien 'mcp_runner' équivalait à « tous les outils »
+function normalizeTools(ids: string[], available: ToolInfo[]): string[] {
+  const visible = available.filter((t) => t.visible !== false)
+  const known = new Set(visible.map((t) => t.id))
+  const result = new Set<string>()
+  for (const id of ids) {
+    if (id === 'Structured Output') result.add('structured_output')
+    else if (id === 'mcp_runner') visible.forEach((t) => t.id !== 'structured_output' && result.add(t.id))
+    else if (known.has(id)) result.add(id)
+  }
+  return [...result]
+}
 
 export function App() {
   const [user, setUser] = useState<User | null>(null)
@@ -17,6 +30,7 @@ export function App() {
   // Navigation & Modales
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [settingsTab, setSettingsTab] = useState<'profile' | 'mcp'>('profile')
   const [modelsOpen, setModelsOpen] = useState(false)
   const [inviteModalOpen, setInviteModalOpen] = useState(false)
   const [runSettingsOpen, setRunSettingsOpen] = useState(false)
@@ -34,6 +48,7 @@ export function App() {
   const [currentModel, setCurrentModel] = useState('qwen3:0.6b')
   const [modelsList, setModelsList] = useState<string[]>(['qwen3:0.6b'])
   const [activeTools, setActiveTools] = useState<string[]>(['structured_output'])
+  const [toolsList, setToolsList] = useState<ToolInfo[]>([])
   const [systemInstruction, setSystemInstruction] = useState('')
 
   // WebSocket pour la collaboration temps réel (Mode Work)
@@ -59,20 +74,38 @@ export function App() {
     initAuth()
   }, [])
 
+  // Session invalidée côté serveur (401) : retour à l'écran de connexion
+  useEffect(() => {
+    const onUnauthorized = () => {
+      setUser(null)
+      setActiveConversation(null)
+      setMessages([])
+      setIsStreaming(false)
+      setStreamingText('')
+    }
+    window.addEventListener(UNAUTHORIZED_EVENT, onUnauthorized)
+    return () => window.removeEventListener(UNAUTHORIZED_EVENT, onUnauthorized)
+  }, [])
+
   // Chargement des conversations et configuration initiale
   const loadInitialData = async () => {
     try {
-      const [convs, cfg, modelsData] = await Promise.all([
+      const [convs, cfg, modelsData, toolsData] = await Promise.all([
         api.listConversations(),
         api.getModelConfig().catch(() => ({ model_name: 'qwen3:0.6b', temperature: 0.7, active_tools: ['structured_output'] })),
         api.getModels().catch(() => ({ models: ['qwen3:0.6b'], default: 'qwen3:0.6b' })),
+        api.getTools().catch(() => [] as ToolInfo[]),
       ])
+      setToolsList(toolsData)
       setConversations(convs)
-      setModelsList(modelsData.models || ['qwen3:0.6b'])
-      setCurrentModel(cfg.model_name || 'qwen3:0.6b')
-      const cleanTools = (cfg.active_tools || []).filter(
-        (t: string) => t === 'structured_output' || t === 'Structured Output' || t === 'mcp_runner'
-      )
+      const availableModels: string[] = modelsData.models || ['qwen3:0.6b']
+      // Le modèle sauvegardé peut ne plus être installé : on retombe sur un modèle disponible
+      const initialModel = availableModels.includes(cfg.model_name)
+        ? cfg.model_name
+        : modelsData.default || availableModels[0] || 'qwen3:0.6b'
+      setModelsList(availableModels)
+      setCurrentModel(initialModel)
+      const cleanTools = normalizeTools(cfg.active_tools || [], toolsData)
       setActiveTools(cleanTools.length > 0 ? cleanTools : ['structured_output'])
 
       // Vérifier si une URL spécifique contient un ID de conversation (?c=...)
@@ -81,13 +114,13 @@ export function App() {
       if (targetId) {
         const found = convs.find((c) => c.id === targetId)
         if (found) {
-          await selectConversation(targetId)
+          await selectConversation(targetId, toolsData)
           return
         }
       }
 
       // Règle demandée : à chaque connexion, on ouvre une nouvelle conversation
-      await handleNewConversation('solo', cfg.model_name, cfg.active_tools)
+      await handleNewConversation('solo', initialModel, cleanTools.length > 0 ? cleanTools : ['structured_output'])
     } catch {
       // ignore
     }
@@ -145,15 +178,12 @@ export function App() {
   }, [activeConversation?.id, activeConversation?.mode])
 
   // Sélection d'une conversation
-  const selectConversation = async (id: string) => {
+  const selectConversation = async (id: string, available: ToolInfo[] = toolsList) => {
     try {
       const fullConv = await api.getConversation(id)
       setActiveConversation(fullConv)
       setMessages(fullConv.messages || [])
-      const cleanConvTools = (fullConv.tools_enabled || []).filter(
-        (t: string) => t === 'structured_output' || t === 'Structured Output' || t === 'mcp_runner'
-      )
-      setActiveTools(cleanConvTools)
+      setActiveTools(normalizeTools(fullConv.tools_enabled || [], available))
       setCurrentModel(fullConv.model_name || 'qwen3:0.6b')
       window.history.replaceState(null, '', `?c=${id}`)
     } catch {
@@ -320,6 +350,7 @@ export function App() {
           completion_tokens: doneData.completion_tokens,
           total_tokens: doneData.total_tokens,
           created_at: new Date().toISOString(),
+          from_cache: doneData.from_cache,
         }
 
         setMessages((prev) => [...prev, finalAssistantMsg])
@@ -505,12 +536,18 @@ export function App() {
         activeId={activeConversation?.id || null}
         activeConversation={activeConversation}
         messages={messages}
-        onSelectConversation={selectConversation}
+        onSelectConversation={(id) => selectConversation(id)}
         onNewConversation={(mode) => handleNewConversation(mode)}
         onDeleteConversation={handleDeleteConversation}
-        onOpenSettings={() => setSettingsOpen(true)}
+        onOpenSettings={() => {
+          setSettingsTab('profile')
+          setSettingsOpen(true)
+        }}
         onOpenModels={() => setModelsOpen(true)}
-        onOpenMcp={() => setSettingsOpen(true)}
+        onOpenMcp={() => {
+          setSettingsTab('mcp')
+          setSettingsOpen(true)
+        }}
         onLogout={handleLogout}
       />
 
@@ -521,6 +558,7 @@ export function App() {
           messages={messages}
           isStreaming={isStreaming}
           streamingText={streamingText}
+          toolsList={toolsList}
           activeTools={activeTools}
           onToggleTool={handleToggleTool}
           onSendMessage={handleSendMessage}
@@ -539,17 +577,20 @@ export function App() {
           model={currentModel}
           modelsList={modelsList}
           onModelChange={(m) => setCurrentModel(m)}
+          toolsList={toolsList}
           activeTools={activeTools}
           onToggleTool={handleToggleTool}
           systemInstruction={systemInstruction}
           onSystemInstructionChange={setSystemInstruction}
           totalTokens={activeConversation?.total_tokens || 0}
+          conversationId={activeConversation?.id}
         />
       </div>
 
       {/* Modal Paramètres & MCP */}
       <SettingsModal
         isOpen={settingsOpen}
+        initialTab={settingsTab}
         onClose={() => setSettingsOpen(false)}
         user={user}
         onUserUpdated={(updated) => setUser(updated)}

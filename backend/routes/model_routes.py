@@ -1,5 +1,6 @@
 import json
 import os
+from pathlib import Path
 from typing import List, Optional
 from fastapi import APIRouter, Depends
 import httpx
@@ -8,9 +9,10 @@ from sqlalchemy.orm import Session
 from database import get_db
 from models import ModelPreference, User
 from security import get_current_user
-from tools_registry import list_tools
+from tools_registry import ALL_TOOLS_ID, list_tools
 
 router = APIRouter(prefix="/api/models", tags=["models"])
+PERSONAS_FILE = Path(__file__).resolve().parents[2] / "configs" / "personas.json"
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://ia:11434")
 
 
@@ -48,6 +50,29 @@ def get_available_tools():
     return list_tools()
 
 
+@router.get("/personas")
+def get_available_personas():
+    """Personas proposées dans l'interface : configs/personas.json, complétées par celles du CLI (PersonaManager)."""
+    personas: List[dict] = []
+    if PERSONAS_FILE.is_file():
+        personas = json.loads(PERSONAS_FILE.read_text(encoding="utf-8"))
+
+    from src.features.prompt.persona_manager import PersonaManager
+
+    manager = PersonaManager()
+    known_ids = {p["id"] for p in personas}
+    for persona_id in manager.list_personas():
+        if persona_id not in known_ids:
+            persona = manager.load_persona(persona_id)
+            personas.append({
+                "id": persona_id,
+                "name": persona.name,
+                "description": persona.description,
+                "system_prompt": persona.system_prompt,
+            })
+    return personas
+
+
 @router.get("/config")
 def get_user_model_config(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     pref = db.query(ModelPreference).filter(ModelPreference.user_id == user.id).first()
@@ -58,7 +83,7 @@ def get_user_model_config(user: User = Depends(get_current_user), db: Session = 
             "active_tools": ["structured_output"]
         }
     tools = json.loads(pref.active_tools) if pref.active_tools else []
-    valid_ids = [t["id"] for t in list_tools()] + ["structured_output", "Structured Output", "mcp_runner"]
+    valid_ids = [t["id"] for t in list_tools()] + ["Structured Output", ALL_TOOLS_ID]
     tools = [t for t in tools if t in valid_ids]
     return {
         "model_name": pref.model_name,
@@ -74,7 +99,7 @@ def update_user_model_config(
     db: Session = Depends(get_db)
 ):
     pref = db.query(ModelPreference).filter(ModelPreference.user_id == user.id).first()
-    valid_ids = [t["id"] for t in list_tools()] + ["structured_output", "Structured Output", "mcp_runner"]
+    valid_ids = [t["id"] for t in list_tools()] + ["Structured Output", ALL_TOOLS_ID]
     cleaned_tools = [t for t in (cfg.active_tools or []) if t in valid_ids]
     tools_json = json.dumps(cleaned_tools)
     if not pref:
@@ -98,4 +123,3 @@ def update_user_model_config(
         "temperature": pref.temperature,
         "active_tools": cleaned_tools
     }
-

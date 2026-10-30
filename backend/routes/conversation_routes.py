@@ -3,6 +3,7 @@ import json
 import os
 from pathlib import Path
 import re
+import threading
 import uuid
 from datetime import datetime
 from typing import List, Optional
@@ -15,7 +16,25 @@ from database import get_db
 from models import Conversation, ConversationMember, Message, User
 from realtime import manager
 from security import get_current_user
-from tools_registry import get_ollama_tools, list_tools, run_tool
+from src.core import memory_management, sementic_cache
+from src.core.ollama_client import ChatMessage, OllamaClient
+from src.features.sec.security import mask_pii, validate_input_with_llm
+from tools_registry import (
+    ALL_TOOLS_ID,
+    DESTRUCTIVE_TOOLS,
+    FORM_TOOL_NAME,
+    build_confirm_block,
+    build_form_block,
+    create_pending_action,
+    get_ollama_tools,
+    list_tools,
+    run_tool,
+    run_tool_confirmed,
+    selected_tool_names,
+    take_pending_action,
+)
+
+MAX_TOOL_ROUNDS = 4  # nombre maximal d'allers-retours modèle <-> outils par message
 
 router = APIRouter(prefix="/api/conversations", tags=["conversations"])
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://ia:11434")
@@ -87,7 +106,7 @@ def list_conversations(user: User = Depends(get_current_user), db: Session = Dep
     for c in sorted_convs:
         total_tokens = sum(m.total_tokens for m in c.messages)
         tools = json.loads(c.tools_enabled) if c.tools_enabled else []
-        valid_tool_ids = [t["id"] for t in list_tools()] + ["structured_output", "Structured Output", "mcp_runner"]
+        valid_tool_ids = [t["id"] for t in list_tools()] + ["Structured Output", ALL_TOOLS_ID]
         tools = [t for t in tools if t in valid_tool_ids]
         result.append({
             "id": c.id,
@@ -159,7 +178,7 @@ def save_conversation(
     """Enregistre ou met à jour une conversation et ses messages."""
     meta = payload.get("metadata", payload)
     title = meta.get("title") or payload.get("title")
-    model_name = meta.get("model") or meta.get("model_name") or payload.get("model_name") or "qwen2.5:1.5b"
+    model_name = meta.get("model") or meta.get("model_name") or payload.get("model_name") or "qwen2.5:3b"
     raw_messages = payload.get("messages", [])
 
     conv = db.query(Conversation).filter(Conversation.id == conversation_id).first()
@@ -185,6 +204,10 @@ def save_conversation(
         for new_msg in raw_messages[existing_count:]:
             m_role = new_msg.get("role", "user")
             m_content = new_msg.get("content", "")
+            if m_role == "user" and m_content:
+                masked_m, has_pii_m = mask_pii(m_content)
+                if has_pii_m:
+                    m_content = masked_m
             m = Message(
                 id=str(uuid.uuid4()),
                 conversation_id=conv.id,
@@ -664,6 +687,97 @@ def add_member_to_work_conv(
     return {"success": True, "message": f"{target_user.username} a été ajouté à la conversation"}
 
 
+@router.post("/{conversation_id}/clearcache")
+def clear_semantic_cache(
+    conversation_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    conv = db.query(Conversation).filter(Conversation.id == conversation_id).first()
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversation introuvable")
+
+    if not check_user_access(conv, user, db):
+        raise HTTPException(status_code=403, detail="Accès non autorisé à cette conversation")
+
+    try:
+        sementic_cache.clean_cache()
+        return {"success": True, "message": "Cache sémantique vidé avec succès"}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Erreur lors du vidage du cache : {str(exc)}")
+
+
+HISTORY_TOKEN_BUDGET = 2000
+# memory_management lit un compteur global (singleton_token) : une requête à la fois entre consume et enforce
+_history_budget_lock = threading.Lock()
+# Le message d'approbation du frontend commence par ce marqueur suivi du token de l'action
+APPROVAL_PATTERN = re.compile(r'^\[Confirmation : approuvée\] \[action_id:([A-Za-z0-9_\-]+)\]')
+
+
+def _describe_destructive_call(tool_name: str, args: dict) -> str:
+    if tool_name == "write_manuscript_file":
+        return f"Écriture dans le fichier {args.get('filename')}"
+    if tool_name == "update_kingdom_database":
+        return f"Mise à jour SQL : {args.get('sql_statement')}"
+    return f"Exécution de l'action {tool_name}"
+
+
+async def _save_and_announce(
+    db: Session,
+    conv: Conversation,
+    user_msg_id: str,
+    content: str,
+    prompt_tokens: int,
+    completion_tokens: int,
+    from_cache: bool = False,
+) -> str:
+    """Enregistre la réponse de l'assistant, la diffuse aux membres et renvoie la ligne NDJSON `done`."""
+    total_tokens = prompt_tokens + completion_tokens
+    assistant_msg_id = str(uuid.uuid4())
+    assistant_msg = Message(
+        id=assistant_msg_id,
+        conversation_id=conv.id,
+        sender_id=None,
+        sender_name="SensAI",
+        role="assistant",
+        content=content,
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        total_tokens=total_tokens,
+    )
+    db.add(assistant_msg)
+    conv.updated_at = datetime.utcnow()
+    db.commit()
+    conv_total_tokens = sum(m.total_tokens for m in conv.messages)
+    cache_flags = {"from_cache": True, "source": "cache"} if from_cache else {}
+
+    await manager.broadcast(conv.id, {
+        "type": "new_message",
+        "message": {
+            "id": assistant_msg_id,
+            "role": "assistant",
+            "sender_name": "SensAI",
+            "content": content,
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "total_tokens": total_tokens,
+            "created_at": assistant_msg.created_at.isoformat(),
+            "conversation_total_tokens": conv_total_tokens,
+            **cache_flags,
+        }
+    })
+    return json.dumps({
+        "type": "done",
+        "message_id": assistant_msg_id,
+        "user_message_id": user_msg_id,
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+        "total_tokens": total_tokens,
+        "conversation_total_tokens": conv_total_tokens,
+        **cache_flags,
+    }) + "\n"
+
+
 @router.post("/{conversation_id}/chat")
 async def chat_stream(
     conversation_id: str,
@@ -685,7 +799,13 @@ async def chat_stream(
     valid_tool_ids = [t["id"] for t in list_tools()] + ["structured_output", "Structured Output", "mcp_runner"]
     tools_to_use = [t for t in raw_tools if t in valid_tool_ids]
 
-    user_tokens = estimate_tokens(req.content)
+    # Masquage des données sensibles (email, téléphone)
+    masked_content, has_pii = mask_pii(req.content)
+    effective_content = masked_content if has_pii else req.content
+    approval_match = APPROVAL_PATTERN.match(req.content)
+    approval_token = approval_match.group(1) if approval_match else None
+
+    user_tokens = estimate_tokens(effective_content)
     user_msg_id = str(uuid.uuid4())
     user_msg = Message(
         id=user_msg_id,
@@ -693,7 +813,7 @@ async def chat_stream(
         sender_id=user.id,
         sender_name=user.username,
         role="user",
-        content=req.content,
+        content=effective_content,
         prompt_tokens=user_tokens,
         completion_tokens=0,
         total_tokens=user_tokens,
@@ -704,16 +824,16 @@ async def chat_stream(
         clean_prompt = re.sub(
             r'\[Fichier joint\s*:\s*[^\]\(\)]+?(?: \([^)]+\))?\](?:\s*--- Début du contenu de [^\n\r]+ ---\s*[\s\S]*?\s*--- Fin du contenu de [^\n\r]+ ---)?',
             '',
-            req.content
+            effective_content
         ).strip()
         if clean_prompt:
             conv.title = clean_prompt[:35] + ("..." if len(clean_prompt) > 35 else "")
         else:
-            file_match = re.search(r'\[Fichier joint\s*:\s*([^\]\(\)]+?)', req.content)
+            file_match = re.search(r'\[Fichier joint\s*:\s*([^\]\(\)]+?)', effective_content)
             if file_match:
                 conv.title = file_match.group(1).strip()[:35]
             else:
-                conv.title = req.content[:35] + ("..." if len(req.content) > 35 else "")
+                conv.title = effective_content[:35] + ("..." if len(effective_content) > 35 else "")
 
     db.commit()
 
@@ -723,7 +843,7 @@ async def chat_stream(
             "id": user_msg_id,
             "role": "user",
             "sender_name": user.username,
-            "content": req.content,
+            "content": effective_content,
             "prompt_tokens": user_tokens,
             "completion_tokens": 0,
             "total_tokens": user_tokens,
@@ -744,62 +864,172 @@ async def chat_stream(
             "Ne mets jamais de phrase entière en guise de clé."
         )
 
-    history.append({"role": "system", "content": system_prompt})
+    active_tool_names = selected_tool_names(tools_to_use)
+    if "search_historical_archives" in active_tool_names:
+        system_prompt += (
+            "\nPriorité documentaire : Les archives historiques locales (outil 'search_historical_archives') "
+            "sont ta source première d'information. N'appelle l'outil 'web_search' que pour confirmer des faits "
+            "ou si les archives locales ne contiennent pas les informations recherchées."
+        )
 
-    past_messages = db.query(Message).filter(Message.conversation_id == conv.id).order_by(Message.created_at).limit(15).all()
+    if FORM_TOOL_NAME in active_tool_names:
+        system_prompt += (
+            f"\nSi des informations indispensables manquent pour répondre, utilise l'outil {FORM_TOOL_NAME} "
+            "pour les demander à l'utilisateur au lieu de les deviner, puis attends ses réponses."
+        )
+
+    # Récupération de l'historique et gestion du budget de tokens via memory_management ([M2])
+    past_messages = db.query(Message).filter(Message.conversation_id == conv.id).order_by(Message.created_at).all()
+    raw_chat_messages = [ChatMessage(role="system", content=system_prompt)]
+    total_tokens_calc = estimate_tokens(system_prompt)
     for pm in past_messages:
-        history.append({"role": pm.role, "content": pm.content})
+        raw_chat_messages.append(ChatMessage(role=pm.role, content=pm.content))
+        total_tokens_calc += (pm.total_tokens or estimate_tokens(pm.content))
+
+    def compress_history() -> list:
+        mem_client = OllamaClient(base_url=OLLAMA_BASE_URL)
+        try:
+            with _history_budget_lock:
+                memory_management.consume_tokens(total_tokens_calc)
+                return memory_management.enforce_token_budget(
+                    model=model_to_use,
+                    client=mem_client,
+                    messages=raw_chat_messages,
+                    max_history_tokens=HISTORY_TOKEN_BUDGET,
+                )
+        finally:
+            mem_client.close()
+
+    # Appel Ollama synchrone possible (résumé) : hors de la boucle d'événements
+    try:
+        managed_messages = await asyncio.to_thread(compress_history)
+    except Exception:
+        managed_messages = raw_chat_messages
+
+    for msg in managed_messages:
+        history.append({
+            "role": getattr(msg, "role", "user"),
+            "content": getattr(msg, "content", ""),
+        })
 
     async def event_generator():
         accumulated_text = ""
         prompt_tokens_eval = user_tokens
         completion_tokens_eval = 0
 
-        use_mcp = "mcp_runner" in tools_to_use
+        ollama_tools = get_ollama_tools(tools_to_use)
         yield json.dumps({"type": "start", "user_message_id": user_msg_id}) + "\n"
+
+        # Validation de sécurité par guardrail LLM
+        sec_client = OllamaClient(base_url=OLLAMA_BASE_URL)
+        try:
+            is_valid, refusal_message = await asyncio.to_thread(
+                validate_input_with_llm,
+                effective_content,
+                sec_client,
+                model_to_use
+            )
+        finally:
+            sec_client.close()
+
+        if not is_valid:
+            refusal_text = refusal_message or "The imperial advisor refuses to discuss this topic with you."
+            accumulated_text = refusal_text
+            completion_tokens_eval = estimate_tokens(accumulated_text)
+
+            yield json.dumps({"type": "chunk", "content": refusal_text}) + "\n"
+            yield await _save_and_announce(
+                db, conv, user_msg_id, refusal_text, prompt_tokens_eval, completion_tokens_eval,
+            )
+            return
+
+        # Interrogation du cache sémantique vectoriel ([A6])
+        cached_response = None
+        try:
+            cached_response = await asyncio.to_thread(
+                sementic_cache.get_info_cache,
+                prompt=effective_content,
+                ollama_url=OLLAMA_BASE_URL,
+                model=model_to_use,
+            )
+        except Exception:
+            cached_response = None
+
+        if cached_response and cached_response.strip():
+            completion_tokens_eval = estimate_tokens(cached_response)
+
+            yield json.dumps({
+                "type": "chunk",
+                "content": cached_response,
+                "from_cache": True,
+                "source": "cache",
+            }) + "\n"
+            yield await _save_and_announce(
+                db, conv, user_msg_id, cached_response, prompt_tokens_eval, completion_tokens_eval,
+                from_cache=True,
+            )
+            return
 
         ollama_payload = {
             "model": model_to_use,
             "messages": history,
             "stream": True,
+            # Les modèles à réflexion (qwen3...) rangent leur sortie dans message.thinking, que l'on
+            # n'affiche pas : avec format=json le contenu restait vide. On désactive la réflexion.
+            "think": False,
         }
         if is_structured:
             ollama_payload["format"] = "json"
-        if use_mcp:
-            ollama_payload["tools"] = get_ollama_tools()
+        if ollama_tools:
+            ollama_payload["tools"] = ollama_tools
 
         try:
             async with httpx.AsyncClient(timeout=120.0) as client:
                 try:
-                    tool_calls_to_process = []
-                    async with client.stream(
-                        "POST",
-                        f"{OLLAMA_BASE_URL}/api/chat",
-                        json=ollama_payload
-                    ) as response:
-                        async for raw_line in response.aiter_lines():
-                            if not raw_line:
-                                continue
-                            try:
-                                data = json.loads(raw_line)
-                                msg_chunk = data.get("message", {}).get("content", "")
-                                if msg_chunk:
-                                    accumulated_text += msg_chunk
-                                    yield json.dumps({"type": "chunk", "content": msg_chunk}) + "\n"
+                    form_sent = False
+                    for round_idx in range(MAX_TOOL_ROUNDS + 1):
+                        round_payload = {**ollama_payload, "messages": history}
+                        if round_idx == MAX_TOOL_ROUNDS:
+                            round_payload.pop("tools", None)
+                        tool_calls_to_process = []
+                        round_text = ""
+                        async with client.stream(
+                            "POST",
+                            f"{OLLAMA_BASE_URL}/api/chat",
+                            json=round_payload
+                        ) as response:
+                            async for raw_line in response.aiter_lines():
+                                if not raw_line:
+                                    continue
+                                try:
+                                    data = json.loads(raw_line)
+                                    if data.get("error"):
+                                        err_msg = f"\n[Erreur du modèle {model_to_use} : {data['error']}]"
+                                        accumulated_text += err_msg
+                                        yield json.dumps({"type": "chunk", "content": err_msg}) + "\n"
+                                        continue
+                                    msg_chunk = data.get("message", {}).get("content", "")
+                                    if msg_chunk:
+                                        round_text += msg_chunk
+                                        accumulated_text += msg_chunk
+                                        yield json.dumps({"type": "chunk", "content": msg_chunk}) + "\n"
 
-                                tc_list = data.get("message", {}).get("tool_calls")
-                                if tc_list:
-                                    tool_calls_to_process.extend(tc_list)
+                                    tc_list = data.get("message", {}).get("tool_calls")
+                                    if tc_list:
+                                        tool_calls_to_process.extend(tc_list)
 
-                                if data.get("done"):
-                                    prompt_tokens_eval = data.get("prompt_eval_count") or user_tokens
-                                    completion_tokens_eval = data.get("eval_count") or estimate_tokens(accumulated_text)
-                            except Exception:
-                                continue
-                    if tool_calls_to_process:
+                                    if data.get("done"):
+                                        prompt_tokens_eval = data.get("prompt_eval_count") or user_tokens
+                                        completion_tokens_eval = data.get("eval_count") or estimate_tokens(accumulated_text)
+                                except Exception:
+                                    continue
+
+                        if not tool_calls_to_process:
+                            break
+
                         history.append({
                             "role": "assistant",
-                            "content": accumulated_text,
+                            "content": round_text,
                             "tool_calls": tool_calls_to_process,
                         })
 
@@ -813,37 +1043,46 @@ async def chat_stream(
                                 except Exception:
                                     t_args = {}
 
-                            tool_output = run_tool(t_name, t_args)
-                            info_text = f"\n\n*[Outil exécuté : {t_name}]*\n```json\n{tool_output}\n```\n\n"
-                            accumulated_text += info_text
-                            yield json.dumps({"type": "chunk", "content": info_text}) + "\n"
-
-                            history.append({"role": "tool", "content": tool_output})
-                        second_payload = {
-                            "model": model_to_use,
-                            "messages": history,
-                            "stream": True,
-                        }
-                        async with client.stream(
-                            "POST",
-                            f"{OLLAMA_BASE_URL}/api/chat",
-                            json=second_payload,
-                        ) as final_resp:
-                            async for raw_line in final_resp.aiter_lines():
-                                if not raw_line:
-                                    continue
+                            if t_name == FORM_TOOL_NAME:
+                                # Formulaire : on l'envoie au frontend et on termine le tour,
+                                # les réponses reviendront comme prochain message de l'utilisateur
                                 try:
-                                    data = json.loads(raw_line)
-                                    msg_chunk = data.get("message", {}).get("content", "")
-                                    if msg_chunk:
-                                        accumulated_text += msg_chunk
-                                        yield json.dumps({"type": "chunk", "content": msg_chunk}) + "\n"
-
-                                    if data.get("done"):
-                                        prompt_tokens_eval = data.get("prompt_eval_count") or user_tokens
-                                        completion_tokens_eval = data.get("eval_count") or estimate_tokens(accumulated_text)
-                                except Exception:
+                                    form_block = build_form_block(t_args)
+                                except ValueError as form_exc:
+                                    history.append({"role": "tool", "tool_name": t_name, "content": json.dumps({"status": "error", "message": str(form_exc)}, ensure_ascii=False)})
                                     continue
+                                accumulated_text += form_block
+                                yield json.dumps({"type": "chunk", "content": form_block}) + "\n"
+                                form_sent = True
+                                break
+
+                            # Les outils sont synchrones (réseau, SQL, fichiers) : hors de la boucle d'événements
+                            if t_name in DESTRUCTIVE_TOOLS:
+                                # Seul un token émis par le serveur pour cet utilisateur, cette conversation et cet outil
+                                # débloque l'action ; elle s'exécute avec les arguments que l'utilisateur a vus.
+                                approved_args = (
+                                    take_pending_action(approval_token, user.id, conv.id, t_name)
+                                    if approval_token else None
+                                )
+                                if approved_args is None:
+                                    confirm_block = build_confirm_block(
+                                        summary=_describe_destructive_call(t_name, t_args),
+                                        tool_name=t_name,
+                                        action_id=create_pending_action(user.id, conv.id, t_name, t_args),
+                                        details=t_args,
+                                    )
+                                    accumulated_text += confirm_block
+                                    yield json.dumps({"type": "chunk", "content": confirm_block}) + "\n"
+                                    form_sent = True
+                                    break
+                                tool_output = await asyncio.to_thread(run_tool_confirmed, t_name, approved_args)
+                            else:
+                                tool_output = await asyncio.to_thread(run_tool, t_name, t_args)
+
+                            history.append({"role": "tool", "tool_name": t_name, "content": tool_output})
+
+                        if form_sent:
+                            break
                 except asyncio.CancelledError:
                     raise
                 except Exception as e:
@@ -872,50 +1111,34 @@ async def chat_stream(
                     pass
             raise
 
-        total_response_tokens = prompt_tokens_eval + completion_tokens_eval
+        if not accumulated_text.strip():
+            # Aucune erreur mais aucun contenu : on le dit plutôt que d'afficher une bulle vide
+            empty_msg = f"[Le modèle {model_to_use} n'a renvoyé aucune réponse. Réessayez ou changez de modèle.]"
+            accumulated_text = empty_msg
+            yield json.dumps({"type": "chunk", "content": empty_msg}) + "\n"
 
-        assistant_msg_id = str(uuid.uuid4())
-        assistant_msg = Message(
-            id=assistant_msg_id,
-            conversation_id=conv.id,
-            sender_id=None,
-            sender_name="SensAI",
-            role="assistant",
-            content=accumulated_text or "...",
-            prompt_tokens=prompt_tokens_eval,
-            completion_tokens=completion_tokens_eval,
-            total_tokens=total_response_tokens,
+        # Enregistrement dans le cache sémantique après génération réussie ([A6]).
+        # Les réponses à usage unique (confirmation, formulaire, sortie d'outil) ne doivent jamais être rejouées.
+        if (
+            accumulated_text.strip()
+            and "```sensai-" not in accumulated_text
+            and not accumulated_text.startswith("[Erreur")
+            and not accumulated_text.startswith("[Connexion")
+            and not accumulated_text.startswith("[Le modèle")
+        ):
+            try:
+                await asyncio.to_thread(
+                    sementic_cache.add_to_cache,
+                    prompt=effective_content,
+                    llm_response=accumulated_text,
+                    ollama_url=OLLAMA_BASE_URL,
+                )
+            except Exception:
+                pass
+
+        yield await _save_and_announce(
+            db, conv, user_msg_id, accumulated_text, prompt_tokens_eval, completion_tokens_eval,
         )
-        db.add(assistant_msg)
-        conv.updated_at = datetime.utcnow()
-        db.commit()
-        conv_total_tokens = sum(m.total_tokens for m in conv.messages)
-
-        final_payload = {
-            "type": "done",
-            "message_id": assistant_msg_id,
-            "user_message_id": user_msg_id,
-            "prompt_tokens": prompt_tokens_eval,
-            "completion_tokens": completion_tokens_eval,
-            "total_tokens": total_response_tokens,
-            "conversation_total_tokens": conv_total_tokens,
-        }
-        yield json.dumps(final_payload) + "\n"
-
-        await manager.broadcast(conv.id, {
-            "type": "new_message",
-            "message": {
-                "id": assistant_msg_id,
-                "role": "assistant",
-                "sender_name": "SensAI",
-                "content": accumulated_text,
-                "prompt_tokens": prompt_tokens_eval,
-                "completion_tokens": completion_tokens_eval,
-                "total_tokens": total_response_tokens,
-                "created_at": assistant_msg.created_at.isoformat(),
-                "conversation_total_tokens": conv_total_tokens
-            }
-        })
 
     return StreamingResponse(event_generator(), media_type="application/x-ndjson")
 

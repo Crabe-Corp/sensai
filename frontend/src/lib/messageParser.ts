@@ -1,4 +1,4 @@
-import type { MessageAttachment } from '../types'
+import type { MessageAttachment, FormSpec, ConfirmationSpec } from '../types'
 
 export interface ParsedAttachment {
   name: string
@@ -58,3 +58,83 @@ export function parseUserMessage(
   }
 }
 
+
+// --- Formulaires posés par l'agent (outil ask_user_form) ---
+
+const FORM_BLOCK_PATTERN = /```sensai-form\n([\s\S]*?)\n```/
+
+export interface ParsedFormMessage {
+  text: string
+  form: FormSpec | null
+}
+
+export function parseFormMessage(content: string): ParsedFormMessage {
+  const match = FORM_BLOCK_PATTERN.exec(content)
+  if (!match) return { text: content, form: null }
+  try {
+    const form = JSON.parse(match[1]) as FormSpec
+    if (!Array.isArray(form.questions) || form.questions.length === 0) {
+      return { text: content, form: null }
+    }
+    return { text: content.replace(FORM_BLOCK_PATTERN, '').trim(), form }
+  } catch {
+    return { text: content, form: null }
+  }
+}
+
+// Pendant le streaming : masque le bloc formulaire (complet ou en cours d'écriture)
+export function stripFormBlock(content: string): { text: string; formPending: boolean } {
+  const start = content.indexOf('```sensai-form')
+  if (start === -1) return { text: content, formPending: false }
+  return { text: content.slice(0, start).trim(), formPending: true }
+}
+
+export function formatFormAnswers(form: FormSpec, answers: Record<string, string | boolean>): string {
+  const lines = form.questions
+    .filter((q) => answers[q.id] !== undefined && answers[q.id] !== '')
+    .map((q) => {
+      const value = answers[q.id]
+      return `- ${q.label} : ${typeof value === 'boolean' ? (value ? 'Oui' : 'Non') : value}`
+    })
+  return `Réponses au formulaire « ${form.title} » :\n${lines.join('\n')}`
+}
+
+
+// --- Confirmations d'actions sensibles (Human-in-the-Loop [A3]) ---
+
+const CONFIRM_BLOCK_PATTERN = /```sensai-confirm\n([\s\S]*?)\n```/
+
+export interface ParsedConfirmMessage {
+  text: string
+  confirmation: ConfirmationSpec | null
+}
+
+export function parseConfirmMessage(content: string): ParsedConfirmMessage {
+  if (!content) return { text: '', confirmation: null }
+
+  const match = CONFIRM_BLOCK_PATTERN.exec(content)
+  if (match) {
+    try {
+      const data = JSON.parse(match[1])
+      const summary = data.summary || data.title || data.message || "Confirmation requise pour une action destructive"
+      const confirmation: ConfirmationSpec = {
+        action_id: data.action_id || data.id,
+        tool_name: data.tool_name || data.tool,
+        summary,
+        action_type: data.action_type || (data.tool_name === 'write_manuscript_file' ? 'file_write' : 'db_update'),
+        details: data.details,
+      }
+      return { text: content.replace(CONFIRM_BLOCK_PATTERN, '').trim(), confirmation }
+    } catch {
+      return { text: content, confirmation: null }
+    }
+  }
+
+  return { text: content, confirmation: null }
+}
+
+export function stripConfirmBlock(content: string): { text: string; confirmPending: boolean } {
+  const start = content.indexOf('```sensai-confirm')
+  if (start === -1) return { text: content, confirmPending: false }
+  return { text: content.slice(0, start).trim(), confirmPending: true }
+}

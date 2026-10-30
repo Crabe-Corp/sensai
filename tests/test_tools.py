@@ -120,7 +120,7 @@ def test_tool_execution_result_serialization_types():
 
 
 def test_builtin_get_kingdom_info():
-    init_database()
+    init_database(force_reset=True)
     res = get_kingdom_info("Qin")
     assert isinstance(res, dict)
     assert res["name"] == "Qin"

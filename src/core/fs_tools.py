@@ -1,14 +1,38 @@
 import os
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
 
 ALLOWED_DIR = Path("manuscrit_royaumes").resolve()
 ALLOWED_DIR.mkdir(exist_ok=True)
 (ALLOWED_DIR / "brouillons").mkdir(exist_ok=True)
 
+# Remplace l'invite console par un autre mécanisme de confirmation (ex : web). Propre au contexte courant.
+_confirmation_handler: ContextVar[Callable[[str], bool] | None] = ContextVar("confirmation_handler", default=None)
+
+
+@contextmanager
+def confirmation_handler(handler: Callable[[str], bool]) -> Iterator[None]:
+    """Remplace temporairement l'invite console par un handler de confirmation.
+            PARAMS: - handler - CALLABLE: reçoit le résumé de l'action, renvoie True si approuvée
+            RETURN: gestionnaire de contexte"""
+
+    token = _confirmation_handler.set(handler)
+    try:
+        yield
+    finally:
+        _confirmation_handler.reset(token)
+
+
 def ask_human_confirmation(action_summary: str) -> bool:
     """Met l'agent en pause et force une validation manuelle par l'utilisateur.
             PARAMS: - action_summary - STR: résumé explicatif de l'action requérant confirmation
             RETURN: booléen indiquant l'acceptation (True) ou le refus (False) de l'utilisateur"""
+
+    handler = _confirmation_handler.get()
+    if handler is not None:
+        return bool(handler(action_summary))
 
     print(f"\n[ATTENTION] Confirmez-vous cette action : {action_summary} ? (O/N)")
     while True:
