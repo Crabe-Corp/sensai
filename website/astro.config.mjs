@@ -2,30 +2,41 @@ import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
 import { BASE, REPO_BRANCH, REPO_URL, SITE } from './site.config.mjs';
 
-const mermaid = `
+const mermaidScript = `
 async function renderMermaid() {
   const blocks = document.querySelectorAll('pre.mermaid:not([data-processed="true"])');
   if (blocks.length) {
-    const { default: mermaid } = await import('https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.esm.min.mjs');
-    mermaid.initialize({
-      startOnLoad: false,
-      theme: 'dark',
-      themeVariables: {
-        darkTheme: true,
-        background: '#09090b',
-        primaryColor: '#18181b',
-        primaryTextColor: '#f4f4f5',
-        primaryBorderColor: '#27272a',
-        lineColor: '#52525b',
-        secondaryColor: '#18181b',
-        tertiaryColor: '#09090b'
-      },
-      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
-    });
-    for (const block of blocks) {
-      block.setAttribute('data-processed', 'true');
+    let m = window.mermaid;
+    if (!m) {
+      try {
+        const mod = await import('https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.esm.min.mjs');
+        m = mod.default;
+      } catch (e) {
+        console.error('Could not load Mermaid from CDN:', e);
+      }
     }
-    await mermaid.run({ nodes: blocks });
+    if (m) {
+      m.initialize({
+        startOnLoad: false,
+        theme: 'dark',
+        themeVariables: {
+          darkTheme: true,
+          background: '#121316',
+          primaryColor: '#1e293b',
+          primaryTextColor: '#f8fafc',
+          primaryBorderColor: '#3b82f6',
+          lineColor: '#64748b',
+          secondaryColor: '#1e293b',
+          tertiaryColor: '#09090b'
+        },
+        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+      });
+      try {
+        await m.run({ nodes: Array.from(blocks) });
+      } catch (err) {
+        console.error('Mermaid render error:', err);
+      }
+    }
   }
 }
 if (document.readyState === 'loading') {
@@ -60,7 +71,10 @@ export default defineConfig({
       social: { github: REPO_URL },
       editLink: { baseUrl: `${REPO_URL}/edit/${REPO_BRANCH}/website/` },
       customCss: ['./src/styles/theme.css'],
-      head: [{ tag: 'script', attrs: { type: 'module' }, content: mermaid }],
+      head: [
+        { tag: 'script', attrs: { src: `${BASE}/mermaid.min.js` } },
+        { tag: 'script', attrs: { type: 'module' }, content: mermaidScript },
+      ],
       expressiveCode: { themes: ['github-dark-dimmed', 'github-light'] },
       sidebar: [
         {
