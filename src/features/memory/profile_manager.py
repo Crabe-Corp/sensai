@@ -7,10 +7,10 @@ from pydantic import BaseModel, Field
 
 class UserProfile(BaseModel):
     username: str = "default"
-    tone: str = "scribe antique"
-    conciseness: str = "équilibré"
-    language: str = "français"
-    custom_instructions: str = "Tu t'adresses à un apprenti historien passionné par la dynastie Qin et les Royaumes combattants."
+    tone: str = "ancient scribe"
+    conciseness: str = "balanced"
+    language: str = "english"
+    custom_instructions: str = "You're speaking to an aspiring historian who is passionate about the Qin Dynasty and the Warring States period."
     facts: list[str] = Field(default_factory=list)
 
     def format_system_prompt(self) -> str:
@@ -18,16 +18,17 @@ class UserProfile(BaseModel):
         PARAMS: Aucun
         RETURN: chaîne de caractères formatée pour le rôle système"""
         lines = [
-            f"[Profil Utilisateur : {self.username}]",
-            f"- Style et ton : {self.tone}",
-            f"- Niveau de concision : {self.conciseness}",
-            f"- Langue d'échange : {self.language}",
+            f"[User Profile : {self.username}]",
+            f"- Style and tone : {self.tone}",
+            f"- Level of conciseness : {self.conciseness}",
+            f"- Language of communication : {self.language}",
         ]
         if self.custom_instructions:
-            lines.append(f"- Instructions personnalisées : {self.custom_instructions}")
+            lines.append(f"- Custom instructions : {self.custom_instructions}")
         if self.facts:
             facts_rendered = "\n".join(f"  * {fact}" for fact in self.facts)
-            lines.append(f"- Faits permanents connus :\n{facts_rendered}")
+            lines.append(f"- Known permanent facts :\n{facts_rendered}")
+        lines.append("- Language requirement : Always respond in English.")
         return "\n".join(lines)
 
 
@@ -40,10 +41,16 @@ class ProfileManager:
         self.storage_dir.mkdir(parents=True, exist_ok=True)
 
     def _sanitize_username(self, username: str) -> str:
+        """Nettoie le nom d'utilisateur pour sécuriser le nom de fichier sur le disque.
+                PARAMS: - username - STR: nom d'utilisateur brut
+                RETURN: nom d'utilisateur nettoyé et sécurisé"""
         sanitized = re.sub(r"[^\w\-.]", "_", username.strip())
         return sanitized or "default"
 
     def _get_profile_path(self, username: str) -> Path:
+        """Construit le chemin d'accès au fichier JSON associé au profil utilisateur.
+                PARAMS: - username - STR: nom d'utilisateur recherché
+                RETURN: chemin Path vers le fichier JSON du profil"""
         clean_name = self._sanitize_username(username)
         return self.storage_dir / f"{clean_name}.json"
 

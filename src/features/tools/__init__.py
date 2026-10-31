@@ -16,7 +16,8 @@ from src.features.tools.registry import (
     extract_tool_schema,
     tool,
 )
-from src.features.tools import web_search
+from src.features.tools import artifact_tool, builtin, forms, web_search
+from src.features.tools.artifact_tool import update_artifact
 
 __all__ = [
     "MCPClient",
@@ -29,8 +30,11 @@ __all__ = [
     "ToolExecutionResult",
     "ToolExecutor",
     "ToolRegistry",
+    "artifact_tool",
     "default_registry",
     "extract_tool_schema",
+    "forms",
     "tool",
+    "update_artifact",
     "web_search",
 ]

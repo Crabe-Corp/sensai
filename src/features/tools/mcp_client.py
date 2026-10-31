@@ -48,6 +48,9 @@ class MCPTool(BaseModel):
                 PARAMS: - client - MCPCLIENT: instance du client MCP gérant l'appel réseau
                 RETURN: instance ToolDefinition exécutable"""
         def handler(**kwargs: Any) -> Any:
+            """Exécute l'appel de l'outil distant via le client MCP.
+                    PARAMS: - kwargs - ANY: arguments nommés transmis à l'outil
+                    RETURN: résultat retourné par le serveur MCP distant"""
             return client.call_tool(self.name, kwargs)
 
         return ToolDefinition(

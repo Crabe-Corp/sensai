@@ -1,11 +1,12 @@
 import re
 from typing import Tuple
 from pydantic import BaseModel, Field
+from src.core.debug import debug_print
 from src.core.ollama_client import OllamaClient, ChatMessage
 
 class SecurityDecision(BaseModel):
     is_valid: bool = Field(
-        description="True si le message concerne l'histoire OU s'il s'agit d'une demande de recherche générique sans sujet précis (ex: 'cherche sur internet', 'plus d'infos sur lui'). False UNIQUEMENT si un sujet explicitement moderne (jeux, cuisine) ou des insultes sont mentionnés."
+        description="True if the message is about history OR if it is a generic search request without a specific topic (e.g., “search the internet,” “more info about him”). False ONLY if an explicitly modern topic (games, cooking) or insults are mentioned."
     )
 
 def mask_pii(text: str) -> Tuple[str, bool]:
@@ -31,19 +32,21 @@ def validate_input_with_llm(text: str, client: OllamaClient, model: str) -> Tupl
             RETURN: tuple contenant le booléen d'autorisation et le message de refus éventuel"""
 
     system_prompt = (
-        "Tu es un classifieur de sécurité. Tu dois déterminer si le message est autorisé.\n\n"
-        "RÈGLES D'AUTORISATION (is_valid: true) :\n"
-        "- Le message parle de la Chine antique, des Royaumes Combattants, ou d'histoire.\n"
-        "- Le message est une demande générique de recherche sur internet impliquant des pronoms (ex: 'à son sujet', 'sur eux', 'peux-tu chercher'). Étant donné que tu n'as pas l'historique, tu DOIS autoriser ces demandes par défaut.\n\n"
-        "RÈGLES DE REJET (is_valid: false) :\n"
-        "- Le message mentionne EXPLICITEMENT un sujet moderne (jeux vidéos, cuisine, technologie moderne).\n"
-        "- Le message contient des insultes.\n\n"
-        "Exemples de classification :\n"
-        "Message : 'Quels étaient les 7 royaumes combattants ?'\n-> is_valid: true\n\n"
-        "Message : 'Peux-tu faire de plus amples recherches à son sujet sur internet ?'\n-> is_valid: true\n\n"
-        "Message : 'Est-ce que tu peux me trouver plus d'informations à leur sujet sur internet ?'\n-> is_valid: true\n\n"
-        "Message : 'Donne moi une recette de pizza.'\n-> is_valid: false\n\n"
-        "Message : 'Cherche sur internet des informations sur Fortnite.'\n-> is_valid: false"
+        "You are a security classifier. You must determine if the user message is authorized.\n\n"
+        "AUTHORIZATION RULES (is_valid: true):\n"
+        "- The message is about Ancient China, the Warring States period, or historical topics.\n"
+        "- The message is a generic search request involving pronouns (e.g. 'about him', 'about them', 'can you search'). Since you do not have conversation history, you MUST allow these generic requests by default.\n"
+        "- The message is a battle or simulation command between kingdoms (e.g., 'X attacks Y', 'Han attacks Chu').\n\n"
+        "REJECTION RULES (is_valid: false):\n"
+        "- The message EXPLICITLY mentions modern topics (video games, cooking recipes, modern technology).\n"
+        "- The message contains abuse or insults.\n\n"
+        "Classification examples:\n"
+        "Message: 'Quels étaient les 7 royaumes combattants ?'\n-> is_valid: true\n\n"
+        "Message: 'What were the 7 warring states?'\n-> is_valid: true\n\n"
+        "Message: 'Chu attacks Han'\n-> is_valid: true\n\n"
+        "Message: 'Can you search more info about him on the internet?'\n-> is_valid: true\n\n"
+        "Message: 'Donne moi une recette de pizza.'\n-> is_valid: false\n\n"
+        "Message: 'Search internet for Fortnite.'\n-> is_valid: false"
     )
     
     messages = [
@@ -58,10 +61,10 @@ def validate_input_with_llm(text: str, client: OllamaClient, model: str) -> Tupl
             response_format=SecurityDecision
         )
         
-        print(f"\ndebug decision de réponse : {decision.is_valid}")
+        debug_print(f"[Debug] Security decision: {decision.is_valid}")
         
         if not decision.is_valid:
-            return False, "Le conseiller impérial refuse de s'abaisser à discuter de ce sujet avec vous."
+            return False, "The imperial advisor refuses to discuss this topic with you."
             
         return True, ""
     except Exception:

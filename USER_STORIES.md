@@ -49,17 +49,17 @@ En tant que joueur, je veux pouvoir définir manuellement la limite maximale de 
 
 #### [M3] External Structured Memory
 
-En tant que game designer, je veux que l'agent modifie directement les ressources de mes factions dans une base de données locale (SQLite), afin de maintenir l'état exact de l'économie des royaumes au fil de nos simulations.
+En tant que Maître de Guerre, je veux que l'agent connaisse l'état initial des sept royaumes combattants au lancement d'une bataille, afin de simuler un affrontement cohérent basé sur leurs statistiques historiques.
 
 **Critères d'acceptation :**
-* Si l'utilisateur déclare "Le Royaume de Feu dépense 500 or", la base de données est automatiquement mise à jour par l'agent.
-* Une requête SQL de vérification externe dans le fichier `.db` confirme que le solde d'or a bien diminué de 500.
+* Au démarrage d'une simulation, les sept royaumes (Qin, Chu, Qi, Zhao, Wei, Han, Yan) sont initialisés avec leurs statistiques de base (troupes, moral, or, général).
+* L'agent peut répondre à "Quel est l'état actuel du Qin ?" en retournant les statistiques du royaume pour la bataille en cours.
 
-En tant que game designer, je veux pouvoir interroger l'agent sur l'état actuel des relations diplomatiques, afin qu'il lise la base de données et me fournisse un état des lieux précis sans halluciner.
+En tant que Maître de Guerre, je veux que l'état de la simulation soit réinitialisé à chaque nouvelle bataille, afin de jouer des affrontements indépendants sans que les erreurs ou hallucinations d'une partie n'affectent la suivante.
 
 **Critères d'acceptation :**
-* À la question "Qui sont les alliés du Royaume de l'Eau ?", l'agent exécute une lecture (SELECT) dans la base de données.
-* La réponse de l'agent reflète exactement les données présentes dans la base au moment de la question, ignorant les anciens conflits résolus.
+* Chaque simulation démarre avec un état propre, indépendant de toute bataille précédente.
+* Si aucune simulation n'est active, l'agent indique clairement qu'il faut lancer `/simulation` avant de simuler un combat.
 
 #### [M4] Artifact & State Document
 
@@ -109,17 +109,17 @@ En tant que créateur de monde, je veux que l'agent vulgarise et adapte les info
 
 #### [T4] File Access within Permissions
 
-En tant que romancier, je veux autoriser l'agent à lire le dossier contenant les chapitres de mon livre, afin qu'il vérifie la cohérence de l'histoire sans risquer d'accéder à mes fichiers personnels.
+En tant que Maître de Guerre, je veux que l'agent puisse écrire le rapport final d'une simulation de bataille dans un dossier autorisé, afin de conserver une trace structurée de chaque affrontement entre royaumes combattants.
 
 **Critères d'acceptation :**
-* L'agent peut lister et lire le contenu des fichiers `.txt` situés exclusivement dans le dossier `/manuscrit_royaumes`.
-* Si on demande à l'agent d'ouvrir un fichier situé dans un autre dossier système, il refuse catégoriquement pour des raisons de permissions.
+* L'agent peut créer un rapport de bataille au format `.md` uniquement dans le dossier `battle_reports/`, via l'outil `write_battle_report`.
+* Toute tentative d'écriture en dehors de ce dossier (path traversal, autre répertoire) est bloquée par le système de permissions et la raison du refus est communiquée à l'agent.
 
-En tant que romancier, je veux que l'agent puisse créer de nouveaux brouillons uniquement dans ce même répertoire autorisé, afin de maintenir tous mes fichiers de travail centralisés et sécurisés.
+En tant que Maître de Guerre, je veux pouvoir relire un rapport de bataille précédemment sauvegardé, afin d'analyser l'évolution des forces en présence au fil des tours de simulation.
 
 **Critères d'acceptation :**
-* Une demande de création de fichier dans `/manuscrit_royaumes/brouillons` aboutit avec succès.
-* Une tentative de création de fichier à la racine du disque dur (`C:\` ou `/`) est bloquée et signalée dans le chat.
+* L'agent peut lire un fichier `.md` existant dans `battle_reports/` via l'outil `read_battle_report` et en restituer le contenu dans le chat.
+* Les fichiers d'extension incorrecte (ex : `.txt`, `.json`) ou situés hors de `battle_reports/` sont refusés en lecture comme en écriture, avec un message explicite.
 
 #### [T5] Structured Output
 
@@ -159,17 +159,17 @@ En tant que maître du jeu, je veux pouvoir ingérer de nouveaux fichiers textes
 
 #### [A3] Human-in-the-Loop
 
-En tant que joueur, je veux que l'agent me demande une confirmation explicite avant d'écraser la sauvegarde d'un royaume, afin d'éviter une erreur irréversible dans ma simulation.
+En tant que Maître de Guerre, je veux sélectionner individuellement les changements issus d'une bataille simulée que je souhaite appliquer ou ignorer, afin de garder le contrôle sur les résultats avant qu'ils ne soient entérinés.
 
 **Critères d'acceptation :**
-* Le terminal affiche `[ATTENTION] Confirmez-vous cette action (O/N) ?` avant toute modification majeure en base de données.
-* L'action est annulée et aucun fichier n'est touché si l'utilisateur tape `N`.
+* Après le calcul d'une bataille (`simulate_battle`), l'agent présente la liste des changements proposés (pertes de troupes, chute d'un général, etc.) et l'utilisateur peut les accepter tous, les rejeter tous, ou en sélectionner un sous-ensemble.
+* Seuls les changements explicitement validés sont appliqués ; les autres sont ignorés sans modifier l'état de la simulation.
 
-En tant que joueur, je veux que cette demande de confirmation inclue un résumé des conséquences de l'action, afin de prendre ma décision en toute connaissance de cause.
+En tant que Maître de Guerre, je veux confirmer l'écriture du rapport de bataille avant qu'il ne soit sauvegardé sur disque, afin de m'assurer que le compte-rendu reflète bien ce qui s'est passé durant cet affrontement.
 
 **Critères d'acceptation :**
-* Avant d'envoyer un e-mail ou d'écraser un fichier, le message d'attente précise : `Confirmez-vous l'écrasement du fichier Fiche_Glace.md (perte de 50 lignes) ?`.
-* Le programme reste bloqué sur cette invite tant que l'utilisateur n'a pas répondu.
+* Avant de sauvegarder dans `battle_reports/`, l'agent affiche un aperçu du rapport et demande une confirmation explicite (CLI : O/N, web : bouton d'approbation dans l'interface).
+* Si le fichier existe déjà, le message indique explicitement qu'il sera écrasé. Si l'utilisateur refuse, aucun fichier n'est créé ni modifié.
 
 #### [A4] Prompt Versioning
 
@@ -233,13 +233,13 @@ En tant que développeur, je veux qu'un second LLM juge automatiquement la quali
 
 #### [EV2] Content & Privacy Guardrails
 
-En tant que développeur de l'outil, je veux que l'agent bloque toute requête qui sort du thème de l'univers médiéval, afin d'assurer que mes joueurs restent concentrés sur l'expérience du jeu.
+En tant que développeur de l'outil, je veux que l'agent bloque toute requête qui sort du thème de la Chine antique et des Royaumes Combattants, afin d'assurer que les utilisateurs restent concentrés sur l'expérience historique et la simulation de batailles.
 
 **Critères d'acceptation :**
-* Si l'utilisateur demande "Donne-moi une recette de cuisine moderne" ou tape des injures, le filtre à l'entrée bloque la requête.
-* L'agent refuse poliment de répondre via un message d'erreur standardisé sans appeler le LLM lourd.
+* Si l'utilisateur demande "Donne-moi une recette de cuisine moderne" ou mentionne un sujet explicitement hors-thème (jeux vidéo modernes, technologie contemporaine), le filtre à l'entrée bloque la requête.
+* L'agent refuse poliment de répondre via un message d'erreur standardisé ("Le conseiller impérial refuse de discuter de ce sujet.") sans appeler le LLM lourd.
 
-En tant que développeur, je veux que le système anonymise automatiquement les données personnelles réelles (noms, adresses) saisies par erreur, afin de garantir la confidentialité de l'utilisateur.
+En tant que développeur, je veux que le système anonymise automatiquement les données personnelles réelles (emails, numéros de téléphone) saisies par erreur, afin de garantir la confidentialité de l'utilisateur.
 
 **Critères d'acceptation :**
 * Si l'utilisateur tape un vrai numéro de téléphone ou une adresse email dans son prompt, un filtre le remplace par `[DONNÉE MASQUÉE]` avant de l'envoyer au modèle.

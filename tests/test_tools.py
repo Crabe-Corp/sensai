@@ -2,8 +2,6 @@ import json
 import pytest
 from pydantic import BaseModel, Field
 
-from src.core.db.database import init_database
-from src.features.tools.builtin import get_kingdom_info
 from src.features.tools.executor import ToolExecutionResult, ToolExecutor
 from src.features.tools.registry import (
     ToolDefinition,
@@ -117,20 +115,6 @@ def test_tool_execution_result_serialization_types():
 
     res_none = ToolExecutionResult(tool_name="t3", success=True, result=None)
     assert json.loads(res_none.to_tool_message_content()) == {"success": True}
-
-
-def test_builtin_get_kingdom_info():
-    init_database()
-    res = get_kingdom_info("Qin")
-    assert isinstance(res, dict)
-    assert res["name"] == "Qin"
-    assert res["capital"] == "Xianyang"
-    assert res["ruler"] == "Ying Zheng"
-    assert "relations" in res
-
-    res_unknown = get_kingdom_info("RoyaumeInconnu")
-    assert "error" in res_unknown
-
 
 def test_registry_mcp_client_registration_and_unregistration():
     registry = ToolRegistry()

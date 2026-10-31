@@ -2,14 +2,14 @@ import functools
 import inspect
 import re
 from collections.abc import Callable
-from typing import Any, get_args, get_origin
+from typing import Any, Literal, get_args, get_origin
 from pydantic import BaseModel, ConfigDict, Field
 
 
 def _extract_docstring_param_descriptions(docstring: str) -> tuple[str, dict[str, str]]:
     """ Extrait le résumé textuel et les descriptions des paramètres depuis une docstring Python.
-PARAMS: - docstring - STR: la chaîne de documentation brute à analyser
-RETURN: tuple contenant le résumé textuel et le dictionnaire des descriptions de paramètres"""
+            PARAMS: - docstring - STR: la chaîne de documentation brute à analyser
+            RETURN: tuple contenant le résumé textuel et le dictionnaire des descriptions de paramètres"""
     if not docstring:
         return "", {}
 
@@ -77,6 +77,9 @@ RETURN: tuple contenant le nom du type JSON et un éventuel sous-schéma personn
         non_none_args = [a for a in args if a is not type(None)]
         if non_none_args:
             return _python_type_to_json_type(non_none_args[0])
+
+    if origin is Literal:
+        return "string", {"type": "string", "enum": [str(a) for a in args]}
 
     if isinstance(annotation, type) and issubclass(annotation, BaseModel):
         return "object", annotation.model_json_schema()
@@ -272,10 +275,17 @@ def tool(
     target_registry = registry or default_registry
 
     def decorator(fn: Callable[..., Any]) -> Callable[..., Any]:
+        """Décore une fonction cible et l'enregistre auprès du registre d'outils.
+                PARAMS: - fn - CALLABLE: fonction à transformer en outil
+                RETURN: fonction emballée disposant des attributs d'outil"""
         tool_def = target_registry.register(fn, name=name, description=description)
 
         @functools.wraps(fn)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
+            """Exécute la fonction originale sous-jacente avec ses arguments.
+                    PARAMS: - args - ANY: arguments positionnels
+                            - kwargs - ANY: arguments par mot-clé
+                    RETURN: valeur de retour de la fonction décorée"""
             return fn(*args, **kwargs)
 
         wrapper.tool_definition = tool_def
