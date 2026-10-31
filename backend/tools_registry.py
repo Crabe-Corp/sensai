@@ -29,13 +29,10 @@ ALL_TOOLS_ID = "mcp_runner"
 FORM_TOOL_NAME = "ask_user_form"
 FORM_BLOCK_LANG = "sensai-form"
 CONFIRM_BLOCK_LANG = "sensai-confirm"
-DESTRUCTIVE_TOOLS = {"write_manuscript_file", "update_kingdom_database"}
+DESTRUCTIVE_TOOLS = {"write_battle_report"}
 # Outils en lecture seule que l'IA utilise quand elle en a besoin : toujours actifs, sans réglage utilisateur
 READ_ONLY_TOOLS = {
-    "read_manuscript_file",
     "search_historical_archives",
-    "get_kingdom_info",
-    "query_kingdom_database",
 }
 # Outils internes actifs par défaut pour l'IA, masqués dans les contrôles utilisateur
 INTERNAL_TOOLS = {FORM_TOOL_NAME} | READ_ONLY_TOOLS
@@ -47,11 +44,6 @@ _mcp_tool_names: set = set()
 _TOOL_UI = {
     "web_search": ("Globe", "Web"),
     "search_historical_archives": ("BookOpen", "Histoire de Chine"),
-    "get_kingdom_info": ("Landmark", "Histoire de Chine"),
-    "query_kingdom_database": ("Database", "Base de données"),
-    "update_kingdom_database": ("DatabaseZap", "Base de données"),
-    "read_manuscript_file": ("FileText", "Manuscrits"),
-    "write_manuscript_file": ("FilePen", "Manuscrits"),
     "ask_user_form": ("ListChecks", "Interaction"),
     "calculate_grain_supply": ("Wrench", "Logistique MCP"),
     "get_historical_battle": ("BookOpen", "Batailles MCP"),
@@ -170,7 +162,7 @@ def build_confirm_block(
         "summary": summary,
         "tool_name": tool_name,
         "action_id": action_id,
-        "action_type": action_type or ("file_write" if "file" in tool_name else "db_update"),
+        "action_type": action_type or ("file_write" if "file" in tool_name else ""),
         "details": details or {},
     }
     return f"\n```{CONFIRM_BLOCK_LANG}\n{json.dumps(payload, ensure_ascii=False)}\n```\n"

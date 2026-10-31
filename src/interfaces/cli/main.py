@@ -11,7 +11,6 @@ if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8")
 if __package__ is None or __package__ == "":
     sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
-from src.core.db.database import init_database
 from src.core import memory_management as mem, singleton_token
 from src.core.debug import debug_print, is_debug, set_debug
 from src.core import sementic_cache
@@ -386,7 +385,6 @@ def run_session(
         session_id=current_session.metadata.session_id,
         rag_enabled=rag_enabled,
     )
-    init_database()
     engines = {
         name: ConversationEngine(client=client, registry=m.registry, max_tool_iterations=m.max_tool_iterations)
         for name, m in MODES.items()
@@ -834,7 +832,6 @@ def main(argv: list[str] | None = None) -> int:
     host, model = resolve_configuration(args)
     file_cfg = load_config_file(Path(args.config)) if args.config else {}
 
-    # Initialize debug mode from CLI flag, env var, or config file
     debug_flag = (
         bool(args.debug)
         or os.getenv("SENSAI_DEBUG", "").lower() in ("1", "true", "yes")
@@ -858,11 +855,6 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as e:
         debug_print(f"[Warning] Error retrieving context length: {e}")
         context_length = 2000
-    try:
-        init_database()
-    except Exception as e:
-        print(f"[Error initializing database] {e}")
-        return 1
 
     cache_build = False
     try:

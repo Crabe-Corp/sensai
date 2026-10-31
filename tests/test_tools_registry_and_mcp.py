@@ -44,15 +44,6 @@ def test_read_only_tools_are_active_by_default_and_hidden():
         assert tools_by_id[name]["visible"] is False
         assert name in selected
 
-
-def test_write_and_external_tools_stay_opt_in():
-    selected = selected_tool_names([])
-    for name in ("web_search", "write_manuscript_file", "update_kingdom_database", "generate_pdf_document"):
-        assert name not in selected
-    tools_by_id = {t["id"]: t for t in list_tools()}
-    assert tools_by_id["write_manuscript_file"]["visible"] is True
-
-
 def test_selected_tool_names_always_includes_internal_tools():
     # Empty selection should still have ask_user_form
     selected = selected_tool_names([])

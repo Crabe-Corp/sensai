@@ -182,11 +182,9 @@ def test_run_session_tools_commands(capsys):
 
     captured = capsys.readouterr()
     assert "Registered tools" in captured.out or "Outils enregistrés" in captured.out
-    assert "get_kingdom_info" in captured.out
     assert "MCP tools enabled" in captured.out or "Outils MCP activés" in captured.out
     assert "MCP tools disabled" in captured.out or "Outils MCP désactivés" in captured.out
     assert ("Outils enregistrés" in captured.out or "Registered tools" in captured.out)
-    assert "get_kingdom_info" in captured.out
     assert ("Outils MCP activés" in captured.out or "MCP tools enabled" in captured.out)
     assert ("Outils MCP désactivés" in captured.out or "MCP tools disabled" in captured.out)
 

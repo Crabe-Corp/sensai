@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { ShieldAlert, FilePen, DatabaseZap, Check, X } from 'lucide-react'
+import { ShieldAlert, FilePen, Check, X } from 'lucide-react'
 import type { ConfirmationSpec } from '../types'
 
 interface ConfirmationCardProps {
@@ -19,8 +19,7 @@ export function ConfirmationCard({
 }: ConfirmationCardProps) {
   const [responded, setResponded] = useState<'approved' | 'rejected' | null>(null)
 
-  const isFile = confirmation.action_type === 'file_write' || confirmation.tool_name === 'write_manuscript_file'
-  const isDb = confirmation.action_type === 'db_update' || confirmation.tool_name === 'update_kingdom_database'
+  const isFile = confirmation.action_type === 'file_write'
 
   const handleConfirm = () => {
     if (disabled || responded) return
@@ -38,13 +37,11 @@ export function ConfirmationCard({
 
   const getIcon = () => {
     if (isFile) return <FilePen className="w-3.5 h-3.5 text-zinc-300" />
-    if (isDb) return <DatabaseZap className="w-3.5 h-3.5 text-zinc-300" />
     return <ShieldAlert className="w-3.5 h-3.5 text-zinc-300" />
   }
 
   const getCategoryLabel = () => {
     if (isFile) return "Écriture manuscrit"
-    if (isDb) return "Base de données"
     return "Action critique"
   }
 
